@@ -245,6 +245,11 @@ void main() {
     vec3 shadow = sampleShadow(playerPos, n, saturate(dot(n, envLightDir)), dither);
 #endif
     vec3 col = shadeSurface(env, toLinear(albedo.rgb), n, -rd, lmcoord, 1.0, mat, shadow, 0.0);
+#ifdef PROG_HAND
+    // Arms and held items are opaque: no glass-style reflection, and never blend with the scene behind.
+    outColor = vec4(col, 1.0);
+    return;
+#endif
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
     vec3 skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
     col = mix(col, skyRefl, fres * 0.6);
