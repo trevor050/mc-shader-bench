@@ -1,9 +1,10 @@
-"""Bake a tileable 64^3 RGBA8 cloud noise volume for the shader pack.
+"""Bake a tileable 64^3 RGBA16 cloud noise volume for the shader pack.
 
 R: Perlin-Worley (billowy base shape)
 G, B, A: inverted Worley at increasing frequencies (used for erosion)
 
-Output: ../shaders/textures/cloudnoise.dat, raw RGBA8, x fastest. Referenced from shaders.properties.
+Output: ../shaders/textures/cloudnoise.dat, raw RGBA16 (little-endian), x fastest. Referenced from
+shaders.properties. 16 bits matter: the density remap stretches narrow ranges and 8-bit data bands visibly.
 """
 
 from pathlib import Path
@@ -78,7 +79,7 @@ p = norm01(fbm(perlin, 4, 4))
 perlin_worley = np.clip(remap(p, w1 - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0)
 
 vol = np.stack([norm01(perlin_worley), norm01(w1), norm01(w2), norm01(w3)], -1)
-data = (vol * 255.0 + 0.5).astype(np.uint8)
+data = (vol * 65535.0 + 0.5).astype("<u2")
 # Texture upload order is x fastest, then y, then z.
 data = np.transpose(data, (2, 1, 0, 3))
 out = Path(__file__).resolve().parent.parent / "shaders" / "textures" / "cloudnoise.dat"

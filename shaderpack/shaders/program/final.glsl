@@ -77,7 +77,8 @@ void main() {
     // Exposure: open up in caves and at night, stay tight in bright daylight.
     float skyLight = float(eyeBrightnessSmooth.y) / 240.0;
     float sunUp = normalize(mat3(gbufferModelViewInverse) * sunPosition).y;
-    float dayness = smoothstep(-0.1, 0.25, sunUp);
+    // Hold daytime exposure until the sun is nearly down so sunsets stay rich instead of washing out.
+    float dayness = smoothstep(-0.12, 0.02, sunUp);
     float ev = mix(2.2, mix(2.0, 0.0, dayness), skyLight);
     col *= EXPOSURE * 0.42 * exp2(ev);
 

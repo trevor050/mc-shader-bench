@@ -16,7 +16,7 @@ uniform float frameTimeCounter;
 
 #ifdef VERTEX
 #include "/lib/jitter.glsl"
-#ifndef PROG_DH
+#if !defined PROG_DH && !defined PROG_HAND
 in vec4 mc_Entity;
 #endif
 out vec2 texcoord;
@@ -36,7 +36,9 @@ void main() {
     lmcoord = saturate((lm - 1.0 / 32.0) * 16.0 / 15.0);
     glcolor = gl_Color;
     worldNormal = mat3(gbufferModelViewInverse) * normalize(gl_NormalMatrix * gl_Normal);
-#ifdef PROG_DH
+#if defined PROG_HAND
+    mat = MAT_HAND;
+#elif defined PROG_DH
     mat = dhMaterialId == DH_BLOCK_WATER ? MAT_WATER : MAT_TRANSLUCENT;
 #else
     mat = int(mc_Entity.x + 0.5) - 10000;
@@ -216,7 +218,12 @@ void main() {
     vec4 albedo = texture(gtexture, texcoord) * glcolor;
     if (albedo.a < 0.02) discard;
     vec3 n = normalize(worldNormal);
+#ifdef PROG_HAND
+    // The hand has its own projection; approximate its shadowing from sky light instead of the shadow map.
+    vec3 shadow = vec3(smoothstep(0.6, 0.95, lmcoord.y));
+#else
     vec3 shadow = sampleShadow(playerPos, n, saturate(dot(n, envLightDir)), dither);
+#endif
     vec3 col = shadeSurface(env, toLinear(albedo.rgb), n, -rd, lmcoord, 1.0, mat, shadow, 0.0);
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
     vec3 skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;

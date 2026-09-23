@@ -94,7 +94,7 @@ vec4 marchClouds(vec3 ro, vec3 rd, float maxDist, vec3 lightDir, vec3 directLigh
     float stepLen = (t1 - t0) / float(VC_STEPS);
     float mu = dot(rd, lightDir);
     // Two-lobe phase: strong forward silver lining plus soft back-scatter.
-    float phase = mix(hgPhase(mu, 0.8), hgPhase(mu, -0.25), 0.3);
+    float phase = mix(hgPhase(mu, 0.6), hgPhase(mu, -0.2), 0.35);
     float sigma = 0.045;
 
     vec3 radiance = vec3(0.0);
@@ -107,13 +107,13 @@ vec4 marchClouds(vec3 ro, vec3 rd, float maxDist, vec3 lightDir, vec3 directLigh
         float lightOD = 0.0;
         float ls = (VC_TOP - VC_BOTTOM) / float(VC_LIGHT_STEPS) * 0.6;
         for (int j = 1; j <= VC_LIGHT_STEPS; j++) {
-            lightOD += vcDensity(p + lightDir * ls * float(j), false) * ls;
+            lightOD += vcDensity(p + lightDir * ls * (float(j) - 0.5 + dither), false) * ls;
         }
         float h = saturate((p.y - VC_BOTTOM) / (VC_TOP - VC_BOTTOM));
         // Octave-style multiple scattering: a softer second term lets light reach deep into the cloud.
         float beer = exp(-lightOD * sigma * 0.55) + 0.35 * exp(-lightOD * sigma * 0.12);
         float powder = 1.0 - exp(-d * stepLen * sigma * 2.0);
-        vec3 sun = directLight * beer * phase * mix(1.0, powder * 2.0, 0.5) * 9.0;
+        vec3 sun = directLight * beer * phase * mix(1.0, powder * 2.0, 0.5) * 7.0;
         vec3 amb = ambient * (0.35 + 0.65 * h);
 
         float sampleSigma = d * sigma;
