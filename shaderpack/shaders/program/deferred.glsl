@@ -111,7 +111,7 @@ void main() {
     vec3 col;
     if (depth >= 1.0 && !isLod) {
         // Sky. colortex0 holds whatever the sky programs drew (stars, moon) in linear light.
-        col = rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, 12) + sunDisc(rd, sunDir);
+        col = rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, 12) + sunAureole(rd, sunDir) + sunDisc(rd, sunDir);
 #ifdef DIM_END
         float night = 1.0;
 #else
@@ -187,7 +187,7 @@ void main() {
             vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
             vec3 r = reflect(rd, rn);
             float fres = 0.02 + 0.98 * pow(1.0 - saturate(dot(-rd, rn)), 5.0);
-            vec3 refl = skyRadiance(r, sunDir, 6) * nl.w * nl.w;
+            vec3 refl = (skyRadiance(r, sunDir, 6) + sunAureole(r, sunDir)) * nl.w * nl.w;
             // A puddle is a near-perfect mirror; a floor of reflectance keeps it visible from steeper angles.
             col = mix(col, refl, mix(fres * wet * 0.35, max(fres, 0.18), puddle));
         }

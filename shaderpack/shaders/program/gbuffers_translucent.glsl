@@ -209,7 +209,7 @@ void main() {
         vec3 r = reflect(rd, n);
         r.y = abs(r.y);
         vec3 rRough = normalize(r + vec3(0.0, rough * 1.4, 0.0));
-        vec3 skyRefl = skyRadiance(rRough, sunDir, 8);
+        vec3 skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
         skyRefl = applyClouds(skyRefl, rRough, sunDir, envDirect, envAmbient * 0.12, cameraPosition.xz) * skyVis;
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
         vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);

@@ -141,7 +141,10 @@ void main() {
     lit /= float(VL_STEPS);
     float mu = dot(rd, envLightDir);
     float phase = phaseMie(mu, 0.72) * 0.7 + 0.08;
-    float haze = (0.35 + rainStrength) * (1.0 - exp(-vlDist * 0.004));
+    // Low sun: the air is hazier along the long, golden light path, so shafts are strongest at sunrise and
+    // sunset and nearly invisible at noon (as in real life and Complementary's light shafts).
+    float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
+    float haze = (0.35 + 0.6 * lowSun + rainStrength) * (1.0 - exp(-vlDist * 0.004));
     col += envDirect * lit * phase * haze * 0.3 * skyExposure;
 #endif
 

@@ -1,9 +1,12 @@
-// Bloom, eye adaptation, AgX tonemap, and a light grade.
+// Bloom, glare, sun streaks, eye adaptation, AgX tonemap, and a light grade.
 //
-// The sun is an HDR source with a small, antialiased disc. Bloom spreads its
-// energy; source-gated glare adds a wider halo and subtle lens rays. Covering
-// the sun suppresses those rays. Center-weighted eye adaptation responds to
-// bright views before tonemapping.
+// How the sun is built (atmosphere.glsl + here), after studying Photon and Complementary:
+//   1. an edgeless, physically bright core drawn in the sky (no visible disc edge once tonemapped),
+//   2. a sky aureole around it (sunAureole), so the sky itself glows and occluders cut it naturally,
+//   3. energy-conserving bloom plus a thresholded wide glare that only the sun is bright enough to trigger,
+//   4. eye-style radial streaks on top, scaled by how much of the sun is actually visible,
+//   5. faint screen-space rays from gaps in whatever is in front of the sun.
+// None of these is a screen-space sticker: every term is driven by the rendered frame or the sky.
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
@@ -23,8 +26,92 @@ uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
 uniform float viewHeight;
+uniform sampler2D depthtex0;
+uniform sampler2D dhDepthTex0;
+uniform int frameCounter;
 
 const bool colortex0MipmapEnabled = true;
+
+// Sun rays: light from the bright sky around the sun, scattered toward the eye along the way, so any gap in
+// trees, terrain or cloud edges in front of the sun throws a visible streak outward from it (screen-space
+// light scattering, GPU Gems 3 ch. 13). Only open sky within a small radius of the sun feeds it; letting the
+// whole sky contribute is what previously made rays shoot everywhere. Anything covering the sun removes the
+// rays, because they are built from the visible sky itself.
+vec3 sunRays(vec2 uv) {
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return vec3(0.0);
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    // Fade as the sun leaves the frame instead of popping.
+    float onScreen = smoothstep(-0.25, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    if (onScreen <= 0.0) return vec3(0.0);
+
+    const int N = 40;
+    vec2 delta = (sunUV - uv) / float(N);
+    // Pixels far from the sun get nothing (their rays would be too faint to matter); fade smoothly so the
+    // effect never ends in a visible circle.
+    float len = length(delta * aspect) * float(N);
+    float reach = 1.0 - smoothstep(0.35, 0.9, len);
+    if (reach <= 0.0) return vec3(0.0);
+    vec2 p = uv + delta * hash12(gl_FragCoord.xy + float(frameCounter % 64) * 11.7);
+    vec3 acc = vec3(0.0);
+    float decay = 1.0;
+    for (int i = 0; i < N; i++) {
+        p += delta;
+        if (any(lessThan(p, vec2(0.0))) || any(greaterThan(p, vec2(1.0)))) break;
+        float sky = step(1.0, texture(depthtex0, p).r) * step(1.0, texture(dhDepthTex0, p).r);
+        float nearSun = exp(-length((p - sunUV) * aspect) * 9.0);
+        acc += textureLod(colortex0, p, 3.0).rgb * sky * nearSun * decay;
+        decay *= 0.965;
+    }
+    return acc / float(N) * onScreen * reach;
+}
+
+uniform float frameTimeCounter;
+
+// Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
+// scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
+// of uneven brightness and length, a handful of longer ones, all slowly shimmering. Strength follows how much
+// of the sun is actually visible (sampled against terrain depth and the sun's measured brightness, so clouds
+// dim it), so walking behind a tree switches them off.
+vec3 sunStreaks(vec2 uv) {
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return vec3(0.0);
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    float onScreen = smoothstep(-0.1, 0.03, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    if (onScreen <= 0.0) return vec3(0.0);
+    vec2 sc = clamp(sunUV, 0.0, 1.0);
+
+    // Visible fraction of the sun: open sky over a small cross around it.
+    float open = 0.0;
+    for (int i = 0; i < 9; i++) {
+        vec2 o = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 0.7854), sin(float(i) * 0.7854)) * 0.006 / aspect;
+        open += step(1.0, texture(depthtex0, sc + o).r) * step(1.0, texture(dhDepthTex0, sc + o).r);
+    }
+    open /= 9.0;
+    vec3 src = textureLod(colortex0, sc, 2.0).rgb;
+    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
+    // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
+    float blinding = smoothstep(avgLum * 30.0, avgLum * 300.0, luminance(src));
+    float vis = open * blinding * onScreen;
+    if (vis <= 0.0) return vec3(0.0);
+
+    vec2 dv = (uv - sunUV) * aspect;
+    float d = length(dv);
+    float a = atan(dv.y, dv.x) / TAU + 0.5;
+    float t = frameTimeCounter * 0.03;
+    // Wrap-safe angular noise: sample on a circle so there is no seam at a = 0 / 1.
+    vec2 ca = vec2(cos(a * TAU), sin(a * TAU));
+    float fine = valueNoise(ca * 38.0 + t) * valueNoise(ca * 61.0 - t * 1.3);
+    float coarse = valueNoise(ca * 9.0 + 3.1 + t * 0.5);
+    float streak = pow(fine, 3.0) * 1.6 + pow(coarse, 5.0) * 0.8;
+    // Each streak fades with its own reach; they start just outside the blown-out core.
+    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0));
+    float fade = exp(-d / reach) * smoothstep(0.004, 0.03, d);
+    vec3 tint = src / max(luminance(src), 1e-4);
+    return tint * avgLum * streak * fade * vis;
+}
 
 in vec2 texcoord;
 layout(location = 0) out vec4 fragColor;
@@ -69,49 +156,52 @@ vec3 bloom(vec2 uv) {
                 float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
                 s += textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb * w;
             }
-        float weight = pow(0.72, float(lod - 1));
+        // Nearly flat weights: the wide levels carry the big soft glow around very bright sources.
+        float weight = pow(0.86, float(lod - 1));
         b += s / 16.0 * weight;
         total += weight;
     }
     return b / total;
 }
 
-// A small solar disc needs a much wider optical halo than a few mip levels can
-// provide. Sample the rendered disc so clouds and terrain still occlude it.
-vec3 solarGlare(vec2 uv) {
-    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
-    if (clip.w <= 0.0) return vec3(0.0);
-    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
-    if (any(lessThan(sunUV, vec2(0.0))) || any(greaterThan(sunUV, vec2(1.0)))) return vec3(0.0);
-
-    vec3 source = textureLod(colortex0, sunUV, 0.0).rgb;
-    float visible = smoothstep(12.0, 100.0, luminance(source));
-    if (visible <= 0.001) return vec3(0.0);
-
-    vec2 delta = (uv - sunUV) * vec2(viewWidth, viewHeight);
-    float r = length(delta);
-    if (r > 420.0) return vec3(0.0);
-    float halo = 5.0 * exp2(-sqr(r / 24.0))
-               + 2.0 * exp2(-r / 28.0) + 0.4 * exp2(-r / 135.0);
-
-    // A restrained six-point lens diffraction pattern, separate from the
-    // shadowed volumetric shafts in composite.glsl.
-    float armDistance = min(abs(delta.y),
-                            min(abs(dot(delta, vec2(-0.8660254, 0.5))),
-                                abs(dot(delta, vec2(-0.8660254, -0.5)))));
-    float blades = exp2(-2.0 * sqr(armDistance / (2.0 + 0.012 * r)));
-    float star = 0.7 * blades * exp2(-r / 100.0) * smoothstep(8.0, 30.0, r);
-
-    vec3 sourceTint = clamp(source / max(luminance(source), 0.001), vec3(0.35), vec3(1.65));
-    vec3 tint = mix(vec3(1.0, 0.92, 0.78), sourceTint, 0.4);
-    float edgeFade = 1.0 - smoothstep(260.0, 420.0, r);
-    return tint * visible * (halo + star) * edgeFade;
+// Glare: the long, faint scatter tail eyes and lenses have around very bright sources. Built only from what
+// is far brighter than the average scene (in practice the sun and the sky right around it), so anything in
+// front of the sun cuts it, and ordinary bright surfaces never glow. The widest blur levels dominate, which
+// gives a large soft bloom instead of a tight halo.
+vec3 glare(vec2 uv) {
+    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
+    float threshold = max(avgLum * 12.0, 1e-3);
+    vec3 g = vec3(0.0);
+    float total = 0.0;
+    vec2 px = 1.0 / vec2(viewWidth, viewHeight);
+    for (int lod = 4; lod <= 9; lod++) {
+        float scale = exp2(float(lod));
+        vec3 s = vec3(0.0);
+        for (int y = -1; y <= 1; y++)
+            for (int x = -1; x <= 1; x++) {
+                float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+                vec3 c = textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb;
+                // Soft knee keeps the glow from switching on abruptly.
+                float l = luminance(c);
+                s += c * (max(l - threshold, 0.0) / max(l, 1e-5)) * w;
+            }
+        float weight = float(lod - 3);
+        g += s / 16.0 * weight;
+        total += weight;
+    }
+    return g / total;
 }
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
-    col += bloom(texcoord) * BLOOM_STRENGTH;
-    col += solarGlare(texcoord);
+    col += glare(texcoord) * GLARE_STRENGTH;
+    col += sunRays(texcoord) * SUN_RAYS_STRENGTH;
+    // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
+    // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
+    // sun, produce a visible glow; everything else just softens very slightly.
+    col = mix(col, bloom(texcoord), BLOOM_STRENGTH);
+    // Streaks go on after bloom so they stay crisp instead of being blurred away.
+    col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
 
     // Eye adaptation (see taa.glsl): expose so the adapted scene brightness maps to a mid tone.
     float adaptedLog = texelFetch(colortex5, ivec2(0), 0).a;

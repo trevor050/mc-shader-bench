@@ -119,26 +119,53 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 // Shared by the sky (below the horizon) and the terrain fog so ungenerated LODs and fogged terrain match.
 // It must equal the sky exactly at and just below the horizon line; any mismatch shows as a band where the
 // fogged far ocean meets the sky. Darkening only starts well below the horizon (looking down into the void).
+// Solar aureole: the bright, soft patch of sky around the sun, from strong forward scattering by haze and
+// aerosols. Single-scatter Mie with one phase lobe cannot produce it, and it is most of what makes a sun read
+// as blinding (the disc itself is tiny). It is part of the sky, so clouds, terrain and trees occlude it,
+// water reflects it, and fog looking toward the sun glows with it. Colour follows the sunlight reaching us,
+// so it turns orange at sunset. After Complementary's sky glare and the Mie aureole in Photon.
+vec3 sunAureole(vec3 rd, vec3 sunDir) {
+#if defined DIM_NETHER || defined DIM_END
+    return vec3(0.0);
+#endif
+    float a = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
+    // A tight inner glow and a wide, faint skirt.
+    float inner = exp(-a * 22.0);
+    float outer = exp(-a * 4.5);
+    // Low sun: longer air path, more haze, a larger and relatively stronger glow.
+    float low = 1.0 - smoothstep(0.0, 0.5, sunDir.y);
+    float strength = inner * mix(0.22, 0.35, low) + outer * mix(0.025, 0.06, low);
+    vec3 t = sunTransmittance(sunDir);
+    // Fades as the sun sets below the horizon, and is washed out by overcast.
+    float up = smoothstep(-0.06, 0.02, sunDir.y);
+    return t * SUN_ILLUMINANCE * strength * up * (1.0 - 0.85 * rainStrength);
+}
+
 vec3 hazeColor(vec3 rd, vec3 sunDir) {
-    vec3 h = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z)), sunDir, 8);
+    vec3 dir = normalize(vec3(rd.x, max(rd.y, 0.0), rd.z));
+    vec3 h = skyRadiance(dir, sunDir, 8) + sunAureole(dir, sunDir);
     return h * mix(1.0, 0.5, smoothstep(-0.1, -0.4, rd.y));
 }
 
 #ifdef FRAGMENT
+// The sun as the eye perceives it: not a disc with an edge but a blinding core that fades out smoothly. A
+// sharp-edged disc tonemaps to a flat white circle, which reads as a sticker; a physically bright core with an
+// exponential falloff saturates to white over a region a few times its size and then eases into the aureole,
+// so no edge is ever visible. The profile carries the sun's full illuminance (integral of exp(-s/a) over the
+// plane is 2 pi a^2), as Photon's disc does, so bloom and glare get the right amount of energy. It is drawn in
+// the sky, so terrain, trees and clouds in front of it cut it off.
 vec3 sunDisc(vec3 rd, vec3 sunDir) {
 #if defined DIM_NETHER || defined DIM_END
     return vec3(0.0);
 #endif
-    // The solar disc is about 0.53 degrees across. Filter its edge over a pixel
-    // in angular space so it stays round even when only a few pixels wide.
-    const float radius = 0.00463;
-    float separation = length(rd - sunDir);
-    float pixelWidth = max(fwidth(separation), 0.0001);
-    float disc = 1.0 - smoothstep(radius - 0.5 * pixelWidth,
-                                  radius + 0.5 * pixelWidth, separation);
+    const float a = 0.0045;        // falloff scale in radians
+    float s = length(rd - sunDir);
+    if (s > a * 30.0) return vec3(0.0);
+    float core = exp(-s / a);
     vec3 t = sunTransmittance(sunDir);
-    // Keep the source well inside RGBA16F's finite range before bloom/TAA.
-    return disc * t * SUN_ILLUMINANCE * 1500.0 * (1.0 - rainStrength);
+    const float norm = 1.0 / (2.0 * PI * a * a);
+    // min() keeps it inside RGBA16F range; the saturated centre is white either way.
+    return min(core * t * SUN_ILLUMINANCE * norm * (1.0 - rainStrength), vec3(30000.0));
 }
 #endif
 
