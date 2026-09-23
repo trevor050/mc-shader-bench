@@ -100,6 +100,10 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
     float fbm = n.g * 0.625 + n.b * 0.25 + n.a * 0.125;
     float shape = remap(n.r, fbm - 1.0, 1.0, 0.0, 1.0);
 
+    // Turrets: in the upper half, a coarse puff field pushes up rounded domes so tops are lumpy rather than
+    // one smooth pillow.
+    float dome = cloudTex(q * 1.7 + 0.37).g;
+    shape = mix(shape, shape * (0.55 + 0.9 * dome), smoothstep(0.25, 0.75, hn));
     // Flat base, rounded cauliflower top.
     float profile = smoothstep(0.0, 0.07, hn) * (1.0 - smoothstep(0.45, 1.0, hn));
     float d = saturate(remap(shape * profile, 1.0 - local, 1.0, 0.0, 1.0));
@@ -107,8 +111,9 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
 
     vec3 dn = cloudTex(q * 4.0 + wind / 700.0).gba;
     float erode = dn.x * 0.625 + dn.y * 0.25 + dn.z * 0.125;
-    // Wispy, torn bases; billowy tops.
-    erode = mix(1.0 - erode, erode, smoothstep(0.1, 0.5, hn));
+    // G/B/A are inverted Worley (high at puff centres). Tops erode along cell borders (1 - erode), which
+    // leaves rounded cauliflower lobes; bases erode inside the cells, which tears them into wisps.
+    erode = mix(erode, 1.0 - erode, smoothstep(0.1, 0.5, hn));
     d = saturate(remap(d, erode * 0.55, 1.0, 0.0, 1.0));
     if (lod < 1 && d > 0.0) {
         // Close-range octave: small puffs and torn edges that only matter when the camera is near the cloud.
