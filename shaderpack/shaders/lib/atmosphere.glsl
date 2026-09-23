@@ -117,9 +117,11 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 
 // Distant haze: the horizon sky color, darkening a little below the horizon like far-off land in fog.
 // Shared by the sky (below the horizon) and the terrain fog so ungenerated LODs and fogged terrain match.
+// It must equal the sky exactly at and just below the horizon line; any mismatch shows as a band where the
+// fogged far ocean meets the sky. Darkening only starts well below the horizon (looking down into the void).
 vec3 hazeColor(vec3 rd, vec3 sunDir) {
-    vec3 h = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)), sunDir, 8);
-    return h * mix(1.0, 0.42, smoothstep(0.0, -0.2, rd.y));
+    vec3 h = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z)), sunDir, 8);
+    return h * mix(1.0, 0.5, smoothstep(-0.1, -0.4, rd.y));
 }
 
 #ifdef FRAGMENT

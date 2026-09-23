@@ -125,6 +125,8 @@ vec4 marchClouds(vec3 ro, vec3 rd, float maxDist, vec3 lightDir, vec3 directLigh
         if (trans < 0.01) break;
     }
     // Fade distant clouds into the sky so the layer has no hard far edge.
-    float fade = exp(-t0 * 0.00006);
+    // Far clouds sit behind kilometres of air: fade them fully into the horizon haze well before the march
+    // cutoff, otherwise a bright cloud edge sits directly on the horizon line.
+    float fade = exp(-t0 * 0.0001) * (1.0 - smoothstep(10000.0, 22000.0, t0));
     return vec4(radiance * fade, mix(1.0, trans, fade));
 }

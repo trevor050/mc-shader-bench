@@ -53,8 +53,7 @@ void main() {
 #elif defined PROG_DH
     mat = MAT_LOD;
     if (dhMaterialId == DH_BLOCK_LEAVES) mat = MAT_LEAVES;
-    if (dhMaterialId == DH_BLOCK_ILLUMINATED || dhMaterialId == DH_BLOCK_LAVA) mat = MAT_EMISSIVE;
-    gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
+    if (dhMaterialId == DH_BLOCK_ILLUMINATED || dhMaterialId == DH_BLOCK_LAVA) mat = MAT_EMISSIVE;    gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
 #else
   #ifdef PROG_ENTITIES
     mat = MAT_ENTITY;
@@ -141,8 +140,7 @@ void main() {
     n = vec3(0.0, 1.0, 0.0);
 #endif
 
-    outAlbedo = vec4(albedo.rgb, 1.0);
-    outNormalLight = vec4(encodeNormal(n), lmcoord);
+    outAlbedo = vec4(albedo.rgb, 1.0);    outNormalLight = vec4(encodeNormal(n), lmcoord);
     outMaterial = vec4(float(mat) / 255.0, emissive, ao, 1.0);
 }
 #endif

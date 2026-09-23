@@ -103,19 +103,24 @@ void main() {
     if (!sky) {
         float worldY = playerPos.y + cameraPosition.y;
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
-        float density = (0.00028 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
+        float density = (0.00018 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
 #if defined DIM_NETHER
         density = 0.014;
 #elif defined DIM_END
         density = 0.0025;
 #endif
-        float farDist = dhFarPlane > 0.0 ? dhFarPlane * 0.5 : far;
+        // dhFarPlane is a projection plane, not the LOD extent (half of it was ~1.6 km, which flattened all
+        // distant land into haze). Use the configured LOD radius when DH is active.
+        float farDist = dhFarPlane > 0.0 ? LOD_DISTANCE : far;
         float fogAmt = 1.0 - exp(-dist * density);
         // Guarantee the terrain fully dissolves into the sky before the render edge.
         fogAmt = max(fogAmt, smoothstep(farDist * 0.75, farDist, dist));
 #if !defined DIM_NETHER && !defined DIM_END
         // Far LODs always dissolve into the haze, so where DH has not generated yet looks the same as far land.
-        fogAmt = max(fogAmt, smoothstep(3000.0, 6000.0, dist) * 0.85);
+        // Beyond the LOD render distance there is only the sky-below-horizon haze, so terrain must be fully
+        // hazed by that edge or the empty band past it shows as a lighter strip above the sea.
+        // The ramp only covers the last stretch: starting it earlier flattened distant hills into grey slabs.
+        fogAmt = max(fogAmt, smoothstep(LOD_DISTANCE * 0.72, LOD_DISTANCE * 0.97, dist));
 #endif
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
 
@@ -138,6 +143,5 @@ void main() {
     col += envDirect * lit * phase * haze * 0.3 * skyExposure;
 #endif
 
-    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
-}
+    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));}
 #endif
