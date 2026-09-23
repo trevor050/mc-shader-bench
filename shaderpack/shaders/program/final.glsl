@@ -46,14 +46,16 @@ vec3 sunRays(vec2 uv) {
     float onScreen = smoothstep(-0.25, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
     if (onScreen <= 0.0) return vec3(0.0);
 
-    const int N = 40;
+    const int N = 48;
     vec2 delta = (sunUV - uv) / float(N);
     // Pixels far from the sun get nothing (their rays would be too faint to matter); fade smoothly so the
     // effect never ends in a visible circle.
     float len = length(delta * aspect) * float(N);
     float reach = 1.0 - smoothstep(0.35, 0.9, len);
     if (reach <= 0.0) return vec3(0.0);
-    vec2 p = uv + delta * hash12(gl_FragCoord.xy + float(frameCounter % 64) * 11.7);
+    // No per-frame dither: this pass runs after TAA, so any noise here stays on screen as grain. Sampling a
+    // blurred mip instead keeps the fixed step pattern from showing.
+    vec2 p = uv + delta * 0.5;
     vec3 acc = vec3(0.0);
     float decay = 1.0;
     for (int i = 0; i < N; i++) {
@@ -61,7 +63,7 @@ vec3 sunRays(vec2 uv) {
         if (any(lessThan(p, vec2(0.0))) || any(greaterThan(p, vec2(1.0)))) break;
         float sky = step(1.0, texture(depthtex0, p).r) * step(1.0, texture(dhDepthTex0, p).r);
         float nearSun = exp(-length((p - sunUV) * aspect) * 9.0);
-        acc += textureLod(colortex0, p, 3.0).rgb * sky * nearSun * decay;
+        acc += textureLod(colortex0, p, 4.0).rgb * sky * nearSun * decay;
         decay *= 0.965;
     }
     return acc / float(N) * onScreen * reach;

@@ -1,0 +1,71 @@
+// Temporal accumulation of the half-resolution cloud march (colortex7) into colortex9, which is never cleared.
+// The march is dithered per frame, so a single frame is noisy; history is reprojected through the cloud's
+// own distance (clouds move with the world, not with the camera) and clipped to the current neighborhood.
+
+#include "/lib/settings.glsl"
+#include "/lib/common.glsl"
+
+#ifdef VERTEX
+void main() { gl_Position = ftransform(); }
+#endif
+
+#ifdef FRAGMENT
+uniform sampler2D colortex7;
+uniform sampler2D colortex8;
+uniform sampler2D colortex9;
+uniform mat4 gbufferModelViewInverse;
+uniform mat4 gbufferProjectionInverse;
+uniform mat4 gbufferPreviousModelView;
+uniform mat4 gbufferPreviousProjection;
+uniform vec3 cameraPosition;
+uniform vec3 previousCameraPosition;
+uniform float viewWidth;
+uniform float viewHeight;
+
+/* RENDERTARGETS: 9 */
+layout(location = 0) out vec4 outHistory;
+
+void main() {
+    vec2 res = vec2(viewWidth, viewHeight);
+    vec2 halfRes = ceil(res * 0.5);
+    if (gl_FragCoord.x > halfRes.x || gl_FragCoord.y > halfRes.y) discard;
+    ivec2 texel = ivec2(gl_FragCoord.xy);
+    vec2 uv = gl_FragCoord.xy / halfRes;
+
+    vec4 current = texelFetch(colortex7, texel, 0);
+    float dist = texelFetch(colortex8, texel, 0).r;
+
+    // Reproject the cloud point (or the sky direction when there is no cloud).
+    vec3 viewPos = projectAndDivide(gbufferProjectionInverse, vec3(uv, 1.0) * 2.0 - 1.0);
+    vec3 rd = normalize(mat3(gbufferModelViewInverse) * viewPos);
+    bool far = dist > 5e5;
+    vec3 prevPlayer = far ? rd : rd * dist + cameraPosition - previousCameraPosition;
+    vec3 prevView = mat3(gbufferPreviousModelView) * prevPlayer + (far ? vec3(0.0) : gbufferPreviousModelView[3].xyz);
+    vec4 prevClip = gbufferPreviousProjection * vec4(prevView, 1.0);
+    vec2 prevUV = prevClip.xy / prevClip.w * 0.5 + 0.5;
+
+    // Neighborhood bounds from the current (noisy) frame.
+    vec4 mn = current, mx = current, m1 = vec4(0.0), m2 = vec4(0.0);
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            ivec2 p = clamp(texel + ivec2(x, y), ivec2(0), ivec2(halfRes) - 1);
+            vec4 s = texelFetch(colortex7, p, 0);
+            m1 += s; m2 += s * s;
+            mn = min(mn, s); mx = max(mx, s);
+        }
+    m1 /= 9.0; m2 /= 9.0;
+    vec4 sigma = sqrt(max(m2 - m1 * m1, 0.0));
+    vec4 lo = max(mn, m1 - sigma * 2.5), hi = min(mx, m1 + sigma * 2.5);
+    lo = min(lo, current); hi = max(hi, current);
+
+    bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
+    vec2 hUV = clamp(prevUV * halfRes, vec2(0.5), halfRes - 0.5) / res;
+    vec4 history = texture(colortex9, hUV);
+    bool valid = !offscreen && history.a == history.a && all(greaterThanEqual(history, vec4(0.0)));
+    history = clamp(history, lo, hi);
+    // Slow camera motion keeps a long history; fast turns shorten it to avoid smearing.
+    float motion = length((prevUV - uv) * halfRes);
+    float blend = valid ? mix(0.93, 0.7, saturate(motion / 12.0)) : 0.0;
+    outHistory = mix(current, history, blend);
+}
+#endif

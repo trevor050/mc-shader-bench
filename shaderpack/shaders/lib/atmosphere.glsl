@@ -166,14 +166,16 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
 #if defined DIM_NETHER || defined DIM_END
     return vec3(0.0);
 #endif
-    const float a = 0.0045;        // falloff scale in radians
+    const float a = 0.0062;        // falloff scale in radians (a little larger than the real sun reads better)
     float s = length(rd - sunDir);
     if (s > a * 30.0) return vec3(0.0);
     float core = exp(-s / a);
     vec3 t = sunTransmittance(sunDir);
     const float norm = 1.0 / (2.0 * PI * a * a);
-    // min() keeps it inside RGBA16F range; the saturated centre is white either way.
-    return min(core * t * SUN_ILLUMINANCE * norm * (1.0 - rainStrength), vec3(30000.0));
+    // The cap sets how much light bloom spreads around the sun. Uncapped (tens of thousands) a sliver of sun
+    // peeking past a leaf flooded the screen with glow; this keeps the core blown out but the glow steady.
+    vec3 disc = core * t * SUN_ILLUMINANCE * norm * (1.0 - rainStrength);
+    return disc / (1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0);
 }
 #endif
 

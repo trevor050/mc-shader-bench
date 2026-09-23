@@ -5,6 +5,8 @@ Usage:
   py bench.py shots [scene ...]            capture scenes from scenes.json (all if none given)
   py bench.py reload                       hot-reload the shader pack, report compile errors
   py bench.py launch                       start the game straight into BenchWorld
+  py bench.py view x y z yaw pitch time [name] [settleTicks]
+                                           one-off capture, also writes a half-size <name>.jpg for review
 """
 
 import json
@@ -163,6 +165,27 @@ def main(argv: list[str]):
             if vanilla:
                 b.send("shaders on")
         print(contact_sheet(out, names))
+    elif cmd == "view":
+        x, y, z, yaw, pitch, t = args[:6]
+        name = args[6] if len(args) > 6 else "view"
+        settle = args[7] if len(args) > 7 else "60"
+        out = HERE / "out" / "views"
+        b.send("mouse free")
+        b.send("closescreen")
+        b.send("hud off")
+        b.send("cmd gamemode spectator")
+        b.send(f"cmd tp @s {x} {y} {z} {yaw} {pitch}")
+        b.send(f"cmd time set {t}")
+        b.send("wait 10")
+        b.send("waitchunks 400")
+        b.send(f"wait {settle}")
+        path = out / f"{name}.png"
+        b.send(f"shot {path}")
+        b.send("hud on")
+        from PIL import Image
+        img = Image.open(path).convert("RGB")
+        img.resize((img.width // 2, img.height // 2), Image.LANCZOS).save(out / f"{name}.jpg", quality=90)
+        print(out / f"{name}.jpg")
     elif cmd == "sheet":
         out = Path(args[0])
         print(contact_sheet(out, [p.stem for p in sorted(out.glob("*.png")) if p.stem != "sheet"]))

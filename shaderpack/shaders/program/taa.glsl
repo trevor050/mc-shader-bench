@@ -123,13 +123,10 @@ void main() {
     float solidDepth = texture(depthtex1, texcoord).r;
     float noHandDepth = texture(depthtex2, texcoord).r;
     if (solidDepth < noHandDepth - 0.00001) blend = 0.0;
-    // A tiny bright disc should appear immediately when uncovered and disappear
-    // immediately when occluded. The ordinary history weight erases new hot pixels.
+    // (A former "hot pixel" history bypass made the sun re-alias every frame while turning, which read as
+    // flicker. The sun's radiance is now soft-capped, so ordinary blending handles it.)
     float currentLum = luminance(current);
     float historyLum = luminance(history);
-    float hot = smoothstep(8.0, 64.0, max(currentLum, historyLum));
-    float mismatch = abs(currentLum - historyLum) / max(max(currentLum, historyLum), 0.001);
-    blend *= 1.0 - hot * smoothstep(0.1, 0.6, mismatch);
     // Weigh by inverse luminance so bright fireflies do not smear.
     float wc = (1.0 - blend) / (1.0 + currentLum);
     float wh = blend / (1.0 + historyLum);
@@ -142,7 +139,7 @@ void main() {
     // The measurement is center-weighted, so looking at something bright (the sun) darkens the view.
     float whole = textureLod(colortex6, vec2(0.5), 11.0).r;
     float center = textureLod(colortex6, vec2(0.5), 7.0).r;
-    float target = log2(max(mix(whole, center, 0.45), 1e-5));
+    float target = log2(max(mix(whole, center, 0.25), 1e-5));
     float prev = texelFetch(colortex5, ivec2(0), 0).a;
     // Adapt faster toward bright scenes than dark ones, like eyes do.
     float rate = target > prev ? 3.0 : 1.2;

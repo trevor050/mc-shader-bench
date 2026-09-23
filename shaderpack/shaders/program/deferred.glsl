@@ -48,6 +48,10 @@ uniform vec3 cameraPosition;
 uniform float wetness;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
+uniform sampler2D colortex8;
+uniform sampler2D colortex9;
+uniform float viewWidth;
+uniform float viewHeight;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 
@@ -86,6 +90,28 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
     return 1.0 - occ / float(SAMPLES);
 }
 
+// Joint-bilateral upsample of the half-resolution cloud history: taps whose scene distance differs from this
+// pixel's (a tree edge in front of a cloud) are down-weighted so clouds do not bleed across silhouettes.
+vec4 upsampleClouds(vec2 uv, float sceneDist) {
+    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
+    vec2 p = uv * halfRes - 0.5;
+    ivec2 i0 = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec4 acc = vec4(0.0);
+    float wsum = 0.0;
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        ivec2 t = clamp(i0 + o, ivec2(0), ivec2(halfRes) - 1);
+        vec2 bw = mix(1.0 - f, f, vec2(o));
+        float sd = texelFetch(colortex8, t, 0).g;
+        float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
+        float w = bw.x * bw.y * (exp(-rel * 6.0) + 1e-3);
+        acc += texelFetch(colortex9, t, 0) * w;
+        wsum += w;
+    }
+    return acc / max(wsum, 1e-5);
+}
+
 void main() {
     LightEnv env;
     env.sunDir = sunDir;
@@ -119,13 +145,6 @@ void main() {
 #endif
         col += starField(rd) * night * vec3(0.9, 0.95, 1.1) * 0.35 * (1.0 - rainStrength) * smoothstep(0.0, 0.1, rd.y);
         col += gAlbedo.rgb;
-#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
-        // Cloud shadowed sides are lit by the sky overhead (blue, even at sunset), not the orange horizon glow.
-        vec3 cloudAmbient = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * 2.2;
-        vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, cloudAmbient, ignTemporal(gl_FragCoord.xy, frameCounter));
-        // Moonlit clouds are dim grey shapes; the full-strength march makes them glow like daytime overcast.
-        col = col * clouds.a + clouds.rgb * mix(1.0, 0.35, night);
-#endif
     } else {
         vec4 nl = texture(colortex1, texcoord);
         vec4 m = texture(colortex2, texcoord);
@@ -193,6 +212,12 @@ void main() {
         }
     }
 
+#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
+    // Clouds cover the sky and, when the camera is inside or above them, terrain behind them too.
+    float sceneDist = (depth >= 1.0 && !isLod) || depth < 0.56 ? 1e6 : length(playerPos);
+    vec4 clouds = upsampleClouds(texcoord, sceneDist);
+    col = col * clouds.a + clouds.rgb;
+#endif
     outColor = vec4(col, 1.0);
     outCopy = vec4(col, 1.0);
 }
@@ -206,6 +231,10 @@ const int colortex4Format = RGBA16F;
 const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
 const int colortex6Format = R16F;
+const int colortex7Format = RGBA16F;
+const int colortex8Format = RG32F;
+const int colortex9Format = RGBA16F;
+const bool colortex9Clear = false;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */
