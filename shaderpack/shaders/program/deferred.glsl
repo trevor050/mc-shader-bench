@@ -123,7 +123,8 @@ void main() {
         // Cloud shadowed sides are lit by the sky overhead (blue, even at sunset), not the orange horizon glow.
         vec3 cloudAmbient = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * 2.2;
         vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, cloudAmbient, ignTemporal(gl_FragCoord.xy, frameCounter));
-        col = col * clouds.a + clouds.rgb;
+        // Moonlit clouds are dim grey shapes; the full-strength march makes them glow like daytime overcast.
+        col = col * clouds.a + clouds.rgb * mix(1.0, 0.35, night);
 #endif
     } else {
         vec4 nl = texture(colortex1, texcoord);

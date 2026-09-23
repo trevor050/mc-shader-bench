@@ -123,6 +123,13 @@ void main() {
     exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
     col *= exposure;
 
+    // Night vision: in dim light eyes lose color and shift toward blue (rods take over from cones).
+    // Blend by exposed brightness so torchlit areas keep their warm color.
+    float lum = luminance(col);
+    float scotopic = 1.0 - smoothstep(0.004, 0.06, lum);
+    vec3 rodColor = vec3(0.55, 0.72, 1.0) * lum * 1.4;
+    col = mix(col, rodColor, scotopic * 0.75);
+
     col = agx(col);
 
     vec2 v = texcoord - 0.5;

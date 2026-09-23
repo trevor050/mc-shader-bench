@@ -21,7 +21,8 @@ LightEnv makeLightEnv(vec3 sunDir) {
     bool day = sunDir.y > -0.05;
     e.lightDir = day ? sunDir : -sunDir;
     vec3 sunT = sunTransmittance(sunDir) * SUN_ILLUMINANCE;
-    vec3 moonT = sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * vec3(0.55, 0.75, 1.25);
+    // Ground moonlight is boosted relative to the sky so terrain stays readable at night.
+    vec3 moonT = sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 2.2 * vec3(0.55, 0.75, 1.25);
     // Fade across the horizon swap so the shadow direction change is not a pop.
     float fade = smoothstep(0.0, 0.08, abs(sunDir.y + 0.02));
     e.directLight = (day ? sunT : moonT) * fade * (1.0 - rainStrength * 0.9);
