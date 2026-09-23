@@ -84,12 +84,16 @@ vec3 sunStreaks(vec2 uv) {
     vec2 sc = clamp(sunUV, 0.0, 1.0);
 
     // Visible fraction of the sun: open sky over a small cross around it.
+    // A 17-tap Vogel disc resolves leaf-sized gaps, so sun glinting through foliage still flares a little.
     float open = 0.0;
-    for (int i = 0; i < 9; i++) {
-        vec2 o = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 0.7854), sin(float(i) * 0.7854)) * 0.006 / aspect;
+    for (int i = 0; i < 17; i++) {
+        float r = sqrt((float(i) + 0.5) / 17.0) * 0.012;
+        float th = float(i) * 2.39996323;
+        vec2 o = vec2(cos(th), sin(th)) * r / aspect;
         open += step(1.0, texture(depthtex0, sc + o).r) * step(1.0, texture(dhDepthTex0, sc + o).r);
     }
-    open /= 9.0;
+    // Even a sliver of visible sun is blinding: perceived glare rises quickly with the visible fraction.
+    open = sqrt(open / 17.0);
     vec3 src = textureLod(colortex0, sc, 2.0).rgb;
     float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
     // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
@@ -107,7 +111,8 @@ vec3 sunStreaks(vec2 uv) {
     float coarse = valueNoise(ca * 9.0 + 3.1 + t * 0.5);
     float streak = pow(fine, 3.0) * 1.6 + pow(coarse, 5.0) * 0.8;
     // Each streak fades with its own reach; they start just outside the blown-out core.
-    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0));
+    // A high sun sits in a darker, clearer sky, where long streaks look artificial; keep them shorter.
+    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0)) * mix(1.0, 0.65, smoothstep(0.2, 0.7, normalize(sunPosition).y));
     float fade = exp(-d / reach) * smoothstep(0.004, 0.03, d);
     vec3 tint = src / max(luminance(src), 1e-4);
     return tint * avgLum * streak * fade * vis;
@@ -208,7 +213,7 @@ void main() {
     // Partial adaptation around a daylight reference: bright views (the sun) darken steeply, dark views
     // (night, caves) open up gently so night still reads as night.
     const float refLog = -0.75;
-    float slope = adaptedLog > refLog ? 0.8 : 0.4;
+    float slope = adaptedLog > refLog ? 0.45 : 0.4;
     float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
     exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
     col *= exposure;

@@ -157,6 +157,7 @@ public final class BenchCam implements ClientModInitializer {
 				org.lwjgl.glfw.GLFW.glfwSetWindowPos(mc.getWindow().handle(), Integer.parseInt(xy[0]), Integer.parseInt(xy[1]));
 				return "ok";
 			});
+			case "pack" -> onRenderThread(() -> setPack(arg));
 			case "shaders" -> onRenderThread(() -> setShaders(arg.equals("on")));
 			default -> CompletableFuture.completedFuture("err unknown command: " + verb);
 		};
@@ -212,6 +213,22 @@ public final class BenchCam implements ClientModInitializer {
 			Object instance = api.getMethod("getInstance").invoke(null);
 			Object config = api.getMethod("getConfig").invoke(instance);
 			config.getClass().getMethod("setShadersEnabledAndApply", boolean.class).invoke(config, enabled);
+			return "ok";
+		} catch (ReflectiveOperationException e) {
+			Throwable cause = e.getCause() != null ? e.getCause() : e;
+			return "err " + cause;
+		}
+	}
+
+	/** Switches the active shader pack by folder or zip name (for side-by-side comparisons with reference packs). */
+	private static String setPack(String name) {
+		try {
+			Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
+			Object config = iris.getMethod("getIrisConfig").invoke(null);
+			config.getClass().getMethod("setShaderPackName", String.class).invoke(config, name);
+			// Iris re-reads its config file on reload, so persist the new selection first.
+			config.getClass().getMethod("save").invoke(config);
+			iris.getMethod("reload").invoke(null);
 			return "ok";
 		} catch (ReflectiveOperationException e) {
 			Throwable cause = e.getCause() != null ? e.getCause() : e;

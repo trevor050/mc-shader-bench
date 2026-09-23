@@ -123,18 +123,26 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 // aerosols. Single-scatter Mie with one phase lobe cannot produce it, and it is most of what makes a sun read
 // as blinding (the disc itself is tiny). It is part of the sky, so clouds, terrain and trees occlude it,
 // water reflects it, and fog looking toward the sun glows with it. Colour follows the sunlight reaching us,
-// so it turns orange at sunset. After Complementary's sky glare and the Mie aureole in Photon.
+// so it turns orange at sunset. (The idea of a separate sky glow term came from reading Complementary's and
+// Photon's source early on; the shape here was rebuilt and tuned by eye against screenshots.)
 vec3 sunAureole(vec3 rd, vec3 sunDir) {
 #if defined DIM_NETHER || defined DIM_END
     return vec3(0.0);
 #endif
     float a = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
-    // A tight inner glow and a wide, faint skirt.
-    float inner = exp(-a * 22.0);
-    float outer = exp(-a * 4.5);
-    // Low sun: longer air path, more haze, a larger and relatively stronger glow.
+    // Low sun: longer air path, more haze, a much larger and relatively stronger glow.
     float low = 1.0 - smoothstep(0.0, 0.5, sunDir.y);
-    float strength = inner * mix(0.22, 0.35, low) + outer * mix(0.025, 0.06, low);
+    // Three scales, tuned by eye against reference screenshots: a blinding glow a few degrees across that
+    // swallows the sun's outline, a broad halo, and a very wide skirt that warms a big part of the sky.
+    float core = exp(-a * 38.0) * mix(1.2, 2.2, low);
+    float halo = exp(-a * 9.0) * mix(0.22, 0.45, low);
+    float skirt = exp(-a * 2.4) * mix(0.03, 0.10, low);
+    // At sunset the haze layer is thickest along the horizon, so the glow spreads sideways along it.
+    vec3 viewFlat = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
+    vec3 sunFlat = normalize(vec3(sunDir.x, 0.0, sunDir.z) + vec3(1e-5));
+    float along = exp(-acos(clamp(dot(viewFlat, sunFlat), -1.0, 1.0)) * 1.6);
+    float band = exp(-max(rd.y, 0.0) * 12.0) * along * 0.18 * low;
+    float strength = core + halo + skirt + band;
     vec3 t = sunTransmittance(sunDir);
     // Fades as the sun sets below the horizon, and is washed out by overcast.
     float up = smoothstep(-0.06, 0.02, sunDir.y);

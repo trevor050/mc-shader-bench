@@ -31,7 +31,7 @@
 #define BLOOM_STRENGTH 0.1
 #define GLARE_STRENGTH 0.08
 #define SUN_RAYS_STRENGTH 0.006
-#define SUN_STREAK_STRENGTH 1.6
+#define SUN_STREAK_STRENGTH 0.0 // eye-style streaks; reference packs use none and they read as fake
 #define EXPOSURE_KEY 0.42
 #define EXPOSURE_MIN 0.02
 #define EXPOSURE_MAX 20.0

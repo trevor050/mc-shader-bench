@@ -91,13 +91,13 @@ void main() {
         vec3 trans = exp(-absorb * min(dist, 96.0));
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);
-        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
+        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));
         return;
     }
     if (isEyeInWater > 1) {
         vec3 fogCol = isEyeInWater == 2 ? vec3(2.0, 0.4, 0.05) : vec3(0.6, 0.65, 0.7);
         col = mix(col, fogCol, 1.0 - exp(-dist * 0.8));
-        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
+        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));
         return;
     }
 
@@ -148,5 +148,5 @@ void main() {
     col += envDirect * lit * phase * haze * 0.3 * skyExposure;
 #endif
 
-    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));}
+    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));}
 #endif
