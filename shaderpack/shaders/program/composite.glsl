@@ -28,6 +28,7 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
+uniform int frameCounter;
 uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
@@ -76,7 +77,7 @@ void main() {
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
     float dist = sky ? 4096.0 : length(playerPos);
     vec3 rd = normalize(playerPos);
-    float dither = ign(gl_FragCoord.xy);
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
 
     if (isEyeInWater == 1) {

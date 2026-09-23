@@ -30,6 +30,7 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
+uniform int frameCounter;
 #define SHADOWS_AVAILABLE
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
@@ -44,6 +45,7 @@ uniform mat4 dhProjectionInverse;
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 uniform vec3 cameraPosition;
+uniform float wetness;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 
@@ -86,7 +88,7 @@ void main() {
         float night = smoothstep(0.05, -0.15, sunDir.y);
         col += starField(rd) * night * vec3(0.9, 0.95, 1.1) * 0.35 * (1.0 - rainStrength) * smoothstep(0.0, 0.1, rd.y);
         col += gAlbedo.rgb;
-        vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, envAmbient / PI * 0.9, ign(gl_FragCoord.xy));
+        vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, envAmbient / PI * 0.9, ignTemporal(gl_FragCoord.xy, frameCounter));
         col = col * clouds.a + clouds.rgb;
     } else {
         vec4 nl = texture(colortex1, texcoord);
@@ -98,7 +100,7 @@ void main() {
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
         if (!isLod && (NdotL > 0.0 || foliage)) {
-            shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ign(gl_FragCoord.xy));
+            shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
                 vec3 wp = playerPos + cameraPosition;
                 // Project along the light onto the water plane so the pattern slides with the sun.
@@ -108,7 +110,25 @@ void main() {
             }
         }
         shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
+
+        // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
+        vec3 wp = playerPos + cameraPosition;
+        float wet = wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
+        float puddle = 0.0;
+        if (wet > 0.0 && n.y > 0.9 && !foliage) {
+            float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
+            puddle = smoothstep(0.52, 0.62, pn) * wet;
+        }
+        albedo *= mix(1.0, 0.55, wet * 0.8);
         col = shadeSurface(env, albedo, n, -rd, nl.zw, m.b, mat, shadow, m.g);
+
+        if (wet > 0.0 && !isLod) {
+            vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
+            vec3 r = reflect(rd, rn);
+            float fres = 0.02 + 0.98 * pow(1.0 - saturate(dot(-rd, rn)), 5.0);
+            vec3 refl = skyRadiance(r, sunDir, 6) * nl.w * nl.w;
+            col = mix(col, refl, fres * mix(wet * 0.35, 1.0, puddle));
+        }
     }
 
     outColor = vec4(col, 1.0);

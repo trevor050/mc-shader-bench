@@ -24,6 +24,7 @@ out vec2 texcoord;
 out vec2 lmcoord;
 out vec4 glcolor;
 out vec3 worldNormal;
+out vec3 relPos;
 flat out int mat;
 
 void main() {
@@ -34,7 +35,15 @@ void main() {
     worldNormal = mat3(gbufferModelViewInverse) * normalize(gl_NormalMatrix * gl_Normal);
     mat = MAT_NONE;
 
+#ifdef PROG_BASIC
+    // Iris rewrites line geometry around its own position attribute; touching gl_Vertex breaks linking.
+    relPos = vec3(0.0);
+    gl_Position = ftransform();
+    applyJitter(gl_Position);
+    return;
+#endif
     vec3 viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
+    relPos = mat3(gbufferModelViewInverse) * viewPos;
 #if defined PROG_TERRAIN
     mat = int(mc_Entity.x + 0.5) - 10000;
     if (mat < 0 || mat > 100) mat = MAT_NONE;
@@ -61,6 +70,10 @@ uniform sampler2D gtexture;
 #ifdef PROG_ENTITIES
 uniform vec4 entityColor;
 #endif
+#ifdef PROG_TERRAIN
+uniform float far;
+uniform int frameCounter;
+#endif
 #ifdef PROG_DH
 uniform vec3 cameraPosition;
 uniform mat4 gbufferModelViewInverse;
@@ -74,6 +87,7 @@ in vec2 texcoord;
 in vec2 lmcoord;
 in vec4 glcolor;
 in vec3 worldNormal;
+in vec3 relPos;
 flat in int mat;
 
 /* RENDERTARGETS: 0,1,2 */
@@ -98,11 +112,17 @@ void main() {
 #endif
     if (albedo.a < 0.1) discard;
 
+#ifdef PROG_TERRAIN
+    // Dither vanilla chunks out before the render edge so chunk-border cross-sections never show; DH fills in.
+    float edge = length(relPos.xz) / far;
+    if (edge > mix(0.84, 0.94, ignTemporal(gl_FragCoord.xy, frameCounter))) discard;
+#endif
+
 #ifdef PROG_DH
     // Skip LOD fragments that overlap real chunks so the two never z-fight.
     vec3 ndc = vec3(gl_FragCoord.xy / vec2(viewWidth, viewHeight), gl_FragCoord.z) * 2.0 - 1.0;
     vec3 viewPos = projectAndDivide(dhProjectionInverse, ndc);
-    if (length(viewPos) < far * 0.85) discard;
+    if (length(viewPos) < far * 0.78) discard;
     // Break up flat LOD faces with a little world-space value noise.
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
     vec3 cell = floor(wp - worldNormal * 0.5);

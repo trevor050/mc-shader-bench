@@ -49,6 +49,11 @@ float ign(vec2 p) {
     return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
+// Frame-varying dither: TAA integrates it into smooth results instead of fixed noise patterns.
+float ignTemporal(vec2 p, int frame) {
+    return ign(p + 5.588238 * float(frame % 64));
+}
+
 float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);

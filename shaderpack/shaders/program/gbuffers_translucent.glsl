@@ -55,6 +55,7 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
+uniform int frameCounter;
 uniform sampler2D gtexture;
 uniform sampler2D colortex4;
 uniform sampler2D depthtex1;
@@ -133,17 +134,21 @@ void main() {
 
     vec2 uv = gl_FragCoord.xy / vec2(viewWidth, viewHeight);
     vec3 rd = normalize(playerPos);
-    float dither = ign(gl_FragCoord.xy);
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float dist = length(playerPos);
 
 #ifdef PROG_DH
-    if (dist < far * 0.85) discard;
+    if (dist < far * 0.78) discard;
     // DH depth-tests only against LOD depth, so reject fragments hidden behind real chunks.
     float chunkDepth = texture(depthtex1, uv).r;
     if (chunkDepth < 1.0 && length(viewFromDepth(uv, chunkDepth)) < dist) discard;
 #endif
 
     if (mat == MAT_WATER) {
+#ifndef PROG_DH
+        // Side faces at the render edge expose the ocean's cross-section; DH water covers beyond.
+        if (length(playerPos.xz) > far * mix(0.84, 0.94, dither)) discard;
+#endif
         vec3 worldPos = playerPos + cameraPosition;
         vec3 n = normalize(worldNormal);
         if (n.y > 0.5) {

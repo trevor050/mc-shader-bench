@@ -82,10 +82,11 @@
     ],
     "look": [
       0,
-      8
+      25
     ],
     "time": 6000,
-    "weather": "rain"
+    "weather": "rain",
+    "settle": 200
   },
   "frozen_ocean": {
     "pos": [
