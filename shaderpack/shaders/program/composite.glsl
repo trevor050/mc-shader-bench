@@ -100,13 +100,22 @@ void main() {
     if (!sky) {
         float worldY = playerPos.y + cameraPosition.y;
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
-        float density = (0.00028 + rainStrength * 0.004) * FOG_DENSITY * mix(0.3, 1.0, heightFalloff);
+        float density = (0.00028 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
+#if defined DIM_NETHER
+        density = 0.014;
+#elif defined DIM_END
+        density = 0.0025;
+#endif
         float farDist = dhFarPlane > 0.0 ? dhFarPlane * 0.5 : far;
         float fogAmt = 1.0 - exp(-dist * density);
         // Guarantee the terrain fully dissolves into the sky before the render edge.
         fogAmt = max(fogAmt, smoothstep(farDist * 0.75, farDist, dist));
-        vec3 horizon = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)), sunDir, 8);
-        col = mix(col, horizon, saturate(fogAmt));
+#if !defined DIM_NETHER && !defined DIM_END
+        // Far LODs always dissolve into the haze, so where DH has not generated yet looks the same as far land.
+        fogAmt = max(fogAmt, smoothstep(1400.0, 3600.0, dist) * 0.92);
+#endif
+        col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
+
     }
 
 #ifdef VOLUMETRIC_LIGHT

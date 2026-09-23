@@ -11,6 +11,13 @@ struct LightEnv {
 LightEnv makeLightEnv(vec3 sunDir) {
     LightEnv e;
     e.sunDir = sunDir;
+#if defined DIM_NETHER || defined DIM_END
+    // No sun or sky light: ambient comes from shadeSurface's dimension term instead.
+    e.lightDir = vec3(0.0, 1.0, 0.0);
+    e.directLight = vec3(0.0);
+    e.skyAmbient = vec3(0.0);
+    return e;
+#endif
     bool day = sunDir.y > -0.05;
     e.lightDir = day ? sunDir : -sunDir;
     vec3 sunT = sunTransmittance(sunDir) * SUN_ILLUMINANCE;
@@ -57,6 +64,12 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     // Ground bounce: sunlight reflected off terrain fills shadows with warmer light, strongest on walls.
     vec3 bounce = env.directLight * vec3(0.30, 0.26, 0.20) * 0.18 * (1.0 - 0.6 * n.y);
     vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
+#if defined DIM_NETHER
+    // Hot, directionless nether glow.
+    ambient = vec3(0.55, 0.26, 0.14) * (0.7 + 0.3 * n.y) * ao;
+#elif defined DIM_END
+    ambient = vec3(0.30, 0.22, 0.42) * (0.75 + 0.25 * n.y) * ao;
+#endif
     vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
     vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao;
 

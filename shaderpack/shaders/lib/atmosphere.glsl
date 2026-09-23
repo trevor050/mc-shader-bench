@@ -83,8 +83,17 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
     return intensity * (single + multi);
 }
 
-// Clear-sky radiance for a view direction, sun plus moon.
+#ifdef DIM_NETHER
+uniform vec3 fogColor;
+#endif
+
+// Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
+#if defined DIM_NETHER
+    return toLinear(fogColor) * 0.35;
+#elif defined DIM_END
+    return vec3(0.010, 0.006, 0.016) * (1.0 + 0.6 * saturate(rd.y));
+#endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3);
     vec3 col = day + night + vec3(0.0006, 0.0009, 0.0016);
@@ -94,7 +103,17 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     return mix(col, grey, overcast);
 }
 
+// Distant haze: the horizon sky color, darkening a little below the horizon like far-off land in fog.
+// Shared by the sky (below the horizon) and the terrain fog so ungenerated LODs and fogged terrain match.
+vec3 hazeColor(vec3 rd, vec3 sunDir) {
+    vec3 h = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)), sunDir, 8);
+    return h * mix(1.0, 0.62, smoothstep(0.0, -0.3, rd.y));
+}
+
 vec3 sunDisc(vec3 rd, vec3 sunDir) {
+#if defined DIM_NETHER || defined DIM_END
+    return vec3(0.0);
+#endif
     float d = dot(rd, sunDir);
     float disc = smoothstep(0.99985, 0.99992, d);
     vec3 t = sunTransmittance(sunDir);

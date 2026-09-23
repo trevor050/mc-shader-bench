@@ -84,12 +84,18 @@ void main() {
     vec3 col;
     if (depth >= 1.0 && !isLod) {
         // Sky. colortex0 holds whatever the sky programs drew (stars, moon) in linear light.
-        col = skyRadiance(rd, sunDir, 12) + sunDisc(rd, sunDir);
+        col = rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, 12) + sunDisc(rd, sunDir);
+#ifdef DIM_END
+        float night = 1.0;
+#else
         float night = smoothstep(0.05, -0.15, sunDir.y);
+#endif
         col += starField(rd) * night * vec3(0.9, 0.95, 1.1) * 0.35 * (1.0 - rainStrength) * smoothstep(0.0, 0.1, rd.y);
         col += gAlbedo.rgb;
+#if !defined DIM_NETHER && !defined DIM_END
         vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, envAmbient / PI * 0.9, ignTemporal(gl_FragCoord.xy, frameCounter));
         col = col * clouds.a + clouds.rgb;
+#endif
     } else {
         vec4 nl = texture(colortex1, texcoord);
         vec4 m = texture(colortex2, texcoord);
@@ -99,6 +105,7 @@ void main() {
         float NdotL = dot(n, envLightDir);
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
+#if !defined DIM_NETHER && !defined DIM_END
         if (!isLod && (NdotL > 0.0 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
@@ -110,6 +117,7 @@ void main() {
             }
         }
         shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
+#endif
 
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
         vec3 wp = playerPos + cameraPosition;

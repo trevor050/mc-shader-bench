@@ -18,6 +18,7 @@ uniform float viewHeight;
 uniform ivec2 eyeBrightnessSmooth;
 uniform vec3 sunPosition;
 uniform mat4 gbufferModelViewInverse;
+uniform mat4 gbufferProjection;
 
 const bool colortex0MipmapEnabled = true;
 
@@ -70,9 +71,25 @@ vec3 bloom(vec2 uv) {
     return b / total;
 }
 
+// Eye/lens glare around the sun. Its strength comes from a low mip of the frame at the sun's position,
+// so terrain or clouds covering the sun dim the glare automatically.
+vec3 sunGlare(vec2 uv) {
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return vec3(0.0);
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    // Fade out as the sun leaves the screen instead of popping.
+    float onScreen = smoothstep(-0.15, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    vec3 src = textureLod(colortex0, clamp(sunUV, 0.0, 1.0), 5.0).rgb * onScreen;
+    float d = length((uv - sunUV) * aspect);
+    float veil = exp(-d * 4.0) * 0.003 + exp(-d * 16.0) * 0.025 + exp(-d * 70.0) * 0.12;
+    return src * veil;
+}
+
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
     col = mix(col, bloom(texcoord), BLOOM_STRENGTH);
+    col += sunGlare(texcoord);
 
     // Exposure: open up in caves and at night, stay tight in bright daylight.
     float skyLight = float(eyeBrightnessSmooth.y) / 240.0;
