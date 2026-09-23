@@ -1,3 +1,4 @@
 #version 330 compatibility
 #define FRAGMENT
-#include "/program/taa.glsl"
+#define TEMPORAL_VL
+#include "/program/clouds_temporal.glsl"

@@ -57,11 +57,30 @@ layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
 
-float shadowVisibility(vec3 playerPos) {
-    vec3 sp = (shadowProjection * (shadowModelView * vec4(playerPos, 1.0))).xyz;
-    vec3 ds = distortShadow(sp) * 0.5 + 0.5;
-    if (any(lessThan(ds.xy, vec2(0.0))) || any(greaterThan(ds.xy, vec2(1.0)))) return 1.0;
-    return step(ds.z - 0.0002, texture(shadowtex1, ds.xy).r);
+uniform sampler2D colortex11;
+uniform sampler2D colortex12;
+uniform float viewWidth;
+uniform float viewHeight;
+
+// Joint-bilateral upsample of the half-resolution light-shaft/mist history (see deferred's upsampleClouds).
+vec4 upsampleVL(vec2 uv, float sceneDist) {
+    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
+    vec2 p = uv * halfRes - 0.5;
+    ivec2 i0 = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec4 acc = vec4(0.0);
+    float wsum = 0.0;
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        ivec2 t = clamp(i0 + o, ivec2(0), ivec2(halfRes) - 1);
+        vec2 bw = mix(1.0 - f, f, vec2(o));
+        float sd = texelFetch(colortex12, t, 0).r;
+        float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
+        float w = bw.x * bw.y * (exp(-rel * 6.0) + 1e-3);
+        acc += texelFetch(colortex11, t, 0) * w;
+        wsum += w;
+    }
+    return acc / max(wsum, 1e-5);
 }
 
 void main() {
@@ -129,23 +148,9 @@ void main() {
     }
 
 #ifdef VOLUMETRIC_LIGHT
-    // March toward the scene point through the shadow map for sun shafts.
-    float vlDist = min(dist, SHADOW_DIST * 1.5);
-    float stepLen = vlDist / float(VL_STEPS);
-    float lit = 0.0;
-    for (int i = 0; i < VL_STEPS; i++) {
-        vec3 p = rd * (float(i) + dither) * stepLen;
-        // Terrain and cloud shadows both carve the air, so beams show under cloud gaps and through trees.
-        lit += shadowVisibility(p) * cloudShadow(p + cameraPosition, envLightDir);
-    }
-    lit /= float(VL_STEPS);
-    float mu = dot(rd, envLightDir);
-    float phase = phaseMie(mu, 0.6) * 0.5 + 0.08;
-    // Low sun: the air is hazier along the long, golden light path, so shafts are strongest at sunrise and
-    // sunset and nearly invisible at noon (as in real life and Complementary's light shafts).
-    float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
-    float haze = (0.35 + 0.6 * lowSun + rainStrength) * (1.0 - exp(-vlDist * 0.004));
-    col += envDirect * lit * phase * haze * 0.12 * skyExposure;
+    // Light shafts and ground mist from the half-resolution march (vl_march + temporal accumulation).
+    vec4 vl = upsampleVL(texcoord, sky ? 1e6 : dist);
+    col = col * vl.a + vl.rgb;
 #endif
 
     outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));}

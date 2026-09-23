@@ -149,6 +149,52 @@ vec3 agx(vec3 c) {
     return c;
 }
 
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+    vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return c.z * mix(vec3(1.0), saturate(p - 1.0), c.y);
+}
+
+// Display-referred colour grade, applied to the whole image so it never depends on recognizing blocks.
+// A gentle filmic S-curve, vibrance (lifts muted colours more than already vivid ones), per-hue shaping
+// that deepens Minecraft's yellowish grass toward green and its washed-out skies and water toward blue,
+// and a split tone: cool shadows, warm highlights.
+vec3 colorGrade(vec3 c) {
+    c = saturate(c);
+    // S-curve around the midtones.
+    vec3 s = c * c * (3.0 - 2.0 * c);
+    c = mix(c, s, GRADE_CONTRAST);
+
+    vec3 hsv = rgb2hsv(c);
+    float h = hsv.x * 360.0;
+    // Hue shaping: yellow-greens (60-110 deg) nudge toward green and gain saturation; cyans/blues gain depth.
+    float green = smoothstep(55.0, 80.0, h) * (1.0 - smoothstep(130.0, 160.0, h));
+    float blue = smoothstep(180.0, 200.0, h) * (1.0 - smoothstep(245.0, 270.0, h));
+    float warm = 1.0 - smoothstep(25.0, 50.0, h) + smoothstep(330.0, 350.0, h);
+    hsv.x += green * 6.0 / 360.0 * smoothstep(0.1, 0.4, hsv.y);
+    hsv.y *= 1.0 + green * 0.08 + blue * 0.12 + warm * 0.04;
+    hsv.z *= 1.0 - blue * 0.04 * hsv.y;
+    // Vibrance.
+    hsv.y = saturate(hsv.y * (1.0 + GRADE_VIBRANCE * (1.0 - hsv.y)));
+    c = hsv2rgb(hsv);
+
+    float l = luminance(c);
+    vec3 shadowTint = vec3(0.95, 1.0, 1.07);
+    vec3 highTint = vec3(1.05, 1.0, 0.94);
+    // Near-white stays neutral so clouds and snow do not turn cream.
+    float tone = smoothstep(0.08, 0.6, l);
+    vec3 tint = mix(shadowTint, highTint, tone);
+    c *= mix(tint, vec3(1.0), smoothstep(0.72, 0.95, l));
+    return saturate(c);
+}
+
 // Sum of progressively blurrier copies of the frame. Weights fall off slowly, approximating the long
 // tail of real optical scattering: a small bright core with a faint halo reaching far across the view.
 vec3 bloom(vec2 uv) {
@@ -228,6 +274,7 @@ void main() {
     col = mix(col, rodColor, scotopic * 0.75);
 
     col = agx(col);
+    col = colorGrade(col);
 
     vec2 v = texcoord - 0.5;
     col *= 1.0 - dot(v, v) * 0.35;

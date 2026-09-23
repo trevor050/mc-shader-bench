@@ -117,7 +117,7 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
         d = saturate(remap(d, billow * 0.35, 1.0, 0.0, 1.0));
     }
     // Dense cores: real cumulus are optically thick a few blocks inside the edge.
-    return sqrt(d) * 1.6;
+    return smoothstep(0.0, 0.45, d) * 1.5;
 }
 
 float hgPhase(float mu, float g) {
@@ -179,7 +179,7 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     // Steps grow with distance: fine near the camera (crisp when flying through), coarse far away.
     float stepLen = clamp((t1 - t0) / 40.0, 3.0, 12.0 + t0 * 0.02);
     t += stepLen * dither;
-    for (int i = 0; i < 72; i++) {
+    for (int i = 0; i < 64; i++) {
         if (t >= t1 || trans < 0.02) break;
         vec3 p = ro + rd * t;
         int lod = t < 3000.0 ? 0 : 1;
@@ -189,15 +189,14 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
             d *= fade;
             // Light march: growing steps toward the light, shape-only density.
             float lightOD = 0.0;
-            float ls = 10.0;
+            float ls = 12.0;
             vec3 lp = p;
-            for (int j = 0; j < 5; j++) {
+            for (int j = 0; j < 4; j++) {
                 lp += lightDir * ls;
                 lightOD += l0Density(lp + lightDir * ls * (dither - 0.5), w, 2) * ls;
-                ls *= 1.9;
+                ls *= 2.1;
             }
-            float skyOD = (l0Density(p + vec3(0.0, 30.0, 0.0), w, 2) * 30.0
-                         + l0Density(p + vec3(0.0, 90.0, 0.0), w, 2) * 60.0);
+            float skyOD = l0Density(p + vec3(0.0, 45.0, 0.0), w, 2) * 70.0;
             float hFrac = saturate((p.y - bottom) / (topAlt - bottom));
             float groundOD = d * hFrac * 120.0;
             // Photon's powder term: dense cloud interiors send multiply scattered light back toward a viewer
@@ -211,8 +210,11 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
             dSum += t * trans * (1.0 - stepT);
             wSum += trans * (1.0 - stepT);
             trans *= stepT;
+            t += stepLen;
+        } else {
+            // Empty air: stride faster until something is found.
+            t += stepLen * 1.0;
         }
-        t += stepLen;
         stepLen = min(stepLen * 1.035, 12.0 + t * 0.02);
     }
     if (wSum > 0.0) dist = dSum / wSum;
@@ -298,7 +300,7 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
                   vec3 skyLight, float dither, out float dist) {
     CloudWeather w = cloudWeather();
     // Ground bounce: land reflects a warm, slightly green share of the direct light back up at cloud bases.
-    vec3 groundLight = directLight * max(lightDir.y, 0.0) * vec3(0.16, 0.15, 0.11) + skyLight * 0.05;
+    vec3 groundLight = directLight * max(lightDir.y, 0.0) * vec3(0.14, 0.14, 0.12) + skyLight * 0.05;
     float d0, d1 = 1e6, d2 = 1e6;
     vec4 c0 = marchL0(ro, rd, maxDist, w, lightDir, directLight, skyLight, groundLight, dither, d0);
     vec4 c1 = vec4(0.0, 0.0, 0.0, 1.0), c2 = vec4(0.0, 0.0, 0.0, 1.0);

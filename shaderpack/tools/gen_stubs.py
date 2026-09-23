@@ -34,8 +34,10 @@ PROGRAMS = {
     "deferred": ("clouds_march.glsl", ""),
     "deferred1": ("clouds_temporal.glsl", ""),
     "deferred2": ("deferred.glsl", ""),
-    "composite": ("composite.glsl", ""),
-    "composite1": ("taa.glsl", ""),
+    "composite": ("vl_march.glsl", ""),
+    "composite1": ("clouds_temporal.glsl", "TEMPORAL_VL"),
+    "composite2": ("composite.glsl", ""),
+    "composite3": ("taa.glsl", ""),
     "final": ("final.glsl", ""),
 }
 

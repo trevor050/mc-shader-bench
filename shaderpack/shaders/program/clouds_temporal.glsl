@@ -1,6 +1,8 @@
-// Temporal accumulation of the half-resolution cloud march (colortex7) into colortex9, which is never cleared.
-// The march is dithered per frame, so a single frame is noisy; history is reprojected through the cloud's
-// own distance (clouds move with the world, not with the camera) and clipped to the current neighborhood.
+// Temporal accumulation of a half-resolution, per-frame-dithered march into a history buffer that is never
+// cleared. History is reprojected through the marched point's own distance and clipped to the current
+// neighborhood.
+//   default:     clouds, colortex7 -> colortex9, distance = cloud distance (colortex8.r)
+//   TEMPORAL_VL: light shafts and mist, colortex10 -> colortex11, distance = scene distance (colortex12.r)
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
@@ -10,9 +12,23 @@ void main() { gl_Position = ftransform(); }
 #endif
 
 #ifdef FRAGMENT
+#ifdef TEMPORAL_VL
+uniform sampler2D colortex10;
+uniform sampler2D colortex11;
+uniform sampler2D colortex12;
+#define CUR_TEX colortex10
+#define DIST_TEX colortex12
+#define HIST_TEX colortex11
+/* RENDERTARGETS: 11 */
+#else
 uniform sampler2D colortex7;
 uniform sampler2D colortex8;
 uniform sampler2D colortex9;
+#define CUR_TEX colortex7
+#define DIST_TEX colortex8
+#define HIST_TEX colortex9
+/* RENDERTARGETS: 9 */
+#endif
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferPreviousModelView;
@@ -22,7 +38,6 @@ uniform vec3 previousCameraPosition;
 uniform float viewWidth;
 uniform float viewHeight;
 
-/* RENDERTARGETS: 9 */
 layout(location = 0) out vec4 outHistory;
 
 void main() {
@@ -32,8 +47,8 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
     vec2 uv = gl_FragCoord.xy / halfRes;
 
-    vec4 current = texelFetch(colortex7, texel, 0);
-    float dist = texelFetch(colortex8, texel, 0).r;
+    vec4 current = texelFetch(CUR_TEX, texel, 0);
+    float dist = texelFetch(DIST_TEX, texel, 0).r;
 
     // Reproject the cloud point (or the sky direction when there is no cloud).
     vec3 viewPos = projectAndDivide(gbufferProjectionInverse, vec3(uv, 1.0) * 2.0 - 1.0);
@@ -49,7 +64,7 @@ void main() {
     for (int y = -1; y <= 1; y++)
         for (int x = -1; x <= 1; x++) {
             ivec2 p = clamp(texel + ivec2(x, y), ivec2(0), ivec2(halfRes) - 1);
-            vec4 s = texelFetch(colortex7, p, 0);
+            vec4 s = texelFetch(CUR_TEX, p, 0);
             m1 += s; m2 += s * s;
             mn = min(mn, s); mx = max(mx, s);
         }
@@ -60,7 +75,7 @@ void main() {
 
     bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
     vec2 hUV = clamp(prevUV * halfRes, vec2(0.5), halfRes - 0.5) / res;
-    vec4 history = texture(colortex9, hUV);
+    vec4 history = texture(HIST_TEX, hUV);
     bool valid = !offscreen && history.a == history.a && all(greaterThanEqual(history, vec4(0.0)));
     history = clamp(history, lo, hi);
     // Slow camera motion keeps a long history; fast turns shorten it to avoid smearing.
