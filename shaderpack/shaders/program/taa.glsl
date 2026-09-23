@@ -111,9 +111,16 @@ void main() {
     bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
     float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
     float blend = offscreen ? 0.0 : mix(0.9, 0.75, saturate(velocity / 20.0));
+    // A tiny bright disc should appear immediately when uncovered and disappear
+    // immediately when occluded. The ordinary history weight erases new hot pixels.
+    float currentLum = luminance(current);
+    float historyLum = luminance(history);
+    float hot = smoothstep(8.0, 64.0, max(currentLum, historyLum));
+    float mismatch = abs(currentLum - historyLum) / max(max(currentLum, historyLum), 0.001);
+    blend *= 1.0 - hot * smoothstep(0.1, 0.6, mismatch);
     // Weigh by inverse luminance so bright fireflies do not smear.
-    float wc = (1.0 - blend) / (1.0 + luminance(current));
-    float wh = blend / (1.0 + luminance(history));
+    float wc = (1.0 - blend) / (1.0 + currentLum);
+    float wh = blend / (1.0 + historyLum);
     vec3 result = (current * wc + history * wh) / (wc + wh);
 #else
     vec3 result = current;

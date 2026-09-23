@@ -122,16 +122,23 @@ vec3 hazeColor(vec3 rd, vec3 sunDir) {
     return h * mix(1.0, 0.42, smoothstep(0.0, -0.2, rd.y));
 }
 
+#ifdef FRAGMENT
 vec3 sunDisc(vec3 rd, vec3 sunDir) {
 #if defined DIM_NETHER || defined DIM_END
     return vec3(0.0);
 #endif
-    float d = dot(rd, sunDir);
-    float disc = smoothstep(0.99985, 0.99992, d);
+    // The solar disc is about 0.53 degrees across. Filter its edge over a pixel
+    // in angular space so it stays round even when only a few pixels wide.
+    const float radius = 0.00463;
+    float separation = length(rd - sunDir);
+    float pixelWidth = max(fwidth(separation), 0.0001);
+    float disc = 1.0 - smoothstep(radius - 0.5 * pixelWidth,
+                                  radius + 0.5 * pixelWidth, separation);
     vec3 t = sunTransmittance(sunDir);
-    // Far brighter than the sky, like the real sun: its glow comes from bloom spreading this energy.
-    return disc * t * SUN_ILLUMINANCE * 30000.0 * (1.0 - rainStrength);
+    // Keep the source well inside RGBA16F's finite range before bloom/TAA.
+    return disc * t * SUN_ILLUMINANCE * 1500.0 * (1.0 - rainStrength);
 }
+#endif
 
 float starField(vec3 rd) {
     vec3 p = rd * 280.0;

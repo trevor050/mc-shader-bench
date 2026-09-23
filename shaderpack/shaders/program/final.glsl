@@ -1,10 +1,9 @@
 // Bloom, eye adaptation, AgX tonemap, and a light grade.
 //
-// Sun glare is not painted on. The sun is rendered at its physical brightness (thousands of times the
-// sky), and a wide, long-tailed bloom spreads that energy into its surroundings the way scattering inside
-// an eye or lens does. Anything covering the sun removes its glow because the glow is built from the
-// frame itself. Eye adaptation, measured from what is on screen with a center weighting, darkens the
-// whole view when the sun is in front of you.
+// The sun is an HDR source with a small, antialiased disc. Bloom spreads its
+// energy; source-gated glare adds a wider halo and subtle lens rays. Covering
+// the sun suppresses those rays. Center-weighted eye adaptation responds to
+// bright views before tonemapping.
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
@@ -20,6 +19,8 @@ void main() {
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
 uniform sampler2D colortex5;
+uniform vec3 sunPosition;
+uniform mat4 gbufferProjection;
 uniform float viewWidth;
 uniform float viewHeight;
 
@@ -75,9 +76,42 @@ vec3 bloom(vec2 uv) {
     return b / total;
 }
 
+// A small solar disc needs a much wider optical halo than a few mip levels can
+// provide. Sample the rendered disc so clouds and terrain still occlude it.
+vec3 solarGlare(vec2 uv) {
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return vec3(0.0);
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    if (any(lessThan(sunUV, vec2(0.0))) || any(greaterThan(sunUV, vec2(1.0)))) return vec3(0.0);
+
+    vec3 source = textureLod(colortex0, sunUV, 0.0).rgb;
+    float visible = smoothstep(12.0, 100.0, luminance(source));
+    if (visible <= 0.001) return vec3(0.0);
+
+    vec2 delta = (uv - sunUV) * vec2(viewWidth, viewHeight);
+    float r = length(delta);
+    if (r > 420.0) return vec3(0.0);
+    float halo = 5.0 * exp2(-sqr(r / 24.0))
+               + 2.0 * exp2(-r / 28.0) + 0.4 * exp2(-r / 135.0);
+
+    // A restrained six-point lens diffraction pattern, separate from the
+    // shadowed volumetric shafts in composite.glsl.
+    float armDistance = min(abs(delta.y),
+                            min(abs(dot(delta, vec2(-0.8660254, 0.5))),
+                                abs(dot(delta, vec2(-0.8660254, -0.5)))));
+    float blades = exp2(-2.0 * sqr(armDistance / (2.0 + 0.012 * r)));
+    float star = 0.7 * blades * exp2(-r / 100.0) * smoothstep(8.0, 30.0, r);
+
+    vec3 sourceTint = clamp(source / max(luminance(source), 0.001), vec3(0.35), vec3(1.65));
+    vec3 tint = mix(vec3(1.0, 0.92, 0.78), sourceTint, 0.4);
+    float edgeFade = 1.0 - smoothstep(260.0, 420.0, r);
+    return tint * visible * (halo + star) * edgeFade;
+}
+
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
     col += bloom(texcoord) * BLOOM_STRENGTH;
+    col += solarGlare(texcoord);
 
     // Eye adaptation (see taa.glsl): expose so the adapted scene brightness maps to a mid tone.
     float adaptedLog = texelFetch(colortex5, ivec2(0), 0).a;
