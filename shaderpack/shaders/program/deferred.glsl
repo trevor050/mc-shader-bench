@@ -54,6 +54,7 @@ uniform float viewWidth;
 uniform float viewHeight;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
+#include "/lib/stars.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -143,7 +144,12 @@ void main() {
 #else
         float night = smoothstep(0.05, -0.15, sunDir.y);
 #endif
-        col += starField(rd) * night * vec3(0.9, 0.95, 1.1) * 0.35 * (1.0 - rainStrength) * smoothstep(0.0, 0.1, rd.y);
+        float pixelAngle = 2.0 / (gbufferProjection[1][1] * viewHeight);
+        // Reconstructing the direction from the far-plane depth loses precision; stars need an exact ray.
+        vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
+        vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
+        col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
+                        vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
         col += gAlbedo.rgb;
     } else {
         vec4 nl = texture(colortex1, texcoord);
