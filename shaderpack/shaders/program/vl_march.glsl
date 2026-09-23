@@ -1,4 +1,4 @@
-// Light shafts and ground mist, marched at half resolution (bottom-left quarter of the buffers).
+// Light shafts and ground mist, marched into half-resolution targets.
 // Writes colortex10 = in-scattered light (rgb) + mist transmittance (a), colortex12 = scene distance.
 // A fresh dither every frame; vl_temporal (clouds_temporal.glsl with TEMPORAL_VL) accumulates it, and the
 // fog pass upsamples it with a depth-aware filter. Doing this at full resolution after TAA left the dither
@@ -65,9 +65,10 @@ float shadowVisibility(vec3 playerPos) {
 }
 
 void main() {
-    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-    if (gl_FragCoord.x > halfRes.x || gl_FragCoord.y > halfRes.y) discard;
-    vec2 uv = gl_FragCoord.xy / halfRes;
+    // Use the actual half-resolution target grid. Iris truncates relative buffer sizes, so this keeps
+    // normalized sample positions aligned with consumers when the full-resolution viewport is odd-sized.
+    vec2 targetRes = max(floor(vec2(viewWidth, viewHeight) * 0.5), vec2(1.0));
+    vec2 uv = gl_FragCoord.xy / targetRes;
 
     float depth = texture(depthtex0, uv).r;
     vec3 viewPos;
@@ -93,6 +94,8 @@ void main() {
 
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
+    bool directLightEnabled = skyExposure != 0.0 && any(notEqual(envDirect, vec3(0.0)));
+    bool cloudShadowEnabled = !(envLightDir.y < 0.05);
     float mu = dot(rd, envLightDir);
     // Air: thin haze whose shafts are strongest along the long, golden light path of a low sun.
     float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
@@ -113,8 +116,14 @@ void main() {
     for (int i = 0; i < NEAR; i++) {
         vec3 p = rd * (float(i) + dither) * stepLen;
         vec3 wp = p + cameraPosition;
-        float vis = shadowVisibility(p) * cloudShadow(wp, envLightDir);
-        float mist = mistDensity(wp, amount);
+        float vis = 1.0;
+        if (directLightEnabled) {
+            vis = shadowVisibility(p);
+            if (cloudShadowEnabled) vis *= cloudShadow(wp, envLightDir);
+        }
+        // mistDensity returns zero before sampling cloud noise whenever falloff * amount < 0.01.
+        // Since falloff is at most 1, amounts below 0.01 can skip the call exactly.
+        float mist = amount < 0.01 ? 0.0 : mistDensity(wp, amount);
         vec3 sun = envDirect * vis * skyExposure;
         vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase) + mistAmbient * mist * skyExposure;
         float stepT = exp(-mist * stepLen);
@@ -132,7 +141,8 @@ void main() {
             vec3 wp = rd * (nearEnd + (float(i) + dither) * fl) + cameraPosition;
             float mist = mistDensity(wp, amount);
             if (mist <= 1e-6) continue;
-            vec3 sun = envDirect * cloudShadow(wp, envLightDir) * skyExposure;
+            float cloudVis = directLightEnabled && cloudShadowEnabled ? cloudShadow(wp, envLightDir) : 1.0;
+            vec3 sun = envDirect * cloudVis * skyExposure;
             vec3 inscatter = (sun * mistPhase + mistAmbient * skyExposure) * mist;
             float stepT = exp(-mist * fl);
             scatter += trans * inscatter * (1.0 - stepT) / mist;

@@ -73,11 +73,15 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
     float occ = 0.0;
     vec3 t = normalize(abs(viewN.y) < 0.9 ? cross(viewN, vec3(0.0, 1.0, 0.0)) : cross(viewN, vec3(1.0, 0.0, 0.0)));
     vec3 b = cross(viewN, t);
+    float cosPhi = cos(dither * TAU);
+    float sinPhi = sin(dither * TAU);
     for (int i = 0; i < SAMPLES; i++) {
         float fi = (float(i) + dither) / float(SAMPLES);
-        float phi = float(i) * 2.39996323 + dither * TAU;
         float r = sqrt(fi);
-        vec3 h = vec3(r * cos(phi), r * sin(phi), sqrt(max(1.0 - fi, 0.0)));
+        vec3 h = vec3(r * cosPhi, r * sinPhi, sqrt(max(1.0 - fi, 0.0)));
+        float nextCosPhi = cosPhi * -0.7373688781 - sinPhi * 0.6754902943;
+        sinPhi = sinPhi * -0.7373688781 + cosPhi * 0.6754902943;
+        cosPhi = nextCosPhi;
         vec3 dir = t * h.x + b * h.y + viewN * h.z;
         vec3 s = viewPos + dir * RADIUS * mix(0.15, 1.0, fi * fi);
         vec3 sp = projectAndDivide(gbufferProjection, s) * 0.5 + 0.5;
@@ -94,15 +98,16 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
 // Joint-bilateral upsample of the half-resolution cloud history: taps whose scene distance differs from this
 // pixel's (a tree edge in front of a cloud) are down-weighted so clouds do not bleed across silhouettes.
 vec4 upsampleClouds(vec2 uv, float sceneDist) {
-    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-    vec2 p = uv * halfRes - 0.5;
+    ivec2 bufferSize = textureSize(colortex9, 0);
+    vec2 bufferRes = vec2(bufferSize);
+    vec2 p = uv * bufferRes - 0.5;
     ivec2 i0 = ivec2(floor(p));
     vec2 f = fract(p);
     vec4 acc = vec4(0.0);
     float wsum = 0.0;
     for (int k = 0; k < 4; k++) {
         ivec2 o = ivec2(k & 1, k >> 1);
-        ivec2 t = clamp(i0 + o, ivec2(0), ivec2(halfRes) - 1);
+        ivec2 t = clamp(i0 + o, ivec2(0), bufferSize - 1);
         vec2 bw = mix(1.0 - f, f, vec2(o));
         float sd = texelFetch(colortex8, t, 0).g;
         float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
@@ -149,8 +154,10 @@ void main() {
         vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
         col += moonSky(starDir, -sunDir);
-        col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
-                        vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
+        if (night > 0.0 && rainStrength < 1.0 && starDir.y > -0.02) {
+            col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
+                            vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
+        }
 #if defined DIM_NETHER || defined DIM_END
         col += gAlbedo.rgb;
 #endif
@@ -166,23 +173,22 @@ void main() {
         // The first-person hand has its own projection, so world-space effects (shadow map, SSAO, clouds) would
         // sample unrelated places. Shade it from its sky light level instead.
         bool isHand = mat == MAT_HAND;
+        vec3 wp = playerPos + cameraPosition;
         if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
         if (!isLod && !isHand && (NdotL > 0.0 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
-                vec3 wp = playerPos + cameraPosition;
                 // Project along the light onto the water plane so the pattern slides with the sun.
                 vec2 cuv = (wp.xz + envLightDir.xz / max(envLightDir.y, 0.2) * shadowWaterDepth) / 5.0;
                 float c = caustics(cuv, frameTimeCounter * 0.6);
                 shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
             }
         }
-        if (!isHand) shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
+        if (!isHand) shadow *= cloudShadow(wp, envLightDir);
 #endif
 
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
-        vec3 wp = playerPos + cameraPosition;
         float wet = isHand ? 0.0 : wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
         float puddle = 0.0;
         if (wet > 0.0 && n.y > 0.9 && !foliage) {

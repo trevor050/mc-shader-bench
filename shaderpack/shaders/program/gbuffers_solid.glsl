@@ -101,6 +101,9 @@ layout(location = 2) out vec4 outMaterial;
 void main() {
 #if defined PROG_BASIC || defined PROG_DH
     vec4 albedo = glcolor;
+#elif defined PROG_TERRAIN
+    vec4 texel = texture(gtexture, texcoord);
+    vec4 albedo = vec4(texel.rgb * glcolor.rgb, texel.a);
 #else
     vec4 albedo = texture(gtexture, texcoord) * glcolor;
 #endif
@@ -108,7 +111,6 @@ void main() {
 #ifdef PROG_TERRAIN
     // separateAo: vertex alpha carries ambient occlusion, texture alpha carries coverage.
     ao = glcolor.a;
-    albedo.a = texture(gtexture, texcoord).a;
 #endif
 #ifdef PROG_ENTITIES
     albedo.rgb = mix(albedo.rgb, entityColor.rgb, entityColor.a);

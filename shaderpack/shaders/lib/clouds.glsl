@@ -198,7 +198,10 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
             vec3 lp = p;
             for (int j = 0; j < 4; j++) {
                 lp += lightDir * ls;
-                lightOD += l0Density(lp + lightDir * ls * (dither - 0.5), w, 2) * ls;
+                vec3 lightP = lp + lightDir * ls * (dither - 0.5);
+                // Once the monotonically advancing light ray leaves the full L0 slab, later taps are empty.
+                if (lightP.y <= bottom || lightP.y >= topAlt) break;
+                lightOD += l0Density(lightP, w, 2) * ls;
                 ls *= 2.1;
             }
             float skyOD = l0Density(p + vec3(0.0, 45.0, 0.0), w, 2) * 70.0;
@@ -334,6 +337,10 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
 // Transmittance of direct light through the cumulus layer above a world position.
 float cloudShadow(vec3 worldPos, vec3 lightDir) {
     if (lightDir.y < 0.05) return 1.0;
+    // The highest of the four shadow taps is at 87.5% of the sampled 60% slab.
+    // Above it, every tap is skipped and the result is exactly unshadowed.
+    float highestSampleY = L0_BASE + 30.0 + L0_THICK * 0.6 * (3.0 + 0.5) / 4.0;
+    if (worldPos.y > highestSampleY) return 1.0;
     CloudWeather w = cloudWeather();
     float od = 0.0;
     for (int i = 0; i < 4; i++) {

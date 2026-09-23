@@ -18,7 +18,8 @@ vec3 waveVertex(vec3 worldPos, int mat, float midBlockY) {
     if (mat == MAT_FOLIAGE) {
         // at_midBlock.y is 32 at the bottom face and -32 at the top; only top vertices move.
         float top = midBlockY < 0.0 ? 1.0 : 0.0;
-        return worldPos + windOffset(worldPos, 1.0) * top;
+        if (top == 0.0) return worldPos;
+        return worldPos + windOffset(worldPos, 1.0);
     }
     if (mat == MAT_TALL_UPPER) {
         float top = midBlockY < 0.0 ? 1.8 : 0.9;

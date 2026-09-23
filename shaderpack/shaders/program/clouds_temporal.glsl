@@ -35,17 +35,14 @@ uniform mat4 gbufferPreviousModelView;
 uniform mat4 gbufferPreviousProjection;
 uniform vec3 cameraPosition;
 uniform vec3 previousCameraPosition;
-uniform float viewWidth;
-uniform float viewHeight;
-
 layout(location = 0) out vec4 outHistory;
 
 void main() {
-    vec2 res = vec2(viewWidth, viewHeight);
-    vec2 halfRes = ceil(res * 0.5);
-    if (gl_FragCoord.x > halfRes.x || gl_FragCoord.y > halfRes.y) discard;
+    ivec2 bufferSize = textureSize(CUR_TEX, 0);
+    vec2 bufferRes = vec2(bufferSize);
     ivec2 texel = ivec2(gl_FragCoord.xy);
-    vec2 uv = gl_FragCoord.xy / halfRes;
+    // Keep reprojection on the same normalized grid used to sample the half-resolution history.
+    vec2 uv = gl_FragCoord.xy / bufferRes;
 
     vec4 current = texelFetch(CUR_TEX, texel, 0);
     float dist = texelFetch(DIST_TEX, texel, 0).r;
@@ -63,8 +60,10 @@ void main() {
     vec4 mn = current, mx = current, m1 = vec4(0.0), m2 = vec4(0.0);
     for (int y = -1; y <= 1; y++)
         for (int x = -1; x <= 1; x++) {
-            ivec2 p = clamp(texel + ivec2(x, y), ivec2(0), ivec2(halfRes) - 1);
-            vec4 s = texelFetch(CUR_TEX, p, 0);
+            ivec2 p = clamp(texel + ivec2(x, y), ivec2(0), bufferSize - 1);
+            // The center sample is already in `current`; reuse it without a second texture fetch.
+            vec4 s = current;
+            if (x != 0 || y != 0) s = texelFetch(CUR_TEX, p, 0);
             m1 += s; m2 += s * s;
             mn = min(mn, s); mx = max(mx, s);
         }
@@ -74,12 +73,12 @@ void main() {
     lo = min(lo, current); hi = max(hi, current);
 
     bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
-    vec2 hUV = clamp(prevUV * halfRes, vec2(0.5), halfRes - 0.5) / res;
+    vec2 hUV = clamp(prevUV * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
     vec4 history = texture(HIST_TEX, hUV);
     bool valid = !offscreen && history.a == history.a && all(greaterThanEqual(history, vec4(0.0)));
     history = clamp(history, lo, hi);
     // Slow camera motion keeps a long history; fast turns shorten it to avoid smearing.
-    float motion = length((prevUV - uv) * halfRes);
+    float motion = length((prevUV - uv) * bufferRes);
     float blend = valid ? mix(0.93, 0.7, saturate(motion / 12.0)) : 0.0;
     outHistory = mix(current, history, blend);
 }

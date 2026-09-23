@@ -20,12 +20,14 @@ LightEnv makeLightEnv(vec3 sunDir) {
 #endif
     bool day = sunDir.y > -0.05;
     e.lightDir = day ? sunDir : -sunDir;
-    vec3 sunT = sunTransmittance(sunDir) * SUN_ILLUMINANCE;
-    // Ground moonlight is boosted relative to the sky so terrain stays readable at night.
-    vec3 moonT = sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 2.2 * vec3(0.55, 0.75, 1.25);
+    // Only the active shadow caster needs a ground transmittance estimate.
+    // Keep the original per-branch radiance scaling while avoiding four unused optical-depth samples.
+    vec3 directT = day
+        ? sunTransmittance(sunDir) * SUN_ILLUMINANCE
+        : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 2.2 * vec3(0.55, 0.75, 1.25);
     // Fade across the horizon swap so the shadow direction change is not a pop.
     float fade = smoothstep(0.0, 0.08, abs(sunDir.y + 0.02));
-    e.directLight = (day ? sunT : moonT) * fade * (1.0 - rainStrength * 0.9);
+    e.directLight = directT * fade * (1.0 - rainStrength * 0.9);
 
     vec3 up = scatter(vec3(0.0, 1.0, 0.0), sunDir, SUN_ILLUMINANCE, 6)
             + scatter(vec3(0.0, 1.0, 0.0), -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, 4) * vec3(0.6, 0.8, 1.3);
@@ -55,7 +57,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 
     // Subsurface glow when backlit, strongest looking toward the light.
     if (foliage) {
-        float back = pow(saturate(dot(viewDir, env.lightDir)), 4.0);
+        float backFacing = saturate(dot(viewDir, env.lightDir));
+        float backFacing2 = backFacing * backFacing;
+        float back = backFacing2 * backFacing2;
         direct += env.directLight * shadow * leak * back * 0.9 * albedo;
     }
 
@@ -67,7 +71,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
 #if defined DIM_NETHER
     // Hot, directionless nether glow.
-    ambient = vec3(0.55, 0.26, 0.14) * (0.7 + 0.3 * n.y) * ao;
+    ambient = vec3(2.6, 1.15, 0.62) * (0.7 + 0.3 * n.y) * ao;
 #elif defined DIM_END
     ambient = vec3(0.30, 0.22, 0.42) * (0.75 + 0.25 * n.y) * ao;
 #endif

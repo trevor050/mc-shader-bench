@@ -111,24 +111,28 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
         if (any(lessThan(s.xy, vec2(0.0))) || any(greaterThan(s.xy, vec2(1.0))) || p.z > -0.05) break;
         float sceneDepth = texture(depthtex1, s.xy).r;
         if (sceneDepth >= 1.0) continue;
-        float sceneZ = viewFromDepth(s.xy, sceneDepth).z;
         // Ray went behind a surface. Only count it as a hit if the surface is plausibly what the ray struck,
         // not something far in front of it (that is what stretched shore trees into vertical streaks).
-        if (sceneZ - p.z > 0.0) {
+        if (s.z > sceneDepth) {
             vec3 a = prev, b = p;
+            vec3 hs = s;
             for (int j = 0; j < 6; j++) {
                 vec3 m = (a + b) * 0.5;
                 vec3 ms = projectAndDivide(gbufferProjection, m) * 0.5 + 0.5;
-                float mz = viewFromDepth(ms.xy, texture(depthtex1, ms.xy).r).z;
-                if (mz - m.z > 0.0) b = m; else a = m;
+                float sampleDepth = texture(depthtex1, ms.xy).r;
+                if (ms.z > sampleDepth) {
+                    b = m;
+                    hs = ms;
+                } else {
+                    a = m;
+                }
             }
-            vec3 hs = projectAndDivide(gbufferProjection, b) * 0.5 + 0.5;
             float hitZ = viewFromDepth(hs.xy, texture(depthtex1, hs.xy).r).z;
             float thickness = 0.35 + 0.015 * -b.z;
             if (abs(hitZ - b.z) > thickness) return vec4(0.0);
-            vec2 edge = smoothstep(0.0, 0.08, hs.xy) * smoothstep(1.0, 0.92, hs.xy);
+            vec2 edge = smoothstep(0.0, 0.08, hs.xy) * (1.0 - smoothstep(0.92, 1.0, hs.xy));
             // Rays heading back toward the camera have little information on screen; fade them.
-            float facing = smoothstep(0.1, -0.2, viewDir.z);
+            float facing = 1.0 - smoothstep(-0.2, 0.1, viewDir.z);
             return vec4(texture(colortex4, hs.xy).rgb, edge.x * edge.y * facing);
         }
     }
@@ -140,8 +144,8 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 vec3 applyCloudsInFront(vec3 col, vec2 uv) {
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     if (isEyeInWater == 1) return col;
-    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-    vec2 cuv = clamp(uv * halfRes, vec2(0.5), halfRes - 0.5) / vec2(viewWidth, viewHeight);
+    vec2 bufferRes = vec2(textureSize(colortex9, 0));
+    vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
     vec4 c = texture(colortex9, cuv);
     return col * c.a + c.rgb;
 #else
@@ -304,8 +308,8 @@ void main() {
     vec4 cl = vec4(0.0, 0.0, 0.0, 1.0);
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     {
-        vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-        cl = texture(colortex9, clamp(uv * halfRes, vec2(0.5), halfRes - 0.5) / vec2(viewWidth, viewHeight));
+        vec2 bufferRes = vec2(textureSize(colortex9, 0));
+        cl = texture(colortex9, clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes);
     }
 #endif
     outColor = vec4(col * cl.a + cl.rgb, a);

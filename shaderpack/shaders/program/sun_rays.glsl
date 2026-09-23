@@ -1,0 +1,76 @@
+// Screen-space scattering from open sky around the sun. Run after TAA so the input is stable, then retain
+// this expensive integration at half resolution for final's additive composite.
+
+#ifdef VERTEX
+out vec2 texcoord;
+void main() {
+    gl_Position = ftransform();
+    texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+}
+#endif
+
+#ifdef FRAGMENT
+uniform sampler2D colortex0;
+uniform sampler2D depthtex0;
+uniform sampler2D dhDepthTex0;
+uniform vec3 sunPosition;
+uniform mat4 gbufferProjection;
+uniform float viewWidth;
+uniform float viewHeight;
+
+/*
+const int colortex3Format = RGBA16F;
+*/
+const bool colortex0MipmapEnabled = true;
+
+in vec2 texcoord;
+
+/* RENDERTARGETS: 3 */
+layout(location = 0) out vec4 outRays;
+
+// Only open sky within a small radius of the sun feeds the rays. Testing both depth buffers keeps the
+// effect behind vanilla terrain and Distant Horizons terrain while allowing cloud gaps to scatter light.
+vec3 sunRays(vec2 uv) {
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return vec3(0.0);
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    // Fade as the sun leaves the frame instead of popping.
+    float onScreen = smoothstep(-0.25, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    if (onScreen <= 0.0) return vec3(0.0);
+
+    const int N = 48;
+    vec2 delta = (sunUV - uv) / float(N);
+    // Pixels far from the sun get nothing; fade smoothly so the effect never ends in a visible circle.
+    float len = length(delta * aspect) * float(N);
+    float reach = 1.0 - smoothstep(0.35, 0.9, len);
+    if (reach <= 0.0) return vec3(0.0);
+
+    // The pass runs after TAA, so avoid per-frame dither. A blurred mip keeps the fixed step pattern from showing.
+    vec2 p = uv + delta * 0.5;
+    float invN = 1.0 / float(N);
+    // The sample starts 1.5 steps from the pixel and advances toward the sun by one step each tap.
+    // Reuse that fixed distance increment instead of measuring a vector and evaluating exp per tap.
+    float nearSun = exp(-len * (1.0 - 1.5 * invN) * 9.0);
+    float nearSunStep = exp(len * invN * 9.0);
+    vec3 acc = vec3(0.0);
+    float decay = 1.0;
+    for (int i = 0; i < N; i++) {
+        p += delta;
+        if (any(lessThan(p, vec2(0.0))) || any(greaterThan(p, vec2(1.0)))) break;
+        // Opaque vanilla geometry already rejects this tap; avoid the DH depth and color lookups.
+        if (texture(depthtex0, p).r >= 1.0) {
+            if (texture(dhDepthTex0, p).r >= 1.0)
+                acc += textureLod(colortex0, p, 4.0).rgb * nearSun * decay;
+        }
+        // The final two taps are symmetric around the sun because the loop samples at 1.5..48.5 steps.
+        if (i < N - 2) nearSun *= nearSunStep;
+        decay *= 0.965;
+    }
+    return acc / float(N) * onScreen * reach;
+}
+
+void main() {
+    outRays = vec4(sunRays(texcoord), 1.0);
+}
+#endif

@@ -1,4 +1,4 @@
-// Cloud march at half resolution (bottom-left quarter of the screen buffers).
+// Cloud march into half-resolution color and distance targets.
 // Writes colortex7 = premultiplied cloud radiance + transmittance, colortex8 = (cloud distance, scene distance).
 // Every pixel is marched every frame with a fresh dither; clouds_temporal.glsl accumulates the result.
 
@@ -49,9 +49,10 @@ layout(location = 0) out vec4 outClouds;
 layout(location = 1) out vec4 outDist;
 
 void main() {
-    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-    if (gl_FragCoord.x > halfRes.x || gl_FragCoord.y > halfRes.y) discard;
-    vec2 uv = gl_FragCoord.xy / halfRes;
+    // Use the actual half-resolution target grid. Iris truncates relative buffer sizes, so this keeps
+    // normalized sample positions aligned with consumers when the full-resolution viewport is odd-sized.
+    vec2 targetRes = max(floor(vec2(viewWidth, viewHeight) * 0.5), vec2(1.0));
+    vec2 uv = gl_FragCoord.xy / targetRes;
 
 #if defined DIM_NETHER || defined DIM_END || !defined CLOUDS
     outClouds = vec4(0.0, 0.0, 0.0, 1.0);
@@ -71,9 +72,8 @@ void main() {
     }
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos;
     vec3 rd = normalize(playerPos);
-    float sceneDist = sky ? 1e6 : length(playerPos);
+    float sceneDist = (sky || depth < 0.56) ? 1e6 : length(playerPos);
     // The hand is not world geometry.
-    if (depth < 0.56) sceneDist = 1e6;
 
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float dist;

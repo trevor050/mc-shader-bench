@@ -2,22 +2,39 @@
 // PROG_SKYTEXTURED: sun/moon quads. Otherwise skybasic (sky plane, sunrise fan, stars).
 
 #include "/lib/common.glsl"
-uniform int renderStage;
 
 #ifdef VERTEX
+#ifdef PROG_SKYTEXTURED
 out vec2 texcoord;
 out vec4 glcolor;
+uniform int renderStage;
+#endif
 void main() {
+#ifdef PROG_SKYTEXTURED
+    if (renderStage != MC_RENDER_STAGE_MOON) {
+        // The sun is replaced in deferred, so avoid rasterizing its discarded quad.
+        gl_Position = vec4(2.0, 0.0, 0.0, 1.0);
+        texcoord = vec2(0.0);
+        glcolor = vec4(0.0);
+        return;
+    }
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
+#else
+    // Deferred supplies the sky and stars; the vanilla sky fragment shader discards all of them.
+    gl_Position = vec4(2.0, 0.0, 0.0, 1.0);
+#endif
 }
 #endif
 
 #ifdef FRAGMENT
+#ifdef PROG_SKYTEXTURED
 uniform sampler2D gtexture;
 in vec2 texcoord;
 in vec4 glcolor;
+uniform int renderStage;
+#endif
 
 /* RENDERTARGETS: 0 */
 layout(location = 0) out vec4 outColor;

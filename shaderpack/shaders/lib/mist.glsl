@@ -24,6 +24,9 @@ float mistAmount(vec3 sunDir) {
 
 float mistDensity(vec3 wp, float amount) {
     float h = wp.y - MIST_BASE;
+    // Outside this band the existing smoothstep or 0.01 density cutoff guarantees zero.
+    // amount is saturated to [0, 1], so 4.7 falloff lengths is always below the cutoff.
+    if (h <= -40.0 || h >= MIST_FALLOFF * 4.7) return 0.0;
     float falloff = exp(-max(h, 0.0) / MIST_FALLOFF) * smoothstep(-40.0, 0.0, h);
     if (falloff * amount < 0.01) return 0.0;
     vec3 wind = cloudWind() * 0.25;

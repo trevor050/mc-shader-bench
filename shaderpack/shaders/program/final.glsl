@@ -36,6 +36,7 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
+uniform sampler2D colortex3;
 uniform sampler2D colortex5;
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
@@ -44,46 +45,6 @@ uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
-
-const bool colortex0MipmapEnabled = true;
-
-// Sun rays: light from the bright sky around the sun, scattered toward the eye along the way, so any gap in
-// trees, terrain or cloud edges in front of the sun throws a visible streak outward from it (screen-space
-// light scattering, GPU Gems 3 ch. 13). Only open sky within a small radius of the sun feeds it; letting the
-// whole sky contribute is what previously made rays shoot everywhere. Anything covering the sun removes the
-// rays, because they are built from the visible sky itself.
-vec3 sunRays(vec2 uv) {
-    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
-    if (clip.w <= 0.0) return vec3(0.0);
-    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
-    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
-    // Fade as the sun leaves the frame instead of popping.
-    float onScreen = smoothstep(-0.25, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
-    if (onScreen <= 0.0) return vec3(0.0);
-
-    const int N = 48;
-    vec2 delta = (sunUV - uv) / float(N);
-    // Pixels far from the sun get nothing (their rays would be too faint to matter); fade smoothly so the
-    // effect never ends in a visible circle.
-    float len = length(delta * aspect) * float(N);
-    float reach = 1.0 - smoothstep(0.35, 0.9, len);
-    if (reach <= 0.0) return vec3(0.0);
-    // No per-frame dither: this pass runs after TAA, so any noise here stays on screen as grain. Sampling a
-    // blurred mip instead keeps the fixed step pattern from showing.
-    vec2 p = uv + delta * 0.5;
-    vec3 acc = vec3(0.0);
-    float decay = 1.0;
-    for (int i = 0; i < N; i++) {
-        p += delta;
-        if (any(lessThan(p, vec2(0.0))) || any(greaterThan(p, vec2(1.0)))) break;
-        float sky = step(1.0, texture(depthtex0, p).r) * step(1.0, texture(dhDepthTex0, p).r);
-        float nearSun = exp(-length((p - sunUV) * aspect) * 9.0);
-        acc += textureLod(colortex0, p, 4.0).rgb * sky * nearSun * decay;
-        decay *= 0.965;
-    }
-    return acc / float(N) * onScreen * reach;
-}
-
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -212,62 +173,53 @@ vec3 colorGrade(vec3 c) {
 
 // Sum of progressively blurrier copies of the frame. Weights fall off slowly, approximating the long
 // tail of real optical scattering: a small bright core with a faint halo reaching far across the view.
-vec3 bloom(vec2 uv) {
-    vec3 b = vec3(0.0);
+void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g) {
+    b = vec3(0.0);
+    g = vec3(0.0);
     vec2 px = 1.0 / vec2(viewWidth, viewHeight);
-    float total = 0.0;
-    for (int lod = 1; lod <= 9; lod++) {
-        float scale = exp2(float(lod));
-        vec3 s = vec3(0.0);
-        for (int y = -1; y <= 1; y++)
-            for (int x = -1; x <= 1; x++) {
-                float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
-                s += textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb * w;
-            }
-        // Nearly flat weights: the wide levels carry the big soft glow around very bright sources.
-        float weight = pow(0.86, float(lod - 1));
-        b += s / 16.0 * weight;
-        total += weight;
-    }
-    return b / total;
-}
-
-// Glare: the long, faint scatter tail eyes and lenses have around very bright sources. Built only from what
-// is far brighter than the average scene (in practice the sun and the sky right around it), so anything in
-// front of the sun cuts it, and ordinary bright surfaces never glow. The widest blur levels dominate, which
-// gives a large soft bloom instead of a tight halo.
-vec3 glare(vec2 uv) {
+    float totalBloom = 0.0;
+    float totalGlare = 0.0;
     float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
     float threshold = max(avgLum * 12.0, 1e-3);
-    vec3 g = vec3(0.0);
-    float total = 0.0;
-    vec2 px = 1.0 / vec2(viewWidth, viewHeight);
-    for (int lod = 4; lod <= 9; lod++) {
+    for (int lod = 1; lod <= 9; lod++) {
         float scale = exp2(float(lod));
-        vec3 s = vec3(0.0);
+        vec3 bloomSamples = vec3(0.0);
+        vec3 glareSamples = vec3(0.0);
         for (int y = -1; y <= 1; y++)
             for (int x = -1; x <= 1; x++) {
                 float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
                 vec3 c = textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb;
-                // Soft knee keeps the glow from switching on abruptly.
-                float l = luminance(c);
-                s += c * (max(l - threshold, 0.0) / max(l, 1e-5)) * w;
+                bloomSamples += c * w;
+                if (lod >= 4) {
+                    // Soft knee keeps glare from switching on abruptly.
+                    float l = luminance(c);
+                    glareSamples += c * (max(l - threshold, 0.0) / max(l, 1e-5)) * w;
+                }
             }
-        float weight = float(lod - 3);
-        g += s / 16.0 * weight;
-        total += weight;
+        // Nearly flat weights: the wide levels carry the big soft glow around very bright sources.
+        float bloomWeight = pow(0.86, float(lod - 1));
+        b += bloomSamples / 16.0 * bloomWeight;
+        totalBloom += bloomWeight;
+        if (lod >= 4) {
+            float glareWeight = float(lod - 3);
+            g += glareSamples / 16.0 * glareWeight;
+            totalGlare += glareWeight;
+        }
     }
-    return g / total;
+    b /= totalBloom;
+    g /= totalGlare;
 }
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
-    col += glare(texcoord) * GLARE_STRENGTH;
-    col += sunRays(texcoord) * SUN_RAYS_STRENGTH;
+    vec3 bloomColor, glareColor;
+    bloomAndGlare(texcoord, bloomColor, glareColor);
+    col += glareColor * GLARE_STRENGTH;
+    col += texture(colortex3, texcoord).rgb * SUN_RAYS_STRENGTH;
     // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
     // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
     // sun, produce a visible glow; everything else just softens very slightly.
-    col = mix(col, bloom(texcoord), BLOOM_STRENGTH);
+    col = mix(col, bloomColor, BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
 

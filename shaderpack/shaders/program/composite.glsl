@@ -28,7 +28,6 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
-uniform int frameCounter;
 uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
@@ -64,15 +63,16 @@ uniform float viewHeight;
 
 // Joint-bilateral upsample of the half-resolution light-shaft/mist history (see deferred's upsampleClouds).
 vec4 upsampleVL(vec2 uv, float sceneDist) {
-    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
-    vec2 p = uv * halfRes - 0.5;
+    ivec2 bufferSize = textureSize(colortex11, 0);
+    vec2 bufferRes = vec2(bufferSize);
+    vec2 p = uv * bufferRes - 0.5;
     ivec2 i0 = ivec2(floor(p));
     vec2 f = fract(p);
     vec4 acc = vec4(0.0);
     float wsum = 0.0;
     for (int k = 0; k < 4; k++) {
         ivec2 o = ivec2(k & 1, k >> 1);
-        ivec2 t = clamp(i0 + o, ivec2(0), ivec2(halfRes) - 1);
+        ivec2 t = clamp(i0 + o, ivec2(0), bufferSize - 1);
         vec2 bw = mix(1.0 - f, f, vec2(o));
         float sd = texelFetch(colortex12, t, 0).r;
         float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
@@ -86,31 +86,32 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
     float depth = texture(depthtex0, texcoord).r;
-    vec3 viewPos;
     bool sky = false;
-    if (depth < 1.0) {
-        viewPos = projectAndDivide(gbufferProjectionInverse, vec3(texcoord, depth) * 2.0 - 1.0);
-    } else {
-        float dhDepth = texture(dhDepthTex0, texcoord).r;
+    float dhDepth;
+    if (!(depth < 1.0)) {
+        dhDepth = texture(dhDepthTex0, texcoord).r;
         sky = dhDepth >= 1.0;
-        viewPos = projectAndDivide(sky ? gbufferProjectionInverse : dhProjectionInverse,
-                                   vec3(texcoord, sky ? 1.0 : dhDepth) * 2.0 - 1.0);
     }
-    vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
-    float dist = sky ? 4096.0 : length(playerPos);
+    // Sky pixels only use fixed distances below, so skip inverse projection and the camera transform.
+    float dist = 4096.0;
+    vec3 playerPos;
+    if (!sky) {
+        vec3 viewPos = depth < 1.0
+            ? projectAndDivide(gbufferProjectionInverse, vec3(texcoord, depth) * 2.0 - 1.0)
+            : projectAndDivide(dhProjectionInverse, vec3(texcoord, dhDepth) * 2.0 - 1.0);
+        playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
+        dist = length(playerPos);
+    }
     // The hand uses its own projection; keep fog and light shafts off it.
     // Underwater it still sits in the water, so give it a short stretch of the medium's tint.
     if (depth < 0.56) dist = isEyeInWater == 1 ? 3.0 : 0.5;
-    vec3 rd = normalize(playerPos);
-    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
-    float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
-
     if (isEyeInWater == 1) {
         // Underwater: strong absorption toward teal, lit by filtered sky/sun.
         const vec3 absorb = vec3(0.30, 0.07, 0.05);
         // Open sky seen from below the surface only exists inside Snell's window; past it (and wherever the
         // surface is not drawn, like LOD water seen from underneath) the view ends in the water itself.
         vec3 trans = sky ? vec3(0.0) : exp(-absorb * min(dist, 96.0));
+        float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);
         outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));
@@ -125,6 +126,7 @@ void main() {
 
     // Aerial perspective: blend toward the horizon sky with height-dependent density.
     if (!sky) {
+        vec3 rd = normalize(playerPos);
         float worldY = playerPos.y + cameraPosition.y;
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
         float density = (0.00018 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);

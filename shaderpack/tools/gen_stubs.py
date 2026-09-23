@@ -38,6 +38,7 @@ PROGRAMS = {
     "composite1": ("clouds_temporal.glsl", "TEMPORAL_VL"),
     "composite2": ("composite.glsl", ""),
     "composite3": ("taa.glsl", ""),
+    "composite4": ("sun_rays.glsl", ""),
     "final": ("final.glsl", ""),
 }
 

@@ -43,7 +43,9 @@ vec3 waterNormal(vec3 worldPos, vec3 flatN, float t, float strength) {
 }
 
 float fresnelSchlick(float cosTheta, float f0) {
-    return f0 + (1.0 - f0) * pow(1.0 - saturate(cosTheta), 5.0);
+    float x = 1.0 - saturate(cosTheta);
+    float x2 = x * x;
+    return f0 + (1.0 - f0) * (x2 * x2 * x);
 }
 
 // Exact dielectric Fresnel for unpolarized light (needed from below the surface, where total internal

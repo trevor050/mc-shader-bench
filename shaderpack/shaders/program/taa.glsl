@@ -72,6 +72,7 @@ vec3 sampleHistory(vec2 uv) {
 
 void main() {
     vec3 current = texture(colortex0, texcoord).rgb;
+    vec3 result = current;
 
 #ifdef TAA
     // Reconstruct this pixel's position and find where it was last frame.
@@ -96,43 +97,52 @@ void main() {
     bool hand = depth < 0.56;
     if (hand) prevUV = texcoord;
 
-    // 3x3 neighborhood bounds in YCoCg; history outside them is clipped (kills ghosting).
-    vec2 px = 1.0 / vec2(viewWidth, viewHeight);
-    vec3 m1 = vec3(0.0), m2 = vec3(0.0);
-    for (int y = -1; y <= 1; y++)
-        for (int x = -1; x <= 1; x++) {
-            vec3 s = toYCoCg(texture(colortex0, texcoord + vec2(x, y) * px).rgb);
-            m1 += s;
-            m2 += s * s;
-        }
-    m1 /= 9.0;
-    m2 /= 9.0;
-    vec3 sigma = sqrt(max(m2 - m1 * m1, 0.0));
-    vec3 lo = m1 - sigma * 1.25, hi = m1 + sigma * 1.25;
-
-    vec3 history = toYCoCg(sampleHistory(prevUV));
-    history = clamp(history, lo, hi);
-    history = fromYCoCg(history);
-
     bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
-    float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
-    float blend = offscreen ? 0.0 : mix(0.9, 0.75, saturate(velocity / 20.0));
     // depthtex1 includes the solid hand while depthtex2 excludes it. The hand
     // uses a separate depth projection and follows the camera, so ordinary
     // world reprojection blends the scene through it.
-    float solidDepth = texture(depthtex1, texcoord).r;
-    float noHandDepth = texture(depthtex2, texcoord).r;
-    if (solidDepth < noHandDepth - 0.00001) blend = 0.0;
-    // (A former "hot pixel" history bypass made the sun re-alias every frame while turning, which read as
-    // flicker. The sun's radiance is now soft-capped, so ordinary blending handles it.)
-    float currentLum = luminance(current);
-    float historyLum = luminance(history);
-    // Weigh by inverse luminance so bright fireflies do not smear.
-    float wc = (1.0 - blend) / (1.0 + currentLum);
-    float wh = blend / (1.0 + historyLum);
-    vec3 result = (current * wc + history * wh) / (wc + wh);
+    bool rejectHistory = offscreen;
+    if (!rejectHistory) {
+        float solidDepth = texture(depthtex1, texcoord).r;
+        float noHandDepth = texture(depthtex2, texcoord).r;
+        rejectHistory = solidDepth < noHandDepth - 0.00001;
+    }
+
+    // Rejected history previously produced the current color through a zero blend weight,
+    // after paying for neighborhood statistics and five history taps. Keep the same resolve
+    // result while skipping those samples on disoccluded and off-screen pixels.
+    if (!rejectHistory) {
+        // 3x3 neighborhood bounds in YCoCg; history outside them is clipped (kills ghosting).
+        vec2 px = 1.0 / vec2(viewWidth, viewHeight);
+        vec3 m1 = vec3(0.0), m2 = vec3(0.0);
+        for (int y = -1; y <= 1; y++)
+            for (int x = -1; x <= 1; x++) {
+                vec3 s = toYCoCg(texture(colortex0, texcoord + vec2(x, y) * px).rgb);
+                m1 += s;
+                m2 += s * s;
+            }
+        m1 /= 9.0;
+        m2 /= 9.0;
+        vec3 sigma = sqrt(max(m2 - m1 * m1, 0.0));
+        vec3 lo = m1 - sigma * 1.25, hi = m1 + sigma * 1.25;
+
+        vec3 history = toYCoCg(sampleHistory(prevUV));
+        history = clamp(history, lo, hi);
+        history = fromYCoCg(history);
+
+        float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
+        float blend = mix(0.9, 0.75, saturate(velocity / 20.0));
+        // (A former "hot pixel" history bypass made the sun re-alias every frame while turning, which read as
+        // flicker. The sun's radiance is now soft-capped, so ordinary blending handles it.)
+        float currentLum = luminance(current);
+        float historyLum = luminance(history);
+        // Weigh by inverse luminance so bright fireflies do not smear.
+        float wc = (1.0 - blend) / (1.0 + currentLum);
+        float wh = blend / (1.0 + historyLum);
+        result = (current * wc + history * wh) / (wc + wh);
+    }
 #else
-    vec3 result = current;
+    result = current;
 #endif
 
     // Eye adaptation state: smoothed log2 of scene brightness, stored in the history alpha of every pixel.

@@ -50,6 +50,6 @@ void main() {
     }
     vec4 c = texture(gtexture, texcoord) * glcolor;
     if (c.a < 0.1) discard;
-    shadowColor = vec4(c.rgb, max(c.a, 0.02));
+    shadowColor = vec4(c.rgb, c.a);
 }
 #endif

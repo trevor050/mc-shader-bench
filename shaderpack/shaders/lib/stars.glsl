@@ -54,6 +54,16 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     // Star profile in pixels; flux is normalized to the angular area so exposure behaves physically.
     const float sigmaPx = 0.75;
     float norm = 1.0 / (TAU * sqr(sigmaPx * pixelAngle));
+    // A star's support is capped at 4 sigma; use the brightest representable magnitude for a safe
+    // angular prefilter. Perspective projection maps angular distance to at least the smaller
+    // focal length in pixels, so candidates outside this cone cannot reach the screen-space support test.
+    const float maxStarRadiusPx = 4.0 * sigmaPx * (1.0 + 0.45 * 4.5); // mag -2 -> sigma 2.26875 px
+    float focalMinPx = 0.5 * min(projScale.x * res.x, projScale.y * res.y);
+    float maxStarAngle = min(maxStarRadiusPx / max(focalMinPx, 1e-3) + 1e-4, PI);
+    // For unit directions, chord distance is sqrt(2 - 2*dot) and never exceeds angular distance.
+    // This lower dot threshold is conservative and avoids a per-fragment cosine.
+    float minStarDot = 1.0 - 0.5 * maxStarAngle * maxStarAngle;
+    bool canCullByAngle = maxStarAngle < PI;
     vec3 acc = vec3(0.0);
     for (int dy = -1; dy <= 1; dy++) {
         int y = c.y + dy;
@@ -65,7 +75,11 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
             vec2 sp = (vec2(t) + s.rg) / size;
             float sra = sp.x * TAU - raSun, sdec = (sp.y - 0.5) * PI;
             vec3 dir = cos(sdec) * (cos(sra) * b1 + sin(sra) * b2) + sin(sdec) * CELESTIAL_NORTH;
-            if (dot(dir, rd) < 0.99) continue;
+            float starDot = dot(dir, rd);
+            if (starDot < 0.99) continue;
+            // Keep the existing broad rejection, then skip stars outside the exact support radius.
+            // Normalize the comparison because the rounded celestial basis makes dir slightly non-unit.
+            if (canCullByAngle && starDot * inversesqrt(dot(dir, dir)) < minStarDot) continue;
             vec2 dp = starToScreen(dir, view, projScale, res) - fragPx;
             float d2 = dot(dp, dp);
             float mag = s.b * 10.0 - 2.0;

@@ -94,7 +94,7 @@ uniform vec3 fogColor;
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
-    return toLinear(fogColor) * 0.35;
+    return toLinear(fogColor) * 1.2 + vec3(0.02, 0.006, 0.003);
 #elif defined DIM_END
     // Faint nebula: domain-warped value noise over the view direction.
     vec2 p = rd.xz / (abs(rd.y) + 0.35) * 2.2;
@@ -111,6 +111,7 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     vec3 col = day + night + vec3(0.0006, 0.0009, 0.0016);
     // Overcast: collapse toward a grey dome during rain.
     float overcast = rainStrength * 0.85;
+    if (overcast == 0.0) return col;
     vec3 grey = vec3(luminance(scatter(vec3(0.0, 1.0, 0.0), sunDir, SUN_ILLUMINANCE, 4))) * 0.55 + vec3(0.0008);
     return mix(col, grey, overcast);
 }
