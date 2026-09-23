@@ -99,7 +99,8 @@ void main() {
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
     float dist = sky ? 4096.0 : length(playerPos);
     // The hand uses its own projection; keep fog and light shafts off it.
-    if (depth < 0.56) dist = 0.5;
+    // Underwater it still sits in the water, so give it a short stretch of the medium's tint.
+    if (depth < 0.56) dist = isEyeInWater == 1 ? 3.0 : 0.5;
     vec3 rd = normalize(playerPos);
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
@@ -107,7 +108,9 @@ void main() {
     if (isEyeInWater == 1) {
         // Underwater: strong absorption toward teal, lit by filtered sky/sun.
         const vec3 absorb = vec3(0.30, 0.07, 0.05);
-        vec3 trans = exp(-absorb * min(dist, 96.0));
+        // Open sky seen from below the surface only exists inside Snell's window; past it (and wherever the
+        // surface is not drawn, like LOD water seen from underneath) the view ends in the water itself.
+        vec3 trans = sky ? vec3(0.0) : exp(-absorb * min(dist, 96.0));
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);
         outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));

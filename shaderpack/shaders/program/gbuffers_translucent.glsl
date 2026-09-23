@@ -75,6 +75,7 @@ uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
 #include "/lib/shadows.glsl"
+#include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
 
 in vec2 texcoord;
@@ -162,18 +163,39 @@ void main() {
         vec3 n = normalize(worldNormal);
         if (n.y > 0.5) {
             // Flatten waves with distance to avoid shimmering noise.
-            float strength = mix(1.0, 0.15, saturate(dist / 96.0));
-            n = waterNormal(worldPos, frameTimeCounter, strength);
+            float strength = mix(1.0, 0.2, saturate(dist / 96.0));
+            n = waterNormal(worldPos, n, frameTimeCounter, strength);
         }
+        // Biome water colour (vertex tint): turquoise warm oceans, murky swamps, deep blue cold seas.
+        vec3 tint = toLinear(glcolor.rgb);
+        tint /= max(max(tint.r, tint.g), max(tint.b, 1e-3));
         bool underwater = isEyeInWater == 1;
         if (underwater) {
             // From inside the water, side faces (against ice, glass, air pockets) should just transmit;
             // the composite pass applies the underwater medium.
-            if (worldNormal.y < 0.5) {
+            if (abs(worldNormal.y) < 0.5) {
                 outColor = vec4(texture(colortex4, uv).rgb, 1.0);
                 return;
             }
-            n = -n;
+            // Looking up at the surface from below: a bright circle of sky (Snell's window) surrounded by a
+            // mirror of the dark water, from total internal reflection past about 48.6 degrees. The surface
+            // seen from below is its own downward-facing quad, so derive the waves from the upward normal.
+            if (worldNormal.y < 0.0) n = waterNormal(worldPos, vec3(0.0, 1.0, 0.0), frameTimeCounter, mix(1.0, 0.2, saturate(dist / 96.0)));
+            vec3 nd = -n;
+            float cosI = saturate(dot(-rd, nd));
+            float F = fresnelDielectric(cosI, 1.333);
+            vec3 viewNd = mat3(gbufferModelView) * nd;
+            vec2 wuv = clamp(uv + viewNd.xy * 0.06, vec2(0.001), vec2(0.999));
+            vec3 through = texture(colortex4, wuv).rgb;
+            float skyVisU = lmcoord.y * lmcoord.y;
+            vec3 deep = vec3(0.02, 0.10, 0.12) * mix(vec3(1.0), tint, 0.4)
+                      * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyVisU);
+            vec3 vPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
+            vec3 rr = reflect(rd, nd);
+            vec4 ssrU = traceSSR(vPos, normalize(mat3(gbufferModelView) * rr), dither);
+            vec3 mirror = mix(deep, ssrU.rgb, ssrU.a);
+            outColor = vec4(mix(through, mirror, F), 1.0);
+            return;
         }
 
         // Water depth along the view ray, from the opaque depth behind this fragment.
@@ -197,9 +219,12 @@ void main() {
 
         vec3 shadow = sampleShadow(playerPos, vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
         float skyVis = lmcoord.y * lmcoord.y;
-        const vec3 absorb = vec3(0.42, 0.075, 0.05);
+        // Absorption: red goes first, then green; the biome tint shifts which colour survives in depth.
+        vec3 absorb = mix(vec3(0.40, 0.085, 0.055), (1.0 - tint) * 0.35 + 0.03, 0.35);
         vec3 transmit = underwater ? vec3(1.0) : exp(-absorb * waterDepth);
-        vec3 scatterCol = vec3(0.02, 0.09, 0.11) * (envAmbient * skyVis / PI + envDirect * shadow * 0.08);
+        // In-scattering from suspended particles gives water a body colour even over deep or dark floors.
+        vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5);
+        vec3 scatterCol = albedoW * (envAmbient * skyVis / PI + envDirect * shadow * 0.12);
         vec3 body = refracted * transmit + scatterCol * (1.0 - transmit);
 
         // Far away, a single pixel covers many small waves, so water behaves like a rough surface: it reflects
@@ -210,7 +235,8 @@ void main() {
         r.y = abs(r.y);
         vec3 rRough = normalize(r + vec3(0.0, rough * 1.4, 0.0));
         vec3 skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
-        skyRefl = applyClouds(skyRefl, rRough, sunDir, envDirect, envAmbient * 0.12, cameraPosition.xz) * skyVis;
+        skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, envLightDir, envDirect,
+                                  skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
         vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
         vec3 refl = mix(skyRefl, ssr.rgb, ssr.a * (1.0 - saturate(rough * 2.5)));
