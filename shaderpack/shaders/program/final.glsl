@@ -11,11 +11,26 @@
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
 
+uniform mat4 gbufferModelViewInverse;
+uniform float rainStrength;
+uniform float frameTimeCounter;
+#include "/lib/atmosphere.glsl"
+
 #ifdef VERTEX
 out vec2 texcoord;
+flat out vec3 whiteBalance;
+uniform vec3 sunPosition;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    // Eyes adapt to the colour of daylight: sunlight filtered through the air is slightly warm, but a white
+    // cloud at noon still looks white. Neutralize most of that tint by day; let golden hour stay golden.
+    vec3 sd = normalize(mat3(gbufferModelViewInverse) * sunPosition);
+    vec3 sunCol = sunTransmittance(sd);
+    sunCol /= max(luminance(sunCol), 1e-4);
+    float strength = 0.85 * smoothstep(0.08, 0.45, sd.y);
+    whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
+    whiteBalance /= luminance(whiteBalance);
 }
 #endif
 
@@ -69,7 +84,6 @@ vec3 sunRays(vec2 uv) {
     return acc / float(N) * onScreen * reach;
 }
 
-uniform float frameTimeCounter;
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -121,6 +135,7 @@ vec3 sunStreaks(vec2 uv) {
 }
 
 in vec2 texcoord;
+flat in vec3 whiteBalance;
 layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -265,6 +280,9 @@ void main() {
     float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
     exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
     col *= exposure;
+#if !defined DIM_NETHER && !defined DIM_END
+    col *= whiteBalance;
+#endif
 
     // Night vision: in dim light eyes lose color and shift toward blue (rods take over from cones).
     // Blend by exposed brightness so torchlit areas keep their warm color.

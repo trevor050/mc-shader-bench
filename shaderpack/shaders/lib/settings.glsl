@@ -17,8 +17,8 @@
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
 #define CLOUD_COVERAGE 0.34
-#define CLOUD_DEBUG_WEATHER
-#define MIST_DEBUG
+//#define CLOUD_DEBUG_WEATHER
+//#define MIST_DEBUG
 
 // Distant Horizons render radius in blocks (lodChunkRenderDistanceRadius * 16). Keep in sync with the DH config.
 #define LOD_DISTANCE 8192.0

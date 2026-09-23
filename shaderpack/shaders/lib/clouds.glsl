@@ -91,12 +91,12 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
     float local = saturate(remap(field, 1.0 - w.cov0 - 0.15, 1.0 - w.cov0 + 0.22, 0.0, 1.0));
     if (local <= 0.0) return 0.0;
     float convect = saturate((cloudTex(vec3(cq * 0.6 + 0.3, 0.63)).r - 0.45) / 0.28);
-    float top = mix(0.22, 1.0, convect * w.tower) * mix(0.55, 1.0, local);
+    float top = mix(0.38, 1.0, convect * w.tower) * mix(0.6, 1.0, local);
     if (h >= top) return 0.0;
     float hn = h / top;
 
     vec3 q = (p + wind) / 700.0;
-    vec4 n = cloudTex(q * vec3(1.0, 1.5, 1.0));
+    vec4 n = cloudTex(q * vec3(1.0, 2.6, 1.0));
     float fbm = n.g * 0.625 + n.b * 0.25 + n.a * 0.125;
     float shape = remap(n.r, fbm - 1.0, 1.0, 0.0, 1.0);
 
@@ -259,29 +259,34 @@ vec4 marchL1(vec3 ro, vec3 rd, CloudWeather w, vec3 lightDir, vec3 directLight, 
     return vec4(rad * fade, mix(1.0, trans, fade));
 }
 
-// Cirrus: flat, wind-stretched streaks. Mostly forward-scattering ice, so it glows near the sun.
+// Cirrus: thin, fibrous ice streaks combed out by high winds ("mares' tails"). Fibres come from noise that is
+// stretched hard along the wind, gently bent by a low-frequency warp, and gathered into patches.
+// Mostly forward-scattering ice, so it glows near the sun and nearly vanishes against the dark sky opposite.
 vec4 cirrus(vec3 ro, vec3 rd, CloudWeather w, vec3 lightDir, vec3 directLight, vec3 skyLight, out float dist) {
     dist = 1e6;
     if (rd.y <= 0.0 || w.cirrus < 0.02 || ro.y > L2_ALT) return vec4(0.0, 0.0, 0.0, 1.0);
     float t = (L2_ALT - ro.y) / rd.y;
     if (t > 60000.0) return vec4(0.0, 0.0, 0.0, 1.0);
-    vec2 p = ro.xz + rd.xz * t + cloudWind().xz * 3.0;
-    // Stretch along the wind and warp for hooked, combed filaments.
-    vec2 q = p / vec2(7000.0, 3500.0);
-    vec2 warp = vec2(cloudTex(vec3(q * 0.4, 0.2)).r, cloudTex(vec3(q * 0.4, 0.6)).r) - 0.55;
-    q += warp * 1.6;
-    float base = saturate((cloudTex(vec3(q * 0.35, 0.9)).r - 0.4) / 0.32);
-    float streak = saturate((cloudTex(vec3(q * vec2(1.0, 2.2), 0.45)).g - 0.3) / 0.4);
-    float fine = cloudTex(vec3(q * vec2(2.5, 7.0), 0.15)).b;
-    float d = saturate(remap(base * 0.65 + streak * 0.35, 1.0 - w.cirrus * 0.6, 1.0, 0.0, 1.0));
-    d *= 0.7 + 0.3 * fine;
-    d *= 0.6;
-    d *= smoothstep(0.0, 0.08, rd.y);
+    vec2 p = ro.xz + rd.xz * t + cloudWind().xz * 4.0;
+    const vec2 wdir = vec2(0.93, 0.37);
+    vec2 q = vec2(dot(p, wdir), dot(p, vec2(-wdir.y, wdir.x)));
+    // Patches where cirrus exists at all.
+    float patch = saturate((cloudTex(vec3(q / 16000.0, 0.9)).r - 0.68 + w.cirrus * 0.16) / 0.14);
+    if (patch <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+    // Gentle bend of the fibres.
+    float bend = cloudTex(vec3(q / 9000.0, 0.2)).g - 0.5;
+    vec2 f = vec2(q.x / 7000.0, (q.y + bend * 2600.0) / 1100.0);
+    // Far away the fine fibres are sub-pixel; fade them to their average instead of letting them alias.
+    float fineFade = 1.0 - smoothstep(6000.0, 20000.0, t);
+    float fib = cloudTex(vec3(f, 0.45)).g * 0.65 + mix(0.48, cloudTex(vec3(f * vec2(2.3, 2.9), 0.15)).b, fineFade) * 0.35;
+    float d = saturate((fib - 0.5) / 0.22) * patch * 0.8;
+    // Hooked, fading tails along the wind.
+    d *= smoothstep(0.35, 0.65, cloudTex(vec3(q.x / 2600.0, q.y / 1500.0, 0.66)).r);
+    d *= smoothstep(0.0, 0.1, rd.y);
     if (d <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
     float mu = dot(rd, lightDir);
-    float phase = 0.6 * hgPhase(mu, 0.75) + 0.4 * hgPhase(mu, 0.0);
-    float od = d * 0.9;
-    float T = exp(-od);
+    float phase = 0.45 * hgPhase(mu, 0.6) + 0.55 / (4.0 * PI);
+    float T = exp(-d * 0.45);
     vec3 s = (directLight * phase * 1.2 + skyLight * (0.35 / (4.0 * PI))) * (1.0 - T);
     dist = t;
     float fade = 1.0 - smoothstep(30000.0, 60000.0, t);
