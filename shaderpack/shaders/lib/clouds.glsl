@@ -293,7 +293,7 @@ vec4 cirrus(vec3 ro, vec3 rd, CloudWeather w, vec3 lightDir, vec3 directLight, v
     float fineFade = 1.0 - smoothstep(6000.0, 20000.0, t);
     // Smooth value noise stretched ~25:1 along the wind gives straight, silky fibres (cellular noise curls).
     float fib = valueNoise(f) * 0.6 + mix(0.5, valueNoise(f * vec2(1.7, 2.6) + 13.1), fineFade) * 0.4;
-    float d = saturate((fib - 0.45) / 0.3) * patch * 0.7;
+    float d = saturate((fib - 0.47) / 0.3) * patch * 0.4;
     // Tails fade out along the wind.
     d *= smoothstep(0.3, 0.7, valueNoise(vec2(q.x / 4000.0, q.y / 1800.0) + 7.7));
     d *= smoothstep(0.0, 0.1, rd.y);
