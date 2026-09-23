@@ -53,7 +53,10 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 
     // Sky light: favor upward-facing surfaces, keep some fill on walls.
     float skyFacing = 0.62 + 0.38 * n.y;
-    vec3 ambient = env.skyAmbient * skyVis * skyFacing * ao;
+    vec3 skyAmb = mix(env.skyAmbient, vec3(luminance(env.skyAmbient)), 0.3);
+    // Ground bounce: sunlight reflected off terrain fills shadows with warmer light, strongest on walls.
+    vec3 bounce = env.directLight * vec3(0.30, 0.26, 0.20) * 0.18 * (1.0 - 0.6 * n.y);
+    vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
     vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
     vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao;
 

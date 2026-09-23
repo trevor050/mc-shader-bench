@@ -99,7 +99,15 @@ void main() {
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
         if (!isLod && (NdotL > 0.0 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ign(gl_FragCoord.xy));
+            if (shadowWaterDepth > 0.05) {
+                vec3 wp = playerPos + cameraPosition;
+                // Project along the light onto the water plane so the pattern slides with the sun.
+                vec2 cuv = (wp.xz + envLightDir.xz / max(envLightDir.y, 0.2) * shadowWaterDepth) / 5.0;
+                float c = caustics(cuv, frameTimeCounter * 0.6);
+                shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
+            }
         }
+        shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
         col = shadeSurface(env, albedo, n, -rd, nl.zw, m.b, mat, shadow, m.g);
     }
 
@@ -113,6 +121,8 @@ const int colortex0Format = RGBA16F;
 const int colortex1Format = RGBA16;
 const int colortex2Format = RGBA8;
 const int colortex4Format = RGBA16F;
+const int colortex5Format = RGBA16F;
+const bool colortex5Clear = false;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */

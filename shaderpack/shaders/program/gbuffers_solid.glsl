@@ -8,6 +8,7 @@
 #include "/lib/common.glsl"
 
 #ifdef VERTEX
+#include "/lib/jitter.glsl"
 #ifdef PROG_TERRAIN
 in vec4 mc_Entity;
 in vec4 at_midBlock;
@@ -51,6 +52,7 @@ void main() {
   #endif
     gl_Position = ftransform();
 #endif
+    applyJitter(gl_Position);
 }
 #endif
 
@@ -103,7 +105,8 @@ void main() {
     if (length(viewPos) < far * 0.85) discard;
     // Break up flat LOD faces with a little world-space value noise.
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
-    albedo.rgb *= 0.92 + 0.16 * hash12(floor(wp.xz + worldNormal.xz * 0.5) + floor(wp.y));
+    vec3 cell = floor(wp - worldNormal * 0.5);
+    albedo.rgb *= 0.93 + 0.14 * hash12(cell.xz + cell.y * vec2(17.3, 5.1));
 #endif
 
     float emissive = 0.0;

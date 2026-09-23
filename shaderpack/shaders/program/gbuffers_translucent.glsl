@@ -15,6 +15,7 @@ uniform float frameTimeCounter;
 #include "/lib/lighting.glsl"
 
 #ifdef VERTEX
+#include "/lib/jitter.glsl"
 #ifndef PROG_DH
 in vec4 mc_Entity;
 #endif
@@ -43,6 +44,7 @@ void main() {
     vec3 viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     playerPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz;
     gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
+    applyJitter(gl_Position);
 
     sunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
     LightEnv e = makeLightEnv(sunDir);
@@ -150,7 +152,15 @@ void main() {
             n = waterNormal(worldPos, frameTimeCounter, strength);
         }
         bool underwater = isEyeInWater == 1;
-        if (underwater) n = -n;
+        if (underwater) {
+            // From inside the water, side faces (against ice, glass, air pockets) should just transmit;
+            // the composite pass applies the underwater medium.
+            if (worldNormal.y < 0.5) {
+                outColor = vec4(texture(colortex4, uv).rgb, 1.0);
+                return;
+            }
+            n = -n;
+        }
 
         // Water depth along the view ray, from the opaque depth behind this fragment.
 #ifdef PROG_DH

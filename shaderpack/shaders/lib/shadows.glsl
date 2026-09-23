@@ -9,6 +9,9 @@ vec3 distortShadow(vec3 p) {
 }
 
 #ifndef SHADOW_PASS
+// Average blocks of water the light crossed on the last sampleShadow call (0 = none). Drives caustics.
+float shadowWaterDepth = 0.0;
+
 // Vogel disk for well-spread PCF taps.
 vec2 vogel(int i, int n, float phi) {
     float r = sqrt((float(i) + 0.5) / float(n));
@@ -18,6 +21,7 @@ vec2 vogel(int i, int n, float phi) {
 
 // Returns colored shadow visibility. playerPos is relative to the camera; normal is world space.
 vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
+    shadowWaterDepth = 0.0;
     float dist = length(playerPos);
     if (dist > SHADOW_DIST) return vec3(1.0);
 
@@ -46,10 +50,20 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
         vec2 o = vogel(i, SHADOW_SAMPLES, phi) * texel * penumbra / f;
         vec3 p = vec3(ds.xy + o, ds.z - bias);
         float solid = step(p.z, texture(shadowtex1, p.xy).r);
-        float all = step(p.z, texture(shadowtex0, p.xy).r);
-        // Translucent casters (stained glass) tint the light instead of blocking it.
+        float d0 = texture(shadowtex0, p.xy).r;
+        float all = step(p.z, d0);
         vec4 tint = texture(shadowcolor0, p.xy);
-        vis += mix(vec3(solid) * toLinear(tint.rgb) * (1.0 - tint.a * 0.5), vec3(1.0), all);
+        vec3 through;
+        if (tint.a < 0.01) {
+            // Water: shadow-depth difference -> blocks of water crossed (undo the 0.2 z squash).
+            float blocks = max((p.z - d0) * 10.0 / abs(shadowProjection[2][2]), 0.0);
+            through = exp(-vec3(0.42, 0.075, 0.05) * blocks);
+            shadowWaterDepth += blocks / float(SHADOW_SAMPLES);
+        } else {
+            // Stained glass and ice tint the light instead of blocking it.
+            through = toLinear(tint.rgb) * (1.0 - tint.a * 0.5);
+        }
+        vis += mix(vec3(solid) * through, vec3(1.0), all);
     }
     vis /= float(SHADOW_SAMPLES);
     // Fade out near the edge of the shadow distance.

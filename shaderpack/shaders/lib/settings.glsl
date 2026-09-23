@@ -16,7 +16,7 @@
 
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
-#define CLOUD_COVERAGE 0.46
+#define CLOUD_COVERAGE 0.40
 
 #define VOLUMETRIC_LIGHT
 #define VL_STEPS 12
@@ -28,3 +28,5 @@
 #define BLOOM_STRENGTH 0.08
 #define EXPOSURE 1.0
 #define SATURATION 1.06
+
+#define TAA

@@ -46,6 +46,35 @@ float vcDensity(vec3 p, bool detail) {
     return saturate(remap(d, erode * 0.35, 1.0, 0.0, 1.0));
 }
 
+// Transmittance of direct light through the cloud layer above a world position.
+float cloudShadow(vec3 worldPos, vec3 lightDir) {
+    if (lightDir.y < 0.05) return 1.0;
+    float od = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float y = mix(VC_BOTTOM, VC_TOP, (float(i) + 0.5) / 3.0);
+        vec3 p = worldPos + lightDir * ((y - worldPos.y) / lightDir.y);
+        // Undo the missing detail erosion: base-only density overestimates cloud extent.
+        od += saturate(vcDensity(p, false) * 1.6 - 0.35);
+    }
+    return mix(exp(-od * 1.8), 1.0, 0.18);
+}
+
+// Tileable caustic pattern (after joltz0r's water shader). Returns roughly 0..1 bright filaments.
+float caustics(vec2 uv, float time) {
+    vec2 p = mod(uv * TAU, TAU) - 250.0;
+    vec2 i = p;
+    float c = 1.0;
+    const float inten = 0.005;
+    for (int n = 0; n < 4; n++) {
+        float t = time * (1.0 - (3.5 / float(n + 1)));
+        i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
+        c += 1.0 / length(vec2(p.x / (sin(i.x + t) / inten), p.y / (cos(i.y + t) / inten)));
+    }
+    c /= 4.0;
+    c = 1.17 - pow(c, 1.4);
+    return pow(abs(c), 8.0);
+}
+
 float hgPhase(float mu, float g) {
     float g2 = g * g;
     return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * mu, 1.5));
@@ -81,9 +110,10 @@ vec4 marchClouds(vec3 ro, vec3 rd, float maxDist, vec3 lightDir, vec3 directLigh
             lightOD += vcDensity(p + lightDir * ls * float(j), false) * ls;
         }
         float h = saturate((p.y - VC_BOTTOM) / (VC_TOP - VC_BOTTOM));
-        float beer = exp(-lightOD * sigma) + 0.3 * exp(-lightOD * sigma * 0.25);
+        // Octave-style multiple scattering: a softer second term lets light reach deep into the cloud.
+        float beer = exp(-lightOD * sigma * 0.55) + 0.35 * exp(-lightOD * sigma * 0.12);
         float powder = 1.0 - exp(-d * stepLen * sigma * 2.0);
-        vec3 sun = directLight * beer * phase * mix(1.0, powder * 2.0, 0.5) * 4.0;
+        vec3 sun = directLight * beer * phase * mix(1.0, powder * 2.0, 0.5) * 9.0;
         vec3 amb = ambient * (0.35 + 0.65 * h);
 
         float sampleSigma = d * sigma;

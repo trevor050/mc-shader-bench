@@ -28,8 +28,6 @@ void main() {
     vec3 playerPos = (shadowModelViewInverse * vec4(shadowViewPos, 1.0)).xyz;
     vec3 worldPos = waveVertex(playerPos + cameraPosition, mat, at_midBlock.y);
     vec4 clip = gl_ProjectionMatrix * (shadowModelView * vec4(worldPos - cameraPosition, 1.0));
-    // Water casts no shadow; its caustic look comes from the lighting pass instead.
-    if (mat == MAT_WATER) clip = vec4(10.0, 10.0, 10.0, 1.0);
     clip.xyz = distortShadow(clip.xyz);
     gl_Position = clip;
 }
@@ -45,8 +43,13 @@ flat in int mat;
 layout(location = 0) out vec4 shadowColor;
 
 void main() {
+    // Water is marked with zero alpha: lighting converts its shadow depth into an absorption distance.
+    if (mat == MAT_WATER) {
+        shadowColor = vec4(1.0, 1.0, 1.0, 0.0);
+        return;
+    }
     vec4 c = texture(gtexture, texcoord) * glcolor;
     if (c.a < 0.1) discard;
-    shadowColor = c;
+    shadowColor = vec4(c.rgb, max(c.a, 0.02));
 }
 #endif
