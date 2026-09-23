@@ -157,7 +157,8 @@ void main() {
             float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
             puddle = smoothstep(0.52, 0.62, pn) * wet;
         }
-        albedo *= mix(1.0, 0.55, wet * 0.8);
+        // Standing water hides the surface color underneath, so puddles read as dark, glossy patches.
+        albedo *= mix(1.0, 0.55, wet * 0.8) * mix(1.0, 0.25, puddle);
         float ao = m.b;
         if (!isLod) {
             vec3 viewN = mat3(gbufferModelView) * n;
@@ -183,7 +184,8 @@ void main() {
             vec3 r = reflect(rd, rn);
             float fres = 0.02 + 0.98 * pow(1.0 - saturate(dot(-rd, rn)), 5.0);
             vec3 refl = skyRadiance(r, sunDir, 6) * nl.w * nl.w;
-            col = mix(col, refl, fres * mix(wet * 0.35, 1.0, puddle));
+            // A puddle is a near-perfect mirror; a floor of reflectance keeps it visible from steeper angles.
+            col = mix(col, refl, mix(fres * wet * 0.35, max(fres, 0.18), puddle));
         }
     }
 
