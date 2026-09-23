@@ -98,29 +98,36 @@ vec3 viewFromDepth(vec2 uv, float depth) {
 // Screen-space reflection against the opaque depth buffer. Returns rgb and hit confidence in a.
 vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 #ifdef WATER_SSR
-    float stepLen = 0.6 + length(viewPos) * 0.04;
+    float stepLen = 0.5 + length(viewPos) * 0.03;
     vec3 p = viewPos + viewDir * stepLen * dither;
+    vec3 prev = viewPos;
     for (int i = 0; i < SSR_STEPS; i++) {
+        prev = p;
         p += viewDir * stepLen;
-        stepLen *= 1.18;
+        stepLen *= 1.15;
         vec3 s = projectAndDivide(gbufferProjection, p) * 0.5 + 0.5;
         if (any(lessThan(s.xy, vec2(0.0))) || any(greaterThan(s.xy, vec2(1.0))) || p.z > -0.05) break;
         float sceneDepth = texture(depthtex1, s.xy).r;
         if (sceneDepth >= 1.0) continue;
         float sceneZ = viewFromDepth(s.xy, sceneDepth).z;
-        float diff = sceneZ - p.z;
-        if (diff > 0.0 && diff < stepLen * 2.5) {
-            // Binary refinement between the last two samples.
-            vec3 a = p - viewDir * stepLen, b = p;
-            for (int j = 0; j < 5; j++) {
+        // Ray went behind a surface. Only count it as a hit if the surface is plausibly what the ray struck,
+        // not something far in front of it (that is what stretched shore trees into vertical streaks).
+        if (sceneZ - p.z > 0.0) {
+            vec3 a = prev, b = p;
+            for (int j = 0; j < 6; j++) {
                 vec3 m = (a + b) * 0.5;
                 vec3 ms = projectAndDivide(gbufferProjection, m) * 0.5 + 0.5;
                 float mz = viewFromDepth(ms.xy, texture(depthtex1, ms.xy).r).z;
                 if (mz - m.z > 0.0) b = m; else a = m;
             }
             vec3 hs = projectAndDivide(gbufferProjection, b) * 0.5 + 0.5;
+            float hitZ = viewFromDepth(hs.xy, texture(depthtex1, hs.xy).r).z;
+            float thickness = 0.35 + 0.015 * -b.z;
+            if (abs(hitZ - b.z) > thickness) return vec4(0.0);
             vec2 edge = smoothstep(0.0, 0.08, hs.xy) * smoothstep(1.0, 0.92, hs.xy);
-            return vec4(texture(colortex4, hs.xy).rgb, edge.x * edge.y);
+            // Rays heading back toward the camera have little information on screen; fade them.
+            float facing = smoothstep(0.1, -0.2, viewDir.z);
+            return vec4(texture(colortex4, hs.xy).rgb, edge.x * edge.y * facing);
         }
     }
 #endif
