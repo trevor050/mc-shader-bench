@@ -48,6 +48,13 @@ public final class BenchCam implements ClientModInitializer {
 				mc.options.inactivityFpsLimit().set(net.minecraft.client.InactivityFpsLimit.MINIMIZED);
 			}
 			tick++;
+			// Click-to-play: a real click inside the focused game window (no menu open) means someone wants to
+			// play, so hand them the mouse. Esc releases it as usual; the harness frees it again for captures.
+			if (!allowMouseGrab && mc.level != null && mc.gui.screen() == null && mc.isWindowActive()
+					&& org.lwjgl.glfw.GLFW.glfwGetMouseButton(mc.getWindow().handle(), org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+				allowMouseGrab = true;
+				mc.mouseHandler.grabMouse();
+			}
 			Iterator<Waiter> it = waiters.iterator();
 			while (it.hasNext()) {
 				Waiter w = it.next();

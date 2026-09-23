@@ -253,6 +253,12 @@ void main() {
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
     vec3 skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
     col = mix(col, skyRefl, fres * 0.6);
+#ifdef PROG_HAND
+    // The solid hand pass is cutout, not translucent. Keep transparent texels
+    // discarded above, but make visible skin and held-item pixels fully opaque.
+    outColor = vec4(col, 1.0);
+#else
     outColor = vec4(col, mix(albedo.a, 1.0, fres * 0.5));
+#endif
 }
 #endif

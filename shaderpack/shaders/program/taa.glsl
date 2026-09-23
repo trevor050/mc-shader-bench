@@ -16,6 +16,8 @@ void main() {
 uniform sampler2D colortex0;
 uniform sampler2D colortex5;
 uniform sampler2D depthtex0;
+uniform sampler2D depthtex1;
+uniform sampler2D depthtex2;
 uniform sampler2D dhDepthTex0;
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 gbufferProjectionInverse;
@@ -115,6 +117,12 @@ void main() {
     bool offscreen = any(lessThan(prevUV, vec2(0.0))) || any(greaterThan(prevUV, vec2(1.0)));
     float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
     float blend = offscreen ? 0.0 : mix(0.9, 0.75, saturate(velocity / 20.0));
+    // depthtex1 includes the solid hand while depthtex2 excludes it. The hand
+    // uses a separate depth projection and follows the camera, so ordinary
+    // world reprojection blends the scene through it.
+    float solidDepth = texture(depthtex1, texcoord).r;
+    float noHandDepth = texture(depthtex2, texcoord).r;
+    if (solidDepth < noHandDepth - 0.00001) blend = 0.0;
     // A tiny bright disc should appear immediately when uncovered and disappear
     // immediately when occluded. The ordinary history weight erases new hot pixels.
     float currentLum = luminance(current);

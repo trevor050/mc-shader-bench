@@ -103,6 +103,9 @@ def capture(b: Bench, scenes: dict, names: list[str], out_dir: Path):
         b.send(f"shot {path}")
         print(f"  {name}: {path}")
     b.send("hud on")
+    # Leave the player playable. The mouse stays free (auto-grabbing traps the OS cursor if nobody is at the
+    # game); clicking inside the game window takes control again.
+    b.send("cmd gamemode creative")
 
 
 def contact_sheet(out_dir: Path, names: list[str], cell_w: int = 640, cols: int = 3) -> Path:
