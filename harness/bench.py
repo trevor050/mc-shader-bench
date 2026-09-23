@@ -84,6 +84,7 @@ def reload(b: Bench) -> list[str]:
 
 
 def capture(b: Bench, scenes: dict, names: list[str], out_dir: Path):
+    b.send("mouse free")
     b.send("closescreen")
     b.send("hud off")
     b.send("cmd gamemode spectator")
@@ -94,12 +95,33 @@ def capture(b: Bench, scenes: dict, names: list[str], out_dir: Path):
         b.send(f"cmd tp @s {x} {y} {z} {yaw} {pitch}")
         b.send(f"cmd time set {s.get('time', 6000)}")
         b.send(f"cmd weather {s.get('weather', 'clear')}")
+        # The teleport lands a tick or two later; let the renderer notice before polling chunks.
+        b.send("wait 10")
         b.send("waitchunks 600")
         b.send(f"wait {s.get('settle', 40)}")
         path = out_dir / f"{name}.png"
         b.send(f"shot {path}")
         print(f"  {name}: {path}")
     b.send("hud on")
+
+
+def contact_sheet(out_dir: Path, names: list[str], cell_w: int = 640, cols: int = 3) -> Path:
+    """Tile the run's screenshots into one labeled image so a whole run can be reviewed at once."""
+    from PIL import Image, ImageDraw
+
+    cell_h = cell_w * 9 // 16
+    rows = (len(names) + cols - 1) // cols
+    sheet = Image.new("RGB", (cell_w * cols, cell_h * rows), "black")
+    draw = ImageDraw.Draw(sheet)
+    for i, name in enumerate(names):
+        img = Image.open(out_dir / f"{name}.png").convert("RGB").resize((cell_w, cell_h), Image.LANCZOS)
+        x, y = (i % cols) * cell_w, (i // cols) * cell_h
+        sheet.paste(img, (x, y))
+        draw.rectangle((x, y, x + 8 + 7 * len(name), y + 16), fill="black")
+        draw.text((x + 4, y + 2), name, fill="white")
+    path = out_dir / "sheet.jpg"
+    sheet.save(path, quality=88)
+    return path
 
 
 def main(argv: list[str]):
@@ -124,11 +146,23 @@ def main(argv: list[str]):
         errs = reload(b)
         print("\n".join(errs) if errs else "reload ok, no errors logged")
     elif cmd == "shots":
+        vanilla = "--vanilla" in args
+        names_arg = [a for a in args if not a.startswith("--")]
         scenes = json.loads((HERE / "scenes.json").read_text())
-        names = args or list(scenes)
-        out = HERE / "out" / datetime.now().strftime("%Y%m%d-%H%M%S")
-        capture(b, scenes, names, out)
-        print(out)
+        names = names_arg or list(scenes)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        out = HERE / "out" / (stamp + ("-vanilla" if vanilla else ""))
+        if vanilla:
+            b.send("shaders off")
+        try:
+            capture(b, scenes, names, out)
+        finally:
+            if vanilla:
+                b.send("shaders on")
+        print(contact_sheet(out, names))
+    elif cmd == "sheet":
+        out = Path(args[0])
+        print(contact_sheet(out, [p.stem for p in sorted(out.glob("*.png")) if p.stem != "sheet"]))
     else:
         print(__doc__)
     b.close()

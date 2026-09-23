@@ -1,3 +1,3 @@
 #version 330 compatibility
 #define VERTEX
-#include "/program/final.glsl"
+#include "/program/weather.glsl"

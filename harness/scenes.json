@@ -1,1 +1,11 @@
-{ "spawn_high": { "pos": [-100, 160, -650], "look": [45, 40], "time": 6000, "settle": 60 } }
+{
+  "alpine_noon":       { "pos": [2486, 160, 5],      "look": [-60, 12], "time": 6000, "settle": 100 },
+  "alpine_sunset":     { "pos": [2486, 185, 5],      "look": [90, 4],   "time": 12300, "settle": 100 },
+  "yellowstone":       { "pos": [2540, 135, -40],    "look": [30, 28],  "time": 7000 },
+  "moonlight_night":   { "pos": [3180, 88, 380],     "look": [45, 5],   "time": 18000 },
+  "sakura_valley":     { "pos": [2678, 110, 677],    "look": [0, 15],   "time": 7000 },
+  "emerald_vista":     { "pos": [-778, 140, -283],   "look": [0, 10],   "time": 6000, "settle": 120 },
+  "swamp_rain":        { "pos": [886, 70, -187],     "look": [0, 8],    "time": 6000, "weather": "rain" },
+  "frozen_ocean":      { "pos": [1014, 72, -283],    "look": [45, 12],  "time": 5000 },
+  "underwater":        { "pos": [1014, 52, -283],    "look": [45, 0],   "time": 6000 }
+}

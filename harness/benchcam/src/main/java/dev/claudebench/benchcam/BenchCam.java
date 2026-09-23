@@ -43,6 +43,10 @@ public final class BenchCam implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			if (tick == 0) {
+				// The default AFK limiter drops to 30 fps whenever nobody touches the input, which is always, here.
+				mc.options.inactivityFpsLimit().set(net.minecraft.client.InactivityFpsLimit.MINIMIZED);
+			}
 			tick++;
 			Iterator<Waiter> it = waiters.iterator();
 			while (it.hasNext()) {
