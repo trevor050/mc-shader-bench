@@ -36,8 +36,9 @@ vec2 rotateVogel12(int i, float c, float s) {
 // Returns colored shadow visibility. playerPos is relative to the camera; normal is world space.
 vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     shadowWaterDepth = 0.0;
-    float dist = length(playerPos);
-    if (dist > SHADOW_DIST) return vec3(1.0);
+    float dist2 = dot(playerPos, playerPos);
+    if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(1.0);
+    float dist = sqrt(dist2);
 
     // Normal offset scaled by distance keeps acne away on far, low-res texels.
     vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL));

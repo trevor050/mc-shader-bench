@@ -252,9 +252,12 @@ void main() {
         vec3 r = reflect(rd, n);
         r.y = abs(r.y);
         vec3 rRough = normalize(r + vec3(0.0, rough * 1.4, 0.0));
-        vec3 skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
-        skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, envLightDir, envDirect,
-                                  skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
+        vec3 skyRefl = vec3(0.0);
+        if (skyVis != 0.0) {
+            skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
+            skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, envLightDir, envDirect,
+                                      skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
+        }
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
         vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
         vec3 refl = mix(skyRefl, ssr.rgb, ssr.a * (1.0 - saturate(rough * 2.5)));
@@ -295,7 +298,8 @@ void main() {
     return;
 #endif
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
-    vec3 skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
+    vec3 skyRefl = vec3(0.0);
+    if (lmcoord.y != 0.0) skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
     col = mix(col, skyRefl, fres * 0.6);
 #ifdef PROG_HAND
     // The solid hand pass is cutout, not translucent. Keep transparent texels

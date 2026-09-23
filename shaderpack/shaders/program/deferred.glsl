@@ -75,6 +75,11 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
     vec3 b = cross(viewN, t);
     float cosPhi = cos(dither * TAU);
     float sinPhi = sin(dither * TAU);
+    // GLSL indexes matrices as [column][row]. Keep the x/y terms for jittered or off-axis projections.
+    vec4 inverseZ = vec4(gbufferProjectionInverse[0][2], gbufferProjectionInverse[1][2],
+                         gbufferProjectionInverse[2][2], gbufferProjectionInverse[3][2]);
+    vec4 inverseW = vec4(gbufferProjectionInverse[0][3], gbufferProjectionInverse[1][3],
+                         gbufferProjectionInverse[2][3], gbufferProjectionInverse[3][3]);
     for (int i = 0; i < SAMPLES; i++) {
         float fi = (float(i) + dither) / float(SAMPLES);
         float r = sqrt(fi);
@@ -88,7 +93,8 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
         if (any(lessThan(sp.xy, vec2(0.0))) || any(greaterThan(sp.xy, vec2(1.0)))) continue;
         float d = texture(depthtex0, sp.xy).r;
         if (d >= 1.0) continue;
-        float sceneZ = projectAndDivide(gbufferProjectionInverse, vec3(sp.xy, d) * 2.0 - 1.0).z;
+        vec4 ndc = vec4(sp.xy * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+        float sceneZ = dot(inverseZ, ndc) / dot(inverseW, ndc);
         float range = smoothstep(0.0, 1.0, RADIUS / abs(viewPos.z - sceneZ));
         occ += step(s.z + 0.03, sceneZ) * range;
     }
