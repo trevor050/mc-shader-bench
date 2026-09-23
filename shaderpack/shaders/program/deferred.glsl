@@ -135,8 +135,12 @@ void main() {
         float NdotL = dot(n, envLightDir);
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
+        // The first-person hand has its own projection, so world-space effects (shadow map, SSAO, clouds) would
+        // sample unrelated places. Shade it from its sky light level instead.
+        bool isHand = mat == MAT_HAND;
+        if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
-        if (!isLod && (NdotL > 0.0 || foliage)) {
+        if (!isLod && !isHand && (NdotL > 0.0 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
                 vec3 wp = playerPos + cameraPosition;
@@ -146,12 +150,12 @@ void main() {
                 shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
             }
         }
-        shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
+        if (!isHand) shadow *= cloudShadow(playerPos + cameraPosition, envLightDir);
 #endif
 
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
         vec3 wp = playerPos + cameraPosition;
-        float wet = wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
+        float wet = isHand ? 0.0 : wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
         float puddle = 0.0;
         if (wet > 0.0 && n.y > 0.9 && !foliage) {
             float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
@@ -160,7 +164,7 @@ void main() {
         // Standing water hides the surface color underneath, so puddles read as dark, glossy patches.
         albedo *= mix(1.0, 0.55, wet * 0.8) * mix(1.0, 0.25, puddle);
         float ao = m.b;
-        if (!isLod) {
+        if (!isLod && !isHand) {
             vec3 viewN = mat3(gbufferModelView) * n;
             ao *= mix(1.0, ssao(viewPos, viewN, ignTemporal(gl_FragCoord.xy + 17.0, frameCounter)), 0.85);
         }
@@ -176,7 +180,7 @@ void main() {
         // The same applies under ice or glass. Sealed caves never trip this: rock blocks the shadow map there.
         vec2 lm = nl.zw;
         float reaching = saturate(luminance(shadow) * 8.0);
-        if (!isLod && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
+        if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
 
         if (wet > 0.0 && !isLod) {

@@ -79,6 +79,8 @@ void main() {
     }
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
     float dist = sky ? 4096.0 : length(playerPos);
+    // The hand uses its own projection; keep fog and light shafts off it.
+    if (depth < 0.56) dist = 0.5;
     vec3 rd = normalize(playerPos);
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;

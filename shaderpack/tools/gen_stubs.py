@@ -24,7 +24,7 @@ PROGRAMS = {
     "dh_terrain": ("gbuffers_solid.glsl", "PROG_DH"),
     "gbuffers_water": ("gbuffers_translucent.glsl", "PROG_WATER"),
     "gbuffers_hand_water": ("gbuffers_translucent.glsl", "PROG_WATER"),
-    "gbuffers_hand": ("gbuffers_translucent.glsl", "PROG_HAND"),
+    "gbuffers_hand": ("gbuffers_solid.glsl", "PROG_HAND"),
     "dh_water": ("gbuffers_translucent.glsl", "PROG_DH"),
     "gbuffers_skybasic": ("sky.glsl", ""),
     "gbuffers_skytextured": ("sky.glsl", "PROG_SKYTEXTURED"),

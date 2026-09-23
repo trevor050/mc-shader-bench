@@ -53,10 +53,14 @@ void main() {
 #elif defined PROG_DH
     mat = MAT_LOD;
     if (dhMaterialId == DH_BLOCK_LEAVES) mat = MAT_LEAVES;
-    if (dhMaterialId == DH_BLOCK_ILLUMINATED || dhMaterialId == DH_BLOCK_LAVA) mat = MAT_EMISSIVE;    gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
+    if (dhMaterialId == DH_BLOCK_ILLUMINATED || dhMaterialId == DH_BLOCK_LAVA) mat = MAT_EMISSIVE;
+    gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
 #else
   #ifdef PROG_ENTITIES
     mat = MAT_ENTITY;
+  #endif
+  #ifdef PROG_HAND
+    mat = MAT_HAND;
   #endif
     gl_Position = ftransform();
 #endif
@@ -121,7 +125,7 @@ void main() {
     // Skip LOD fragments that overlap real chunks so the two never z-fight.
     vec3 ndc = vec3(gl_FragCoord.xy / vec2(viewWidth, viewHeight), gl_FragCoord.z) * 2.0 - 1.0;
     vec3 viewPos = projectAndDivide(dhProjectionInverse, ndc);
-    if (length(viewPos) < far * 0.78) discard;
+    if (length(viewPos) < far * 0.1) discard;
     // Break up flat LOD faces with a little world-space value noise.
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
     vec3 cell = floor(wp - worldNormal * 0.5);
@@ -140,7 +144,8 @@ void main() {
     n = vec3(0.0, 1.0, 0.0);
 #endif
 
-    outAlbedo = vec4(albedo.rgb, 1.0);    outNormalLight = vec4(encodeNormal(n), lmcoord);
+    outAlbedo = vec4(albedo.rgb, 1.0);
+    outNormalLight = vec4(encodeNormal(n), lmcoord);
     outMaterial = vec4(float(mat) / 255.0, emissive, ao, 1.0);
 }
 #endif

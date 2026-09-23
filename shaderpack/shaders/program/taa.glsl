@@ -89,6 +89,10 @@ void main() {
     vec3 prevView = mat3(gbufferPreviousModelView) * prevPlayer + (sky ? vec3(0.0) : gbufferPreviousModelView[3].xyz);
     vec4 prevClip = gbufferPreviousProjection * vec4(prevView, 1.0);
     vec2 prevUV = prevClip.xy / prevClip.w * 0.5 + 0.5;
+    // The first-person hand is locked to the screen (Iris draws it at depth < 0.56). Reprojecting it as world
+    // geometry pulled the terrain behind it into the history, which made the hand look see-through.
+    bool hand = depth < 0.56;
+    if (hand) prevUV = texcoord;
 
     // 3x3 neighborhood bounds in YCoCg; history outside them is clipped (kills ghosting).
     vec2 px = 1.0 / vec2(viewWidth, viewHeight);
