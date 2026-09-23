@@ -148,9 +148,12 @@ void main() {
         // Reconstructing the direction from the far-plane depth loses precision; stars need an exact ray.
         vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
+        col += moonSky(starDir, -sunDir);
         col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
                         vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
+#if defined DIM_NETHER || defined DIM_END
         col += gAlbedo.rgb;
+#endif
     } else {
         vec4 nl = texture(colortex1, texcoord);
         vec4 m = texture(colortex2, texcoord);

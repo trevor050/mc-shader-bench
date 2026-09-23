@@ -86,3 +86,39 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     col *= exp(-0.2 / max(rd.y + 0.03, 0.02)) * smoothstep(-0.02, 0.05, rd.y);
     return col;
 }
+
+uniform int moonPhase;
+
+// A round moon instead of the square vanilla sprite: a lit sphere whose terminator follows the moon phase,
+// with darker maria, faint earthshine on the unlit side, and a soft halo from forward scattering in the air.
+// Drawn slightly larger than the real moon so it reads at game field-of-view, and kept white (it only warms a
+// little right at the horizon, never into a second sun).
+vec3 moonSky(vec3 rd, vec3 moonDir) {
+    const float R = 0.02;                            // angular radius (radians)
+    float phaseAngle = float(moonPhase) / 8.0 * TAU; // 0 = full moon, pi = new moon
+    float illum = 0.5 + 0.5 * cos(phaseAngle);       // lit fraction
+    float horizon = smoothstep(-0.03, 0.05, moonDir.y);
+    // Air mass reddening near the horizon, softened: a hint of warmth, not orange.
+    vec3 airTint = mix(vec3(1.0), sunTransmittance(moonDir) / max(luminance(sunTransmittance(moonDir)), 1e-3), 0.35);
+
+    vec3 col = vec3(0.0);
+    vec3 right = normalize(cross(moonDir, CELESTIAL_NORTH));
+    vec3 up = cross(right, moonDir);
+    vec2 p = vec2(dot(rd - moonDir, right), dot(rd - moonDir, up)) / R;
+    float r2 = dot(p, p);
+    if (r2 < 1.3 && dot(rd, moonDir) > 0.0) {
+        vec3 n = vec3(p, sqrt(max(1.0 - r2, 0.0)));
+        vec3 L = vec3(sin(phaseAngle), 0.0, cos(phaseAngle));
+        float lit = smoothstep(-0.04, 0.12, dot(n, L));
+        // Maria: large dark basins plus finer mottling, fixed to the disc (the moon always shows one face).
+        float m = valueNoise(p * 2.1 + 3.7) * 0.65 + valueNoise(p * 5.3 + 11.0) * 0.35;
+        float albedo = mix(1.0, 0.58, smoothstep(0.45, 0.7, m)) * (0.9 + 0.1 * valueNoise(p * 17.0));
+        float edge = 1.0 - smoothstep(0.96, 1.02, sqrt(r2));
+        vec3 surface = vec3(0.95, 0.97, 1.0) * albedo * (lit * 1.1 + 0.012);
+        col += surface * edge;
+    }
+    // Halo.
+    float a = acos(clamp(dot(rd, moonDir), -1.0, 1.0));
+    col += vec3(0.75, 0.85, 1.0) * (exp(-a * 30.0) * 0.05 + exp(-a * 6.0) * 0.005) * illum;
+    return col * airTint * horizon * (1.0 - rainStrength);
+}
