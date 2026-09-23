@@ -1,0 +1,7 @@
+harness/out/
+harness/world-template/
+harness/__pycache__/
+harness/benchcam/build/
+harness/benchcam/.gradle/
+harness/benchcam/run/
+*.log

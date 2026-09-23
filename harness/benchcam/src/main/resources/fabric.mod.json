@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "benchcam",
+	"version": "${version}",
+	"name": "BenchCam",
+	"description": "Localhost command socket for scripted shader screenshots.",
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["dev.claudebench.benchcam.BenchCam"]
+	},
+	"mixins": ["benchcam.mixins.json"],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
