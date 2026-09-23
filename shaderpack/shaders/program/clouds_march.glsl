@@ -25,6 +25,9 @@ void main() {
     envDirect = e.directLight;
     // Light arriving from the sky dome above a cloud (hemisphere integral of the zenith radiance).
     skyLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * TAU * 0.9;
+    // At golden hour the direct light is deep orange; shaded cloud sides are lit by the still-blue sky
+    // overhead, which is what turns them lilac instead of brown.
+    skyLight *= mix(1.0, 1.9, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
 }
 #endif
 
