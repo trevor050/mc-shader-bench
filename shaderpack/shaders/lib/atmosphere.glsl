@@ -79,8 +79,12 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
     }
     vec3 single = sumR * BETA_R * phaseRayleigh(mu) + sumM * BETA_M * phaseMie(mu, MIE_G);
     // Crude isotropic multiple-scattering term keeps the horizon luminous instead of dim.
-    vec3 multi = (sumR * BETA_R + sumM * BETA_M) * (0.1 / (4.0 * PI));
-    return intensity * (single + multi);
+    vec3 multi = (sumR * BETA_R + sumM * BETA_M) * (0.05 / (4.0 * PI));
+    // Sky lit by the sky: higher-order Rayleigh scattering of already-blue skylight. Without it, a low sun
+    // leaves the zenith grey (only reddened direct light reaches it); with it twilight stays blue overhead.
+    float skyLit = smoothstep(-0.15, 0.1, lightDir.y);
+    vec3 skySelf = (1.0 - exp(-BETA_R * od.x)) * 0.035 * skyLit;
+    return intensity * (single + multi + skySelf);
 }
 
 #ifdef DIM_NETHER
@@ -115,7 +119,7 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 // Shared by the sky (below the horizon) and the terrain fog so ungenerated LODs and fogged terrain match.
 vec3 hazeColor(vec3 rd, vec3 sunDir) {
     vec3 h = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)), sunDir, 8);
-    return h * mix(1.0, 0.62, smoothstep(0.0, -0.3, rd.y));
+    return h * mix(1.0, 0.42, smoothstep(0.0, -0.2, rd.y));
 }
 
 vec3 sunDisc(vec3 rd, vec3 sunDir) {

@@ -16,7 +16,7 @@
 
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
-#define CLOUD_COVERAGE 0.40
+#define CLOUD_COVERAGE 0.34
 
 #define VOLUMETRIC_LIGHT
 #define VL_STEPS 12
@@ -30,6 +30,6 @@
 #define EXPOSURE_MIN 0.02
 #define EXPOSURE_MAX 20.0
 //#define EXPOSURE_DEBUG
-#define SATURATION 1.06
+#define SATURATION 1.25
 
 #define TAA

@@ -48,7 +48,8 @@ vec3 agx(vec3 c) {
     c = agxContrast(c);
     c = outset * c;
     float l = luminance(c);
-    c = pow(max(c, 0.0), vec3(1.08));
+    // "Punchy" look (after Blender's AgX looks): keeps sunset oranges vivid instead of drifting to brown.
+    c = pow(max(c, 0.0), vec3(1.2));
     c = l + SATURATION * (c - l);
     return c;
 }

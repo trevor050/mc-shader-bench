@@ -195,24 +195,34 @@ void main() {
         vec3 scatterCol = vec3(0.02, 0.09, 0.11) * (envAmbient * skyVis / PI + envDirect * shadow * 0.08);
         vec3 body = refracted * transmit + scatterCol * (1.0 - transmit);
 
+        // Far away, a single pixel covers many small waves, so water behaves like a rough surface: it reflects
+        // a spread of sky directions (skewed toward the higher, darker sky) and a smaller share overall.
+        // This is what keeps a real sea darker than the sky and gives the horizon a crisp line.
+        float rough = mix(0.03, 0.35, saturate(dist / 350.0));
         vec3 r = reflect(rd, n);
         r.y = abs(r.y);
-        vec3 skyRefl = skyRadiance(r, sunDir, 8);
-        skyRefl = applyClouds(skyRefl, r, sunDir, envDirect, envAmbient * 0.12, cameraPosition.xz) * skyVis;
+        vec3 rRough = normalize(r + vec3(0.0, rough * 1.4, 0.0));
+        vec3 skyRefl = skyRadiance(rRough, sunDir, 8);
+        skyRefl = applyClouds(skyRefl, rRough, sunDir, envDirect, envAmbient * 0.12, cameraPosition.xz) * skyVis;
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
         vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
-        vec3 refl = mix(skyRefl, ssr.rgb, ssr.a);
+        vec3 refl = mix(skyRefl, ssr.rgb, ssr.a * (1.0 - saturate(rough * 2.5)));
 
-        float fres = underwater ? 0.15 : fresnelSchlick(dot(-rd, n), 0.02);
+        float fres = underwater ? 0.15 : fresnelSchlick(dot(-rd, n), 0.02) * mix(1.0, 0.5, saturate(rough * 2.5));
         vec3 col = mix(body, refl, fres);
 
-        // Sun glint: tight GGX lobe.
+        // Sun glitter: a microfacet highlight whose width grows with distance, so the sun's reflection
+        // stretches into a shimmering path across the water toward the viewer.
         vec3 h = normalize(envLightDir - rd);
         float NdotH = saturate(dot(n, h));
-        float a2 = 0.0016;
-        float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-        float spec = a2 / (PI * d * d) * saturate(dot(n, envLightDir)) * 0.25;
-        col += envDirect * shadow * spec * fres * 4.0;
+        float alpha = mix(0.04, 0.3, saturate(dist / 250.0));
+        float a2 = alpha * alpha;
+        float dd = NdotH * NdotH * (a2 - 1.0) + 1.0;
+        float D = a2 / (PI * dd * dd);
+        float NdotV = max(dot(n, -rd), 0.15);
+        float Fh = fresnelSchlick(dot(h, -rd), 0.02);
+        float spec = D * Fh / (4.0 * NdotV) * saturate(dot(n, envLightDir));
+        col += envDirect * shadow * spec * skyVis;
 
         outColor = vec4(col, 1.0);
         return;

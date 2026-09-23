@@ -119,8 +119,10 @@ void main() {
 #endif
         col += starField(rd) * night * vec3(0.9, 0.95, 1.1) * 0.35 * (1.0 - rainStrength) * smoothstep(0.0, 0.1, rd.y);
         col += gAlbedo.rgb;
-#if !defined DIM_NETHER && !defined DIM_END
-        vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, envAmbient / PI * 0.9, ignTemporal(gl_FragCoord.xy, frameCounter));
+#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
+        // Cloud shadowed sides are lit by the sky overhead (blue, even at sunset), not the orange horizon glow.
+        vec3 cloudAmbient = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * 2.2;
+        vec4 clouds = marchClouds(cameraPosition, rd, 1e9, envLightDir, envDirect, cloudAmbient, ignTemporal(gl_FragCoord.xy, frameCounter));
         col = col * clouds.a + clouds.rgb;
 #endif
     } else {
