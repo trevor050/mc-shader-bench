@@ -274,14 +274,15 @@ vec4 cirrus(vec3 ro, vec3 rd, CloudWeather w, vec3 lightDir, vec3 directLight, v
     float patch = saturate((cloudTex(vec3(q / 16000.0, 0.9)).r - 0.68 + w.cirrus * 0.16) / 0.14);
     if (patch <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
     // Gentle bend of the fibres.
-    float bend = cloudTex(vec3(q / 9000.0, 0.2)).g - 0.5;
-    vec2 f = vec2(q.x / 7000.0, (q.y + bend * 2600.0) / 1100.0);
+    float bend = cloudTex(vec3(q / 12000.0, 0.2)).g - 0.5;
+    vec2 f = vec2(q.x / 9000.0, (q.y + bend * 1700.0) / 380.0);
     // Far away the fine fibres are sub-pixel; fade them to their average instead of letting them alias.
     float fineFade = 1.0 - smoothstep(6000.0, 20000.0, t);
-    float fib = cloudTex(vec3(f, 0.45)).g * 0.65 + mix(0.48, cloudTex(vec3(f * vec2(2.3, 2.9), 0.15)).b, fineFade) * 0.35;
-    float d = saturate((fib - 0.5) / 0.22) * patch * 0.8;
-    // Hooked, fading tails along the wind.
-    d *= smoothstep(0.35, 0.65, cloudTex(vec3(q.x / 2600.0, q.y / 1500.0, 0.66)).r);
+    // Smooth value noise stretched ~25:1 along the wind gives straight, silky fibres (cellular noise curls).
+    float fib = valueNoise(f) * 0.6 + mix(0.5, valueNoise(f * vec2(1.7, 2.6) + 13.1), fineFade) * 0.4;
+    float d = saturate((fib - 0.45) / 0.3) * patch * 0.7;
+    // Tails fade out along the wind.
+    d *= smoothstep(0.3, 0.7, valueNoise(vec2(q.x / 4000.0, q.y / 1800.0) + 7.7));
     d *= smoothstep(0.0, 0.1, rd.y);
     if (d <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
     float mu = dot(rd, lightDir);
