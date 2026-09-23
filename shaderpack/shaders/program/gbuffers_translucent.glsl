@@ -74,6 +74,7 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
+uniform sampler2D colortex9;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
@@ -133,6 +134,19 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
     }
 #endif
     return vec4(0.0);
+}
+
+// Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
+vec3 applyCloudsInFront(vec3 col, vec2 uv) {
+#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
+    if (isEyeInWater == 1) return col;
+    vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
+    vec2 cuv = clamp(uv * halfRes, vec2(0.5), halfRes - 0.5) / vec2(viewWidth, viewHeight);
+    vec4 c = texture(colortex9, cuv);
+    return col * c.a + c.rgb;
+#else
+    return col;
+#endif
 }
 
 void main() {
@@ -257,7 +271,7 @@ void main() {
         float spec = D * Fh / (4.0 * NdotV) * saturate(dot(n, envLightDir));
         col += envDirect * shadow * spec * skyVis;
 
-        outColor = vec4(col, 1.0);
+        outColor = vec4(applyCloudsInFront(col, uv), 1.0);
         return;
     }
 
@@ -284,7 +298,17 @@ void main() {
     // discarded above, but make visible skin and held-item pixels fully opaque.
     outColor = vec4(col, 1.0);
 #else
-    outColor = vec4(col, mix(albedo.a, 1.0, fres * 0.5));
+    float a = mix(albedo.a, 1.0, fres * 0.5);
+    // Blending happens after this, so fold the clouds in front into the straight colour as seen over the
+    // scene (which already has them): only add their own light, weighted by this surface's coverage.
+    vec4 cl = vec4(0.0, 0.0, 0.0, 1.0);
+#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
+    {
+        vec2 halfRes = ceil(vec2(viewWidth, viewHeight) * 0.5);
+        cl = texture(colortex9, clamp(uv * halfRes, vec2(0.5), halfRes - 0.5) / vec2(viewWidth, viewHeight));
+    }
+#endif
+    outColor = vec4(col * cl.a + cl.rgb, a);
 #endif
 }
 #endif

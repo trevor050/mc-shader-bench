@@ -218,6 +218,9 @@ void main() {
         }
     }
 
+    // Water and glass read this copy for refraction and draw clouds in front of themselves, so it must not
+    // already contain the clouds (they would show through twice, or vanish behind the water surface).
+    outCopy = vec4(col, 1.0);
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
     // Clouds cover the sky and, when the camera is inside or above them, terrain behind them too.
     float sceneDist = (depth >= 1.0 && !isLod) || depth < 0.56 ? 1e6 : length(playerPos);
@@ -225,7 +228,6 @@ void main() {
     col = col * clouds.a + clouds.rgb;
 #endif
     outColor = vec4(col, 1.0);
-    outCopy = vec4(col, 1.0);
 }
 #endif
 

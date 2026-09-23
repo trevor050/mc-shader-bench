@@ -115,6 +115,11 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
         vec2 fine = cloudTex(q * 9.0 - wind / 400.0).gb;
         float billow = mix(fine.x, 1.0 - fine.y, smoothstep(0.1, 0.5, hn));
         d = saturate(remap(d, billow * 0.35, 1.0, 0.0, 1.0));
+        if (lod < 0 && d > 0.0) {
+            // Within a few hundred blocks: small puffs and torn wisps, so flying into a cloud shows texture.
+            float puff = cloudTex(q * 26.0 + wind / 150.0).g;
+            d = saturate(remap(d, puff * 0.3, 1.0, 0.0, 1.0));
+        }
     }
     // Dense cores: real cumulus are optically thick a few blocks inside the edge.
     return smoothstep(0.0, 0.45, d) * 1.5;
@@ -182,7 +187,7 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     for (int i = 0; i < 64; i++) {
         if (t >= t1 || trans < 0.02) break;
         vec3 p = ro + rd * t;
-        int lod = t < 3000.0 ? 0 : 1;
+        int lod = t < 450.0 ? -1 : (t < 3000.0 ? 0 : 1);
         float d = l0Density(p, w, lod);
         if (d > 0.002) {
             float fade = 1.0 - smoothstep(CLOUD_MAX_DIST * 0.7, CLOUD_MAX_DIST, t);
