@@ -189,6 +189,7 @@ const int colortex2Format = RGBA8;
 const int colortex4Format = RGBA16F;
 const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
+const int colortex6Format = R16F;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */

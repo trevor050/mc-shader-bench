@@ -25,8 +25,11 @@
 #define WATER_SSR
 #define SSR_STEPS 24
 
-#define BLOOM_STRENGTH 0.08
-#define EXPOSURE 1.0
+#define BLOOM_STRENGTH 0.06
+#define EXPOSURE_KEY 0.42
+#define EXPOSURE_MIN 0.02
+#define EXPOSURE_MAX 20.0
+//#define EXPOSURE_DEBUG
 #define SATURATION 1.06
 
 #define TAA

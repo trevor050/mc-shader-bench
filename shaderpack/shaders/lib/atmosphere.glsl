@@ -125,7 +125,8 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
     float d = dot(rd, sunDir);
     float disc = smoothstep(0.99985, 0.99992, d);
     vec3 t = sunTransmittance(sunDir);
-    return disc * t * SUN_ILLUMINANCE * 900.0 * (1.0 - rainStrength);
+    // Far brighter than the sky, like the real sun: its glow comes from bloom spreading this energy.
+    return disc * t * SUN_ILLUMINANCE * 30000.0 * (1.0 - rainStrength);
 }
 
 float starField(vec3 rd) {

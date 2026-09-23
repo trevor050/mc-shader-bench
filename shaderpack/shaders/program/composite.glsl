@@ -44,6 +44,7 @@ uniform float far;
 uniform float dhFarPlane;
 #define SHADOW_PASS
 #include "/lib/shadows.glsl"
+#include "/lib/clouds.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -51,8 +52,10 @@ flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
 
-/* RENDERTARGETS: 0 */
+/* RENDERTARGETS: 0,6 */
 layout(location = 0) out vec4 outColor;
+// Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
+layout(location = 1) out vec4 outAdaptLum;
 
 float shadowVisibility(vec3 playerPos) {
     vec3 sp = (shadowProjection * (shadowModelView * vec4(playerPos, 1.0))).xyz;
@@ -86,13 +89,13 @@ void main() {
         vec3 trans = exp(-absorb * min(dist, 96.0));
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);
-        outColor = vec4(col, 1.0);
+        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
         return;
     }
     if (isEyeInWater > 1) {
         vec3 fogCol = isEyeInWater == 2 ? vec3(2.0, 0.4, 0.05) : vec3(0.6, 0.65, 0.7);
         col = mix(col, fogCol, 1.0 - exp(-dist * 0.8));
-        outColor = vec4(col, 1.0);
+        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
         return;
     }
 
@@ -112,7 +115,7 @@ void main() {
         fogAmt = max(fogAmt, smoothstep(farDist * 0.75, farDist, dist));
 #if !defined DIM_NETHER && !defined DIM_END
         // Far LODs always dissolve into the haze, so where DH has not generated yet looks the same as far land.
-        fogAmt = max(fogAmt, smoothstep(1400.0, 3600.0, dist) * 0.92);
+        fogAmt = max(fogAmt, smoothstep(3000.0, 6000.0, dist) * 0.85);
 #endif
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
 
@@ -120,20 +123,21 @@ void main() {
 
 #ifdef VOLUMETRIC_LIGHT
     // March toward the scene point through the shadow map for sun shafts.
-    float vlDist = min(dist, SHADOW_DIST);
+    float vlDist = min(dist, SHADOW_DIST * 1.5);
     float stepLen = vlDist / float(VL_STEPS);
     float lit = 0.0;
     for (int i = 0; i < VL_STEPS; i++) {
         vec3 p = rd * (float(i) + dither) * stepLen;
-        lit += shadowVisibility(p);
+        // Terrain and cloud shadows both carve the air, so beams show under cloud gaps and through trees.
+        lit += shadowVisibility(p) * cloudShadow(p + cameraPosition, envLightDir);
     }
     lit /= float(VL_STEPS);
     float mu = dot(rd, envLightDir);
     float phase = phaseMie(mu, 0.72) * 0.7 + 0.08;
     float haze = (0.35 + rainStrength) * (1.0 - exp(-vlDist * 0.004));
-    col += envDirect * lit * phase * haze * 0.18 * skyExposure;
+    col += envDirect * lit * phase * haze * 0.3 * skyExposure;
 #endif
 
-    outColor = vec4(col, 1.0);
+    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 10.0));
 }
 #endif
