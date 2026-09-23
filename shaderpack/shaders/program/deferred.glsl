@@ -169,7 +169,14 @@ void main() {
         if (isLod && mat == MAT_LEAVES) farFoliage = 1.0;
         shadow *= mix(1.0, 0.5, farFoliage);
         ao *= mix(1.0, 0.72, farFoliage);
-        col = shadeSurface(env, albedo, n, -rd, nl.zw, ao, mat, shadow, m.g);
+        // Water lowers Minecraft's sky light by one level per block, so a seafloor looks like a sealed cave to
+        // the sky-light gates in shadeSurface. When the shadow map shows light arriving through water, the
+        // surface is open to the sky above that water; its absorption is already applied via the shadow term.
+        // The same applies under ice or glass. Sealed caves never trip this: rock blocks the shadow map there.
+        vec2 lm = nl.zw;
+        float reaching = saturate(luminance(shadow) * 8.0);
+        if (!isLod && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
+        col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
 
         if (wet > 0.0 && !isLod) {
             vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
