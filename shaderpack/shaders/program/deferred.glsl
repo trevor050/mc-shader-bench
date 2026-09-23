@@ -46,6 +46,8 @@ uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 uniform vec3 cameraPosition;
 uniform float wetness;
+uniform mat4 gbufferProjection;
+uniform mat4 gbufferModelView;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 
@@ -58,6 +60,31 @@ flat in vec3 envAmbient;
 /* RENDERTARGETS: 0,4 */
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outCopy;
+
+// Hemisphere SSAO in view space; the per-frame dither lets TAA converge it to a smooth result.
+float ssao(vec3 viewPos, vec3 viewN, float dither) {
+    const int SAMPLES = 8;
+    const float RADIUS = 0.9;
+    float occ = 0.0;
+    vec3 t = normalize(abs(viewN.y) < 0.9 ? cross(viewN, vec3(0.0, 1.0, 0.0)) : cross(viewN, vec3(1.0, 0.0, 0.0)));
+    vec3 b = cross(viewN, t);
+    for (int i = 0; i < SAMPLES; i++) {
+        float fi = (float(i) + dither) / float(SAMPLES);
+        float phi = float(i) * 2.39996323 + dither * TAU;
+        float r = sqrt(fi);
+        vec3 h = vec3(r * cos(phi), r * sin(phi), sqrt(max(1.0 - fi, 0.0)));
+        vec3 dir = t * h.x + b * h.y + viewN * h.z;
+        vec3 s = viewPos + dir * RADIUS * mix(0.15, 1.0, fi * fi);
+        vec3 sp = projectAndDivide(gbufferProjection, s) * 0.5 + 0.5;
+        if (any(lessThan(sp.xy, vec2(0.0))) || any(greaterThan(sp.xy, vec2(1.0)))) continue;
+        float d = texture(depthtex0, sp.xy).r;
+        if (d >= 1.0) continue;
+        float sceneZ = projectAndDivide(gbufferProjectionInverse, vec3(sp.xy, d) * 2.0 - 1.0).z;
+        float range = smoothstep(0.0, 1.0, RADIUS / abs(viewPos.z - sceneZ));
+        occ += step(s.z + 0.03, sceneZ) * range;
+    }
+    return 1.0 - occ / float(SAMPLES);
+}
 
 void main() {
     LightEnv env;
@@ -128,7 +155,12 @@ void main() {
             puddle = smoothstep(0.52, 0.62, pn) * wet;
         }
         albedo *= mix(1.0, 0.55, wet * 0.8);
-        col = shadeSurface(env, albedo, n, -rd, nl.zw, m.b, mat, shadow, m.g);
+        float ao = m.b;
+        if (!isLod) {
+            vec3 viewN = mat3(gbufferModelView) * n;
+            ao *= mix(1.0, ssao(viewPos, viewN, ignTemporal(gl_FragCoord.xy + 17.0, frameCounter)), 0.85);
+        }
+        col = shadeSurface(env, albedo, n, -rd, nl.zw, ao, mat, shadow, m.g);
 
         if (wet > 0.0 && !isLod) {
             vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
