@@ -29,4 +29,8 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Hand renders after deferred: it is forward shaded (PROG_HAND in translucent).
 - Water is in the shadow map with alpha 0 as a marker; shadows.glsl converts depth diff to blocks for absorption/caustics.
 - Trevor's skin is a rainbow checker; a rainbow hand is not a bug.
+- dhFarPlane is NOT the LOD extent (half of it ~1.6 km). Use LOD_DISTANCE (settings.glsl) = DH lodChunkRenderDistanceRadius*16; keep both in sync (currently 512 chunks / 8192).
+- Horizon review: always inspect full-res crops, never contact sheets (downscaling hid bands and invented cloud rings). Debug by painting categories (sky mask, distance bands) with saturated HDR colors; grayscale debug gets scrambled by AgX.
+- Sun: disc is physically bright; final.glsl solarGlare (committed by Trevor/another agent in b97f3c3) adds halo + star. Eye adaptation state lives in colortex5 alpha, fed by capped luminance in colortex6 from composite.
+- Others commit to this repo too (commits under Trevor050). Check git log before editing sun/final code.
 - Editing the same file via PowerShell and Edit tool causes stale-read failures; re-Read before Edit.
