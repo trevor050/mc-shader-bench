@@ -92,7 +92,15 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
     return toLinear(fogColor) * 0.35;
 #elif defined DIM_END
-    return vec3(0.010, 0.006, 0.016) * (1.0 + 0.6 * saturate(rd.y));
+    // Faint nebula: domain-warped value noise over the view direction.
+    vec2 p = rd.xz / (abs(rd.y) + 0.35) * 2.2;
+    float warp = valueNoise(p * 0.8 + 3.1);
+    float n = 0.0, amp = 0.5;
+    vec2 q = p + warp * 1.7;
+    for (int i = 0; i < 4; i++) { n += valueNoise(q) * amp; q = q * 2.07 + 11.3; amp *= 0.5; }
+    n = smoothstep(0.35, 0.95, n);
+    vec3 neb = mix(vec3(0.05, 0.015, 0.09), vec3(0.01, 0.06, 0.07), valueNoise(p * 0.5 + 7.0));
+    return vec3(0.006, 0.004, 0.011) + neb * n * 0.25;
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3);

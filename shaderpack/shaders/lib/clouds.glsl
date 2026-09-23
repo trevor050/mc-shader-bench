@@ -7,8 +7,9 @@
 
 uniform sampler3D cloudNoise;
 
-// Raw 3D custom textures load with clamp-to-edge, so tile manually.
-vec4 cloudTex(vec3 p) { return texture(cloudNoise, fract(p)); }
+// Raw 3D custom textures clamp at the edges, so tile manually. The texture is 65^3 with the first slice
+// repeated at the end; mapping [0,1) onto texel centers 0..64 lets filtering cross the wrap without a seam.
+vec4 cloudTex(vec3 p) { return texture(cloudNoise, fract(p) * (64.0 / 65.0) + 0.5 / 65.0); }
 
 float remap(float v, float lo, float hi, float nlo, float nhi) {
     return nlo + (v - lo) * (nhi - nlo) / (hi - lo);

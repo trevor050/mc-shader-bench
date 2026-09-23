@@ -160,6 +160,12 @@ void main() {
             vec3 viewN = mat3(gbufferModelView) * n;
             ao *= mix(1.0, ssao(viewPos, viewN, ignTemporal(gl_FragCoord.xy + 17.0, frameCounter)), 0.85);
         }
+        // Past the shadow map, canopies lose all self-shadowing and glow flat, which makes LOD trees stand
+        // out against shadowed near trees. Approximate the missing inner-canopy occlusion.
+        float farFoliage = foliage ? smoothstep(SHADOW_DIST * 0.8, SHADOW_DIST, length(playerPos)) : 0.0;
+        if (isLod && mat == MAT_LEAVES) farFoliage = 1.0;
+        shadow *= mix(1.0, 0.5, farFoliage);
+        ao *= mix(1.0, 0.72, farFoliage);
         col = shadeSurface(env, albedo, n, -rd, nl.zw, ao, mat, shadow, m.g);
 
         if (wet > 0.0 && !isLod) {

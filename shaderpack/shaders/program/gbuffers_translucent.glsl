@@ -171,7 +171,10 @@ void main() {
 
         // Water depth along the view ray, from the opaque depth behind this fragment.
 #ifdef PROG_DH
-        float waterDepth = 12.0;
+        // DH keeps its own opaque depth; use it so LOD water tints by real depth like vanilla water does.
+        float lodBehind = texture(dhDepthTex1, uv).r;
+        float waterDepth = lodBehind >= 1.0 ? 24.0
+            : max(length(projectAndDivide(dhProjectionInverse, vec3(uv, lodBehind) * 2.0 - 1.0)) - dist, 0.0);
 #else
         float behind = texture(depthtex1, uv).r;
         float behindDist = behind >= 1.0 ? far * 2.0 : length(viewFromDepth(uv, behind));

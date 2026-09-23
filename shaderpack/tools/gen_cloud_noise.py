@@ -1,4 +1,4 @@
-"""Bake a tileable 64^3 RGBA16 cloud noise volume for the shader pack.
+"""Bake a tileable 64^3 RGBA16 cloud noise volume (padded to 65^3) for the shader pack.
 
 R: Perlin-Worley (billowy base shape)
 G, B, A: inverted Worley at increasing frequencies (used for erosion)
@@ -80,6 +80,11 @@ perlin_worley = np.clip(remap(p, w1 - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0)
 
 vol = np.stack([norm01(perlin_worley), norm01(w1), norm01(w2), norm01(w3)], -1)
 data = (vol * 65535.0 + 0.5).astype("<u2")
+# Pad to 65^3 by repeating the first slice on each axis: raw custom textures clamp at the edges, so the
+# shader samples the 64 unique texels plus this copy and linear filtering blends across the wrap seamlessly.
+data = np.concatenate([data, data[:1]], axis=0)
+data = np.concatenate([data, data[:, :1]], axis=1)
+data = np.concatenate([data, data[:, :, :1]], axis=2)
 # Texture upload order is x fastest, then y, then z.
 data = np.transpose(data, (2, 1, 0, 3))
 out = Path(__file__).resolve().parent.parent / "shaders" / "textures" / "cloudnoise.dat"
