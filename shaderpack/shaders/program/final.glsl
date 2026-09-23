@@ -22,6 +22,7 @@ uniform mat4 gbufferProjection;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
+uniform float frameTimeCounter;
 
 const bool colortex0MipmapEnabled = true;
 
@@ -117,22 +118,35 @@ vec3 sunGlare(vec2 uv) {
         float sky = step(1.0, texture(depthtex0, p).r) * step(1.0, texture(dhDepthTex0, p).r);
         float l = luminance(textureLod(colortex0, p, 2.0).rgb);
         // Bright sky near the sun feeds the shafts; clouds and terrain in the way break them up.
-        acc += sky * smoothstep(avgLum * 3.0, avgLum * 12.0, l) * decay;
-        decay *= 0.96;
+        acc += sky * smoothstep(avgLum * 2.0, avgLum * 9.0, l) * decay;
+        decay *= 0.972;
     }
     float rays = acc / float(N);
 
     vec2 dv = (uv - sunUV) * aspect;
     float d = length(dv);
     float ang = atan(dv.y, dv.x);
-    // Six main spikes plus a fainter rotated set, like an aperture diffraction pattern.
-    float spikes = pow(abs(cos(ang * 3.0)), 300.0) + 0.4 * pow(abs(cos(ang * 3.0 + 0.5236)), 600.0);
-    float star = spikes * exp(-d * 10.0);
+    // Ciliary corona: many fine streaks of uneven length, the way an eye (not a camera) sees the sun.
+    // Two noise octaves over angle give each streak its own brightness and reach; they shimmer slowly.
+    float a = ang / TAU + 0.5;
+    float t = frameTimeCounter * 0.05;
+    float streakA = valueNoise(vec2(a * 90.0, t));
+    float streakB = valueNoise(vec2(a * 230.0, t * 1.7 + 5.0));
+    float streaks = pow(streakA, 6.0) * 0.8 + pow(streakB, 10.0) * 0.6;
+    float reach = mix(5.0, 12.0, valueNoise(vec2(a * 40.0, 3.0)));
+    float corona = streaks * exp(-d * reach) * 1.6;
 
+    // Blown-out core: a wide overexposed ball, then a softer halo, then a gentle whole-frame veil.
     float centered = exp(-length((sunUV - 0.5) * aspect) * 3.0);
-    float veil = exp(-d * 3.0) * (0.15 + 0.6 * centered) + exp(-d * 22.0) * 1.2 + exp(-d * 100.0) * 6.0;
+    // The zone near the sun blows out hard enough to swallow nearby cloud detail, then falls off quickly.
+    // The wide wash only lands on sky, so clouds near the sun melt away without a glowing blob on the ground.
+    float pixelSky = step(1.0, texture(depthtex0, uv).r) * step(1.0, texture(dhDepthTex0, uv).r);
+    float core = exp(-d * 20.0) * 10.0 + exp(-d * 7.0) * mix(0.6, 5.0, pixelSky);
+    float veil = exp(-d * 4.5) * (0.15 + 0.35 * centered);
 
-    return sunTint * avgLum * vis * (rays * 1.6 + star * 2.0 + veil);
+    // The ray-march term only reads as beams when something breaks up the sky; on open sky it is a smear,
+    // so keep it subtle and let the corona carry the rays.
+    return sunTint * avgLum * vis * (rays * 0.35 + corona + core + veil);
 }
 
 void main() {
