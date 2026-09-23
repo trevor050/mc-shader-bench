@@ -26,11 +26,12 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - gbuffers_line must not touch gl_Vertex (link error with iris_Position); PROG_BASIC uses ftransform only.
 - Iris auto-declares dhMaterialId in DH programs. dhRenderDistance is int (unclear units): use dhFarPlane.
 - DH water depth-tests only vs LOD depth: dh_water must test depthtex1 itself. Vanilla terrain/water dither out at 0.84-0.94*far; DH starts at 0.78*far.
-- Hand renders after deferred: it is forward shaded (PROG_HAND in translucent).
+- Hand goes through the solid G-buffer as MAT_HAND (depth < 0.56); world-space effects skip it.
+- Stars must be drawn in screen-space pixels (angular gaussians came out smeared). Don't march cloud empty space with bigger strides (causes horizontal banding).
 - Water is in the shadow map with alpha 0 as a marker; shadows.glsl converts depth diff to blocks for absorption/caustics.
 - Trevor's skin is a rainbow checker; a rainbow hand is not a bug.
 - dhFarPlane is NOT the LOD extent (half of it ~1.6 km). Use LOD_DISTANCE (settings.glsl) = DH lodChunkRenderDistanceRadius*16; keep both in sync (currently 512 chunks / 8192).
 - Horizon review: always inspect full-res crops, never contact sheets (downscaling hid bands and invented cloud rings). Debug by painting categories (sky mask, distance bands) with saturated HDR colors; grayscale debug gets scrambled by AgX.
-- Sun: disc is physically bright; final.glsl solarGlare (committed by Trevor/another agent in b97f3c3) adds halo + star. Eye adaptation state lives in colortex5 alpha, fed by capped luminance in colortex6 from composite.
+- Sun: disc radiance soft-capped (~1800) so bloom doesn't flood when a sliver shows; no TAA hot-pixel bypass (caused flicker). Eye adaptation state lives in colortex5 alpha, fed by capped luminance in colortex6.
 - Others commit to this repo too (commits under Trevor050). Check git log before editing sun/final code.
 - Editing the same file via PowerShell and Edit tool causes stale-read failures; re-Read before Edit.
