@@ -103,8 +103,7 @@ void main() {
         dist = length(playerPos);
     }
     // The hand uses its own projection; keep fog and light shafts off it.
-    // Underwater it still sits in the water, so give it a short stretch of the medium's tint.
-    if (depth < 0.56) dist = isEyeInWater == 1 ? 3.0 : 0.5;
+    if (depth < 0.56) dist = 0.5;
     if (isEyeInWater == 1) {
         // Underwater: strong absorption toward teal, lit by filtered sky/sun.
         const vec3 absorb = vec3(0.30, 0.07, 0.05);

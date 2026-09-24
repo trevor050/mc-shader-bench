@@ -75,7 +75,8 @@ void main() {
     }
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos;
     vec3 rd = normalize(playerPos);
-    float sceneDist = (sky || depth < 0.56) ? 1e6 : length(playerPos);
+    // The first-person hand is right in front of the camera: nothing lies between it and the eye.
+    float sceneDist = depth < 0.56 ? 0.25 : (sky ? 1e6 : length(playerPos));
     // The hand is not world geometry.
 
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
