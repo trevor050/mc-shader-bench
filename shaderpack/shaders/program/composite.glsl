@@ -200,7 +200,7 @@ void main() {
         const vec3 absorb = vec3(0.30, 0.07, 0.05);
         // Open sky seen from below the surface only exists inside Snell's window; past it (and wherever the
         // surface is not drawn, like LOD water seen from underneath) the view ends in the water itself.
-        vec3 trans = sky ? vec3(0.0) : exp(-absorb * min(dist, 96.0));
+        vec3 trans = sky ? vec3(0.0) : exp(-(absorb + WATER_TURBIDITY * 0.6) * min(dist, 96.0));
         float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);

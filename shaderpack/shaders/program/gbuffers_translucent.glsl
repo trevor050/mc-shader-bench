@@ -278,10 +278,13 @@ void main() {
 #endif
         float skyVis = lmcoord.y * lmcoord.y;
         // Absorption: red goes first, then green; the biome tint shifts which colour survives in depth.
-        vec3 absorb = mix(vec3(0.40, 0.085, 0.055), (1.0 - tint) * 0.35 + 0.03, 0.35);
-        vec3 transmit = underwater ? vec3(1.0) : exp(-absorb * waterDepth);
+        vec3 absorb = mix(vec3(0.45, 0.11, 0.075), (1.0 - tint) * 0.4 + 0.05, 0.35);
+        // Suspended sediment and plankton: grey extinction on top of absorption, so the floor fades within a few
+        // blocks instead of reading like a swimming pool (Trevor). Rain stirs the water up.
+        float turbidity = WATER_TURBIDITY * (1.0 + 0.6 * rainStrength);
+        vec3 transmit = underwater ? vec3(1.0) : exp(-(absorb + turbidity) * waterDepth);
         // In-scattering from suspended particles gives water a body colour even over deep or dark floors.
-        vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5);
+        vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5) * 1.15;
         vec3 scatterCol = albedoW * (envAmbient * skyVis / PI + envDirect * shadow * 0.12);
         vec3 body = refracted * transmit + scatterCol * (1.0 - transmit);
 

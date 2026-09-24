@@ -55,6 +55,7 @@
 #define NETHER_SMOG_RANGE 160.0   // marched distance; beyond it the smog continues analytically
 #define FOG_DENSITY 1.0
 
+#define WATER_TURBIDITY 0.12      // grey extinction per block of water (sediment); higher = murkier
 #define WATER_SSR
 #define SSR_STEPS 24
 
