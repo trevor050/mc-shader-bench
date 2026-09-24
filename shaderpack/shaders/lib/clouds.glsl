@@ -452,6 +452,13 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
         vec3 haze = hazeColor(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z)), sunDir);
         c.rgb = mix(c.rgb, haze * (1.0 - c.a), air);
     }
+    // On clear nights, let the real stars and Milky Way remain visible through a restrained share of
+    // the cloud deck. Scale premultiplied radiance and opacity together, preserving each cloud's color
+    // and shape instead of drawing a separate galaxy over it. Rain keeps its full, opaque coverage.
+    float nightCloudFade = (1.0 - smoothstep(-0.18, 0.02, sunDir.y)) * (1.0 - rainStrength);
+    float cloudOpacity = mix(1.0, 0.62, nightCloudFade);
+    c.rgb *= cloudOpacity;
+    c.a = mix(1.0, c.a, cloudOpacity);
     return c;
 }
 
