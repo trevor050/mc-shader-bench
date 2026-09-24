@@ -1,5 +1,5 @@
 // Light shafts and ground mist, marched into half-resolution targets.
-// Writes colortex7 = in-scattered light (rgb) + mist transmittance (a), colortex12 = scene distance.
+// Writes colortex7 = in-scattered light (rgb) + mist transmittance (a), colortex8.r = scene distance.
 // A fresh dither every frame; vl_temporal (clouds_temporal.glsl with TEMPORAL_VL) accumulates it, and the
 // fog pass upsamples it with a depth-aware filter. Doing this at full resolution after TAA left the dither
 // visible as grain around the sun.
@@ -69,7 +69,7 @@ flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
 
-/* RENDERTARGETS: 7,12 */
+/* RENDERTARGETS: 7,8 */
 layout(location = 0) out vec4 outScatter;
 layout(location = 1) out vec4 outDist;
 

@@ -73,7 +73,7 @@ layout(location = 1) out vec4 outAdaptLum;
 
 #if !defined DIM_END
 uniform sampler2D colortex11;
-uniform sampler2D colortex12;
+uniform sampler2D colortex8;
 uniform float viewWidth;
 uniform float viewHeight;
 
@@ -90,7 +90,7 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
         ivec2 o = ivec2(k & 1, k >> 1);
         ivec2 t = clamp(i0 + o, ivec2(0), bufferSize - 1);
         vec2 bw = mix(1.0 - f, f, vec2(o));
-        float sd = texelFetch(colortex12, t, 0).r;
+        float sd = texelFetch(colortex8, t, 0).r;
         float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
         float w = bw.x * bw.y * (exp(-rel * 6.0) + 1e-3);
         acc += texelFetch(colortex11, t, 0) * w;

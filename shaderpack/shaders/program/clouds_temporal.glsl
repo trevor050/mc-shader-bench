@@ -2,7 +2,7 @@
 // cleared. History is reprojected through the marched point's own distance and clipped to the current
 // neighborhood.
 //   default:     clouds, colortex7 -> colortex9, distance = cloud distance (colortex8.r)
-//   TEMPORAL_VL: light shafts and mist, colortex7 -> colortex11, distance = scene distance (colortex12.r)
+//   TEMPORAL_VL: light shafts and mist, colortex7 -> colortex11, distance = scene distance (colortex8.r)
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
@@ -15,9 +15,9 @@ void main() { gl_Position = ftransform(); }
 #ifdef TEMPORAL_VL
 uniform sampler2D colortex7;
 uniform sampler2D colortex11;
-uniform sampler2D colortex12;
+uniform sampler2D colortex8;
 #define CUR_TEX colortex7
-#define DIST_TEX colortex12
+#define DIST_TEX colortex8
 #define HIST_TEX colortex11
 /* RENDERTARGETS: 11 */
 #else
