@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "claudebench_ambience",
+	"version": "${version}",
+	"name": "ClaudeBench Ambience",
+	"description": "Storm sound design for the ClaudeBench shaderpack's End: wind, thunder synced with the shader's lightning, an alien drone. Layers AmbientSounds' recordings when that mod is installed.",
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["dev.claudebench.ambience.StormAmbience"]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"ambientsounds": "*"
+	}
+}

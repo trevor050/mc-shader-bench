@@ -1,0 +1,3 @@
+build/
+.gradle/
+tools/synth.log

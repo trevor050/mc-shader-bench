@@ -71,7 +71,19 @@ float endPulse(float t) {
 
 // Lightning in the eye wall: returns (world position of the current bolt, brightness). A new strike every few
 // seconds at a random point on the wall, flickering for a fraction of a second.
+uniform float thunderStrength;
+
 vec4 endLightning(float t) {
+    // With the ClaudeBench Ambience mod installed, the mod decides the strikes (so each flash gets its thunderclap)
+    // and hands them over through the End's otherwise unused weather: rain = bolt direction code (0.2..1.0),
+    // thunder (which Minecraft reports multiplied by rain) = flash brightness. Mirrors StormAmbience.boltPosition.
+    if (rainStrength > 0.1) {
+        float code = saturate((rainStrength - 0.2) / 0.8);
+        float flash = thunderStrength / max(rainStrength, 1e-3);
+        float ang = code * TAU;
+        float y = 90.0 + 170.0 * fract(code * 7.31);
+        return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);
+    }
     float slot = floor(t / 2.6);
     float h = hash12(vec2(slot, 7.13));
     float phase = fract(t / 2.6) * 2.6;

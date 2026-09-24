@@ -1,0 +1,54 @@
+{
+  "end.wind_drone": {
+    "sounds": [
+      {
+        "name": "claudebench_ambience:wind_drone",
+        "stream": true
+      }
+    ],
+    "category": "ambient"
+  },
+  "end.wind_howl": {
+    "sounds": [
+      {
+        "name": "claudebench_ambience:wind_howl",
+        "stream": true
+      }
+    ],
+    "category": "ambient"
+  },
+  "end.rumble": {
+    "sounds": [
+      {
+        "name": "claudebench_ambience:rumble",
+        "stream": true
+      }
+    ],
+    "category": "ambient"
+  },
+  "end.alien_choir": {
+    "sounds": [
+      {
+        "name": "claudebench_ambience:alien_choir",
+        "stream": true
+      }
+    ],
+    "category": "ambient"
+  },
+  "end.thunder_near": {
+    "sounds": [
+      "claudebench_ambience:thunder_near_1",
+      "claudebench_ambience:thunder_near_2",
+      "claudebench_ambience:thunder_near_3"
+    ],
+    "category": "weather"
+  },
+  "end.thunder_far": {
+    "sounds": [
+      "claudebench_ambience:thunder_far_1",
+      "claudebench_ambience:thunder_far_2",
+      "claudebench_ambience:thunder_far_3"
+    ],
+    "category": "weather"
+  }
+}
