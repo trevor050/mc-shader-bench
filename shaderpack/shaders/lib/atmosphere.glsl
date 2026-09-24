@@ -171,27 +171,54 @@ float endFbm(vec2 p) {
     return n;
 }
 
-// The End sky: a black-violet void with a slow nebula storm wheeling around a dim glow overhead. Magenta
-// dust and faint teal currents, a pale void haze along the horizon. Everything drifts very slowly.
-vec3 endSky(vec3 rd) {
-    float t = frameTimeCounter * 0.004;
-    // Project the upper sky onto a plane so the storm has a centre overhead; swirl angle grows toward it.
-    vec2 p = rd.xz / (max(rd.y, 0.0) + 0.45);
-    float r = length(p);
-    float ang = t * 2.0 + 1.6 / (r + 0.6);
-    p = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p;
-    vec2 warp = vec2(endFbm(p * 0.9 + 1.7), endFbm(p * 0.9 + 9.2)) - 0.5;
-    float n = endFbm(p * 1.4 + warp * 2.2 + t);
-    float m = endFbm(p * 2.6 - warp * 1.3 - t * 1.4 + 4.0);
-    float dust = smoothstep(0.42, 0.85, n);
-    float threads = pow(smoothstep(0.5, 0.9, m), 3.0);
-    float up = saturate(rd.y * 1.2 + 0.2);
+float endSkyFbm(vec2 p) {
+    float n = 0.0, amp = 0.5;
+    for (int i = 0; i < 3; i++) { n += valueNoise(p) * amp; p = p * 2.07 + vec2(11.3, 7.7); amp *= 0.5; }
+    return n * 1.142857;
+}
 
-    vec3 col = vec3(0.010, 0.004, 0.022);
-    col += vec3(0.34, 0.07, 0.46) * dust * dust * 0.28 * up;
-    col += vec3(0.05, 0.30, 0.34) * threads * 0.22 * up;
-    col += vec3(0.30, 0.12, 0.50) * exp(-r * 2.2) * 0.10 * up;              // heart of the storm
-    col += vec3(0.10, 0.04, 0.16) * exp(-abs(rd.y) * 7.0) * 0.55;           // void haze at the horizon
+// The End is a dark island sea under an off-axis storm: broken violet veils and a few bright, wind-drawn
+// filaments drift through wide areas of ink. The warp bends the cloud field into a loose spiral, without
+// putting a bright centre or a hard circular silhouette in the sky.
+vec3 endSky(vec3 rd) {
+    float t = frameTimeCounter * 0.018;
+    // Dome projection gives the sky a broad canvas. An offset, decaying twist puts movement through the
+    // cloud shapes but leaves the middle of the view free of a bullseye.
+    vec2 p = rd.xz / (max(rd.y, 0.0) + 0.52);
+    p = mat2(0.9063, -0.4226, 0.4226, 0.9063) * p;
+    p *= vec2(0.86, 1.08);
+    vec2 anchor = vec2(-0.72, 0.16);
+    vec2 v = p - anchor;
+    float radius = length(v);
+    float twist = 0.78 * exp(-radius * 0.55) / (radius + 0.85) + t * 0.42;
+    vec2 q = anchor + mat2(cos(twist), -sin(twist), sin(twist), cos(twist)) * v;
+    q += vec2(t * 0.13, -t * 0.08);
+
+    vec2 warp = vec2(endSkyFbm(q * 0.48 + vec2(2.7, 8.1) + t * 0.06),
+                     endSkyFbm(q * 0.48 + vec2(9.4, 1.3) - t * 0.05)) - 0.5;
+    float broad = endSkyFbm(q * 0.72 + warp * 1.5 + vec2(t * 0.10, -t * 0.07));
+    float detail = endSkyFbm(q * 1.65 - warp * 1.2 + vec2(4.6, 6.2) - t * 0.16);
+
+    // A wide, bending current gives the storm a direction. Noise breaks it into separate cloud banks,
+    // and the narrow inner strands catch the eye without filling the whole dome with light.
+    float bend = q.y - q.x * 0.23 - 0.62 * sin(q.x * 0.57 + 0.25) - 0.18 * sin(q.x * 1.3 + 1.1);
+    float lane = exp(-sqr(bend / 0.72));
+    float field = broad * 0.73 + detail * 0.27 + lane * 0.10;
+    float cloud = smoothstep(0.43, 0.72, field);
+    float edge = (1.0 - smoothstep(0.055, 0.19, abs(field - 0.57))) * smoothstep(0.34, 0.56, detail);
+    float strands = smoothstep(0.68, 0.86, detail) * smoothstep(0.44, 0.64, broad);
+    float filament = exp(-sqr(bend / 0.16)) * smoothstep(0.47, 0.72, detail) * smoothstep(0.38, 0.62, broad);
+    float highSky = smoothstep(-0.04, 0.38, rd.y);
+
+    vec3 col = vec3(0.0045, 0.0022, 0.012);
+    col += vec3(0.095, 0.022, 0.20) * cloud * (0.42 + 0.58 * detail) * highSky;
+    col += vec3(0.27, 0.085, 0.48) * edge * 0.38 * highSky;
+    col += vec3(0.20, 0.11, 0.44) * strands * 0.22 * highSky;
+    col += vec3(0.43, 0.20, 0.72) * filament * 0.28 * highSky;
+    // A very restrained cold fringe separates some cloud banks from the purple body.
+    col += vec3(0.026, 0.050, 0.14) * strands * 0.18 * highSky;
+    // Keep the far terrain legible as silhouettes against a low, dim violet haze.
+    col += vec3(0.045, 0.010, 0.085) * exp(-max(rd.y, 0.0) * 8.0) * 0.20;
     return col;
 }
 
