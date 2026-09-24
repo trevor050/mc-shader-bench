@@ -40,8 +40,9 @@ public final class DhNetherRadiusTrial {
 	/** Called at renderFrame HEAD and at tick end, always on the client thread. */
 	public static void update(Minecraft mc) {
 		if (!DH_PRESENT || (!netherControlEnabled() && !endControlEnabled() && !owned && !clearPending)) return;
-		boolean artPackActive = isRequiredArtPackActive();
 		ResourceKey<Level> dimension = mc.level == null ? null : mc.level.dimension();
+		boolean dimensionUsesArtRadius = Level.NETHER.equals(dimension) || Level.END.equals(dimension);
+		boolean artPackActive = dimensionUsesArtRadius && isRequiredArtPackActive();
 		int desiredRadius = desiredRadius(dimension, artPackActive);
 		if (suspended) desiredRadius = 0;
 
