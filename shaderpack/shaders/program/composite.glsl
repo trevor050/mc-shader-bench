@@ -142,6 +142,10 @@ void main() {
         float fogAmt = 1.0 - exp(-dist * density);
         // Guarantee the terrain fully dissolves into the sky before the render edge.
         fogAmt = max(fogAmt, smoothstep(farDist * 0.75, farDist, dist));
+#ifdef DIM_END
+        // The End is an island in the void: far terrain melts into the violet haze.
+        fogAmt = max(fogAmt, smoothstep(150.0, 450.0, dist));
+#endif
 #if !defined DIM_NETHER && !defined DIM_END
         // Far LODs always dissolve into the haze, so where DH has not generated yet looks the same as far land.
         // Beyond the LOD render distance there is only the sky-below-horizon haze, so terrain must be fully
