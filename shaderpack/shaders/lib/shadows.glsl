@@ -48,13 +48,17 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(beyondShadowVisibility());
     float dist = sqrt(dist2);
 
+    // Low sun: shadow texels smear across many blocks and the map re-rasterizes on a shifted grid every time Iris
+    // re-centres it, so a sharp filter reshuffles lit and shaded patches as the player walks. Widen the filter and
+    // the offset as the sun drops; the soft result stays put.
+    float lowSun = 1.0 - smoothstep(0.1, 0.45, abs(shadowModelView[1][2]));
     // Normal offset scaled by distance keeps acne away on far, low-res texels.
-    vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL));
+    vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL)) * (1.0 + 1.5 * lowSun);
     vec3 sp = (shadowProjection * (shadowModelView * vec4(offsetPos, 1.0))).xyz;
     float f = length(sp.xy) * SHADOW_DISTORT + (1.0 - SHADOW_DISTORT);
     // Reuse f from the offset and bias calculations instead of recomputing it in distortShadow.
     vec3 ds = vec3(sp.xy / f, sp.z * 0.2) * 0.5 + 0.5;
-    float bias = 0.00008 * f;
+    float bias = 0.00008 * f * (1.0 + 2.0 * lowSun);
 
     // Blocker search sets the penumbra width (contact hardening).
     float texel = 1.0 / float(SHADOW_MAP_RES);
@@ -69,7 +73,7 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     if (count < 0.5) return vec3(mix(1.0, beyondShadowVisibility(), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist)));
     blocker /= count;
     // Wider contact hardening: crisp at contact, soft and diffuse further out, never a hard binary edge.
-    float penumbra = clamp((ds.z - blocker) * 440.0, 0.9, 11.0) * SHADOW_SOFTNESS;
+    float penumbra = clamp((ds.z - blocker) * 440.0, mix(0.9, 3.2, lowSun), 11.0) * SHADOW_SOFTNESS;
 
     vec3 vis = vec3(0.0);
     for (int i = 0; i < SHADOW_SAMPLES; i++) {

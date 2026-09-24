@@ -136,6 +136,13 @@ void main() {
     gl_Position = vec4(-10.0, -10.0, -10.0, 1.0);
     return;
 #endif
+    // With a low sun, grass and flowers cast long hair-thin shadows that alias and reshuffle every time the shadow
+    // map re-centres as the player walks (Trevor: light "jumping around" in morning fields). Below ~17 degrees
+    // only real occluders (terrain, trees, leaves) cast.
+    if ((mat == MAT_FOLIAGE || mat == MAT_TALL_UPPER) && abs(shadowModelView[1][2]) < 0.3) {
+        gl_Position = vec4(-10.0, -10.0, -10.0, 1.0);
+        return;
+    }
     vec3 worldPos = waveVertex(playerPos + cameraPosition, mat, at_midBlock.y);
     vec4 clip = gl_ProjectionMatrix * (shadowModelView * vec4(worldPos - cameraPosition, 1.0));
     clip.xyz = distortShadow(clip.xyz);
