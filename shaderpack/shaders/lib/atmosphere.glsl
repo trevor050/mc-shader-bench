@@ -152,8 +152,8 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     float gold = exp(-sqr((up - 0.018) / 0.047));
     float rose = exp(-sqr((up - 0.105) / 0.095));
     float violet = exp(-sqr((up - 0.24) / 0.19));
-    col += vec3(1.00, 0.30, 0.075) * gold * toward * glowT * 0.39;
-    col += vec3(0.96, 0.20, 0.34) * rose * toward * glowT * 0.24;
+    col += vec3(1.00, 0.30, 0.075) * gold * toward * glowT * 0.55;
+    col += vec3(0.96, 0.20, 0.34) * rose * toward * glowT * 0.36;
     col += vec3(0.34, 0.24, 0.68) * violet * toward * glowT * 0.095;
 
     // Belt of Venus over the anti-solar horizon, above Earth's shadow.
@@ -270,8 +270,9 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
     float low = 1.0 - smoothstep(0.0, 0.5, sunDir.y);
     // Three scales, tuned by eye against reference screenshots: a blinding glow a few degrees across that
     // swallows the sun's outline, a broad halo, and a very wide skirt that warms a big part of the sky.
-    float core = exp(-a * 38.0) * mix(1.2, 2.2, low);
-    float halo = exp(-a * 9.0) * mix(0.22, 0.45, low);
+    // Near the horizon the core glow is held back so the sun's disc itself stays visible (sunDisc).
+    float core = exp(-a * 38.0) * mix(1.2, 0.3, low);
+    float halo = exp(-a * 9.0) * mix(0.22, 0.16, low);
     float skirt = exp(-a * 2.4) * mix(0.03, 0.10, low);
     // At sunset the haze layer is thickest along the horizon, so the glow spreads sideways along it.
     vec3 viewFlat = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
@@ -315,7 +316,19 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
     // The cap sets how much light bloom spreads around the sun. Uncapped (tens of thousands) a sliver of sun
     // peeking past a leaf flooded the screen with glow; this keeps the core blown out but the glow steady.
     vec3 disc = core * t * SUN_ILLUMINANCE * norm * (1.0 - rainStrength);
-    return disc / (1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0);
+    disc /= 1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0;
+    // Near the horizon the air dims the sun enough to look at: it becomes a distinct, slightly enlarged orange
+    // ball with a clean edge and a darker limb. Transmittance alone left only a dim red smear inside the glow.
+    float low = 1.0 - smoothstep(0.03, 0.32, sunDir.y);
+    float tMax = max(t.r, max(t.g, t.b));
+    if (low > 0.0 && tMax > 1e-6) {
+        float r = 0.0105 * (1.0 + 0.35 * low);
+        float edge = 1.0 - smoothstep(r * 0.9, r, s);
+        float limb = sqrt(max(1.0 - sqr(s / r), 0.0));
+        vec3 hue = t / tMax;
+        disc += hue * edge * mix(0.5, 1.0, limb) * 950.0 * low * (1.0 - rainStrength);
+    }
+    return disc;
 }
 #endif
 
