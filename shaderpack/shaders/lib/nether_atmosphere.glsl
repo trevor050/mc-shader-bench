@@ -12,7 +12,7 @@ float netherSmokeDensity(vec3 p) {
     );
     vec4 noise = cloudTex(q);
     float shape = noise.r * 0.68 + noise.g * 0.19 + noise.b * 0.09 + noise.a * 0.04;
-    float billow = smoothstep(0.51, 0.69, shape);
+    float billow = smoothstep(0.42, 0.64, shape);
     float height = smoothstep(35.0, 49.0, p.y) * (1.0 - smoothstep(126.0, 158.0, p.y));
     return billow * height;
 }
@@ -45,12 +45,12 @@ vec4 sampleNetherSmoke(vec3 origin, vec3 rd, float rayLimit) {
 
     vec3 p = origin + rd * (t0 + segment * 0.52);
     float density = netherSmokeDensity(p);
-    float opacity = 1.0 - exp(-min(density * segment * 0.006, 0.45));
+    float opacity = 1.0 - exp(-min(density * segment * 0.008, 0.60));
     float heat = exp(-max(p.y - 34.0, 0.0) / 60.0);
     float viewLift = mix(0.38, 1.0, saturate(-rd.y * 0.65 + 0.5));
 
     // Soot dominates overhead; lower billows catch a restrained red-orange lift from the lava seas.
-    vec3 soot = vec3(0.018, 0.014, 0.012);
-    vec3 ember = vec3(0.115, 0.030, 0.008) * heat * viewLift;
+    vec3 soot = vec3(0.025, 0.019, 0.016);
+    vec3 ember = vec3(0.120, 0.029, 0.007) * heat * viewLift;
     return vec4(soot + ember, opacity);
 }
