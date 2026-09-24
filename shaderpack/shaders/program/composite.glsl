@@ -44,6 +44,7 @@ uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
 #include "/lib/clouds.glsl"
+#include "/lib/cave.glsl"
 #if defined DIM_NETHER
 #include "/lib/nether_atmosphere.glsl"
 #endif
@@ -243,6 +244,17 @@ void main() {
         // hazed by that edge or the empty band past it shows as a lighter strip above the sea.
         // The ramp only covers the last stretch: starting it earlier flattened distant hills into grey slabs.
         fogAmt = max(fogAmt, smoothstep(LOD_DISTANCE * 0.72, LOD_DISTANCE * 0.97, dist));
+#endif
+#if !defined DIM_NETHER && !defined DIM_END
+        // Surfaces that see no sky (caves, deep interiors) fade into the cave's own air. The daylight haze, and
+        // the sun's aureole in it, cannot reach them: fogging cave walls with it drew a glowing patch on the rock
+        // wherever the sun stood behind it. LOD terrain is always open land.
+        float open = depth < 1.0 ? smoothstep(0.03, 0.5, texture(colortex1, texcoord).w) : 1.0;
+        if (open < 1.0) {
+            float caveAmt = 1.0 - exp(-dist * caveFogDensity());
+            vec3 fogCol = open > 0.0 ? mix(caveAirColor(), hazeColor(rd, sunDir), open) : caveAirColor();
+            col = mix(col, fogCol, saturate(mix(caveAmt, fogAmt, open)));
+        } else
 #endif
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
 

@@ -58,13 +58,16 @@ uniform ivec2 eyeBrightnessSmooth;
 #endif
 #if defined DIM_NETHER
 #include "/lib/nether_atmosphere.glsl"
-#ifdef LIGHT_FIELD
+#endif
+#if !defined DIM_END && defined LIGHT_FIELD
 #define VOXEL_READ
 uniform sampler3D lightFieldSamplerA;
 uniform sampler3D lightFieldSamplerB;
 uniform vec3 cameraPositionFract;
 #include "/lib/voxel.glsl"
 #endif
+#if !defined DIM_NETHER && !defined DIM_END
+#include "/lib/cave.glsl"
 #endif
 
 flat in vec3 sunDir;
@@ -211,6 +214,14 @@ void main() {
     vec3 scatter = vec3(0.0);
     float trans = 1.0;
 
+    // Dust that catches block light: dense underground, a trace in the open at night (a torch-lit village gets
+    // soft halos), none by day where it could never compete with sunlight.
+    float underground = 1.0 - smoothstep(0.05, 0.55, skyExposure);
+    float night = 1.0 - smoothstep(-0.12, 0.08, sunDir.y);
+    float dust = CAVE_AIR_GLOW * caveDustDensity() * max(underground, night * 0.3);
+    // Isotropic phase and the field's amplitude scale.
+    const float DUST_PHASE = 0.6;
+
     // Near segment: inside shadow range, terrain and cloud shadows both carve the air.
     float nearEnd = min(dist, SHADOW_DIST * 1.4);
     const int NEAR = 16;
@@ -218,6 +229,16 @@ void main() {
     for (int i = 0; i < NEAR; i++) {
         vec3 p = rd * (float(i) + dither) * stepLen;
         vec3 wp = p + cameraPosition;
+#ifdef LIGHT_FIELD
+        if (dust > 0.0) {
+            vec3 uvw = voxelUVW(p, cameraPositionFract);
+            float fw = voxelEdgeFade(uvw);
+            if (fw > 0.0) {
+                vec3 amp = sqrt(max(lightFieldTapRaw(uvw).rgb, vec3(0.0)));
+                scatter += trans * amp * (fw * dust * DUST_PHASE * stepLen);
+            }
+        }
+#endif
         float vis = 1.0;
         if (directLightEnabled) {
             vis = shadowVisibility(p);

@@ -199,7 +199,16 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
         float volA = f.extraRaw;
         vec3 special = f.radiance / LIGHT_FIELD_GAIN;
         lightmapXM = max(lightmapXM, mix(lightmapXM, 10.0, volA));
+        // The field may brighten but never darken: low-level coloured lights (redstone, amethyst) glow around
+        // themselves, while vanilla's level stays the floor so a lagging field cannot leave black pockets.
+#if !defined DIM_NETHER
+        // (Not in the Nether: its lava-lit balance is tuned on vanilla levels plus the extra channel.)
+        lightmapXM = max(lightmapXM, cuLuminance(special) * FIELD_BRIGHTNESS * f.weight);
+#endif
         special *= 1.0 + 50.0 * volA;
+        // The square-root light mix below halves chroma; pre-expand it so coloured light survives as colour.
+        float specialL = cuLuminance(special);
+        special = max(specialL + (special - specialL) * BLOCKLIGHT_SATURATION, vec3(0.0));
         special = lightmapXM * 0.13 * cuLuminanceCorrection(special + CU_BLOCKLIGHT_COL * 0.05);
         // Direction from the field's gradient (ours): faces toward the source a little brighter, away darker.
         float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;

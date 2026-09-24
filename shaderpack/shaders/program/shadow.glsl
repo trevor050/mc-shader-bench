@@ -43,15 +43,25 @@ vec3 emitterColor(vec2 uv, vec2 mid) {
             float mx = max(t.r, max(t.g, t.b));
             float sat = (mx - min(t.r, min(t.g, t.b))) / max(mx, 1e-3);
             float l2 = l * l, l4 = l2 * l2;
-            float w = t.a * l4 * l4 * (0.3 + sat) + 1e-6;
+            // Saturation weighs as much as brightness, so a flame's orange rim counts, not just its white core.
+            float w = t.a * l4 * (0.15 + sat * sat * 2.0) + 1e-6;
             acc += t.rgb * w;
             wsum += w;
         }
     }
     vec3 c = acc / wsum;
-    // Normalize brightness (level carries strength) and deepen the hue slightly: averaged sprites wash out.
+    // Normalize brightness (level carries strength).
     c /= max(max(c.r, max(c.g, c.b)), 1e-3);
-    return pow(c, vec3(1.35));
+    // Averaged sprites wash out toward cream. Expand the chroma around the mean so every light has a clear
+    // colour: torches orange, soul fire cyan, redstone red, crying obsidian violet.
+    float m = dot(c, vec3(1.0 / 3.0));
+    c = max(m + (c - m) * EMITTER_SATURATION, 0.0);
+    c /= max(max(c.r, max(c.g, c.b)), 1e-3);
+    // Fire burns near 1900 K. Flame sprites average to yellow, so warm sources with a real green share (torches,
+    // campfires, lanterns; not redstone) take a fixed fire colour instead.
+    float fire = saturate((c.r - c.b) * 1.6 - 0.4) * smoothstep(0.25, 0.5, c.g);
+    c = pow(c, vec3(1.25));
+    return mix(c, vec3(1.0, 0.40, 0.09), fire);
 }
 
 void voxelize(int mat, vec3 worldPos, vec3 normal) {

@@ -51,11 +51,17 @@ void main() {
         float level = float(voxelLevel(data)) / 15.0;
         vec3 c = voxelColor(data);
         // Fire-like colours (red-dominant) flicker a little, each voxel on its own phase.
-        float warm = saturate((c.r - c.b) * 1.5);
+        // Only flames flicker: orange with a real green share. Redstone (pure red) glows steadily.
+        float warm = saturate((c.r - c.b) * 1.5) * smoothstep(0.2, 0.35, c.g) * (1.0 - smoothstep(0.6, 0.8, c.g));
         float phase = hash12(vec2(pos.xz + cameraPositionInt.xz) + float(pos.y + cameraPositionInt.y) * 7.13);
         float flicker = 1.0 + warm * 0.12 * (valueNoise(vec2(frameTimeCounter * 6.0 + phase * 40.0, phase * 13.0)) - 0.5);
-        // Stored squared (energy): strong saturated sources dominate the colour where lights overlap.
-        light = vec4(c * c * pow(level, 2.2) * LIGHT_FIELD_SOURCE, EXTRA_ENERGY[voxelExtra(data)]) * flicker;
+        // Stored squared (energy): strong saturated sources dominate the colour where lights overlap. Saturated
+        // colours carry little luminance (pure red 0.21), so partly normalize: a redstone torch lights its
+        // surroundings red instead of barely at all.
+        vec3 e = c * c;
+        // Lava and portal energies are tuned for the Nether as they are.
+        if (voxelExtra(data) < 2u) e /= mix(1.0, max(luminance(e), 0.05), 0.65);
+        light = vec4(e * pow(level, 2.2) * LIGHT_FIELD_SOURCE, EXTRA_ENERGY[voxelExtra(data)]) * flicker;
     } else if (type != VOXEL_SOLID) {
         vec4 sum;
         if (all(greaterThanEqual(prev, ivec3(1))) && all(lessThan(prev, VOXEL_SIZE - 1))) {

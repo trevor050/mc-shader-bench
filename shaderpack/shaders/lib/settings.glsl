@@ -28,6 +28,10 @@
 //#define LIGHT_FIELD_DEBUG      // paint the raw field and voxel occupancy instead of shading
 #define LIGHT_FIELD_GAIN 0.9      // field amplitude -> radiance for glints and smoke
 #define LIGHT_FIELD_EXTRA_GAIN 2.2 // extra-light channel -> light level (lava seas, portals)
+#define EMITTER_SATURATION 2.2    // chroma expansion of emitter colours read from their sprites
+#define BLOCKLIGHT_SATURATION 1.35 // extra chroma of the field's hue on lit surfaces
+#define FIELD_BRIGHTNESS 3.5      // light-field luminance -> block light brightness floor
+#define CAVE_AIR_GLOW 0.4        // dust in cave air lit by block lights (coloured halos)
 
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
