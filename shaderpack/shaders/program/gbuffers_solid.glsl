@@ -103,6 +103,7 @@ uniform mat4 gbufferModelViewInverse;
 uniform float far;
 uniform float viewWidth;
 uniform float viewHeight;
+uniform float frameTimeCounter;
 uniform mat4 dhProjectionInverse;
 #if defined DIM_END
 uniform int frameCounter;
@@ -119,6 +120,8 @@ flat in int mat;
 #ifdef PROG_TERRAIN
 flat in vec2 lavaSpriteMid;
 flat in vec2 lavaSpriteHalfExtent;
+#endif
+#if defined PROG_TERRAIN || defined PROG_DH
 #include "/lib/lava.glsl"
 #endif
 
@@ -181,6 +184,13 @@ void main() {
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
     vec3 cell = floor(wp - worldNormal * 0.5);
     albedo.rgb *= 0.93 + 0.14 * hash12(cell.xz + cell.y * vec2(17.3, 5.1));
+    if (mat == MAT_LAVA) {
+        float heat;
+        vec2 unusedWarp, unusedWarpDx, unusedWarpDy;
+        lavaPoolFields(lavaPlane(wp, normalize(worldNormal)), wp.y, frameTimeCounter,
+                       vec2(0.0), vec2(0.0), heat, unusedWarp, unusedWarpDx, unusedWarpDy);
+        albedo.rgb *= lavaPoolTint(heat);
+    }
 #endif
 
     float emissive = 0.0;
