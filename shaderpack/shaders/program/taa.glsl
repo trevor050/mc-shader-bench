@@ -145,15 +145,19 @@ void main() {
     result = current;
 #endif
 
-    // Eye adaptation state: smoothed log2 of scene brightness, stored in the history alpha of every pixel.
-    // The measurement is center-weighted, so looking at something bright (the sun) darkens the view.
-    float whole = textureLod(colortex6, vec2(0.5), 11.0).r;
-    float center = textureLod(colortex6, vec2(0.5), 7.0).r;
-    float target = log2(max(mix(whole, center, 0.25), 1e-5));
-    float prev = texelFetch(colortex5, ivec2(0), 0).a;
-    // Adapt faster toward bright scenes than dark ones, like eyes do.
-    float rate = target > prev ? 3.0 : 1.2;
-    float adapted = isnan(prev) || isinf(prev) || prev == 0.0 ? target : mix(prev, target, 1.0 - exp(-frameTime * rate));
+    // Only (0,0) is read by final and by this pass next frame. Keep the history alpha
+    // meaningful there, and avoid repeating the frame-wide adaptation work per pixel.
+    float adapted = 0.0;
+    if (all(equal(ivec2(gl_FragCoord.xy), ivec2(0)))) {
+        // The measurement is center-weighted, so looking at something bright (the sun) darkens the view.
+        float whole = textureLod(colortex6, vec2(0.5), 11.0).r;
+        float center = textureLod(colortex6, vec2(0.5), 7.0).r;
+        float target = log2(max(mix(whole, center, 0.25), 1e-5));
+        float prev = texelFetch(colortex5, ivec2(0), 0).a;
+        // Adapt faster toward bright scenes than dark ones, like eyes do.
+        float rate = target > prev ? 3.0 : 1.2;
+        adapted = isnan(prev) || isinf(prev) || prev == 0.0 ? target : mix(prev, target, 1.0 - exp(-frameTime * rate));
+    }
 
     outColor = vec4(result, 1.0);
     outHistory = vec4(result, adapted);
