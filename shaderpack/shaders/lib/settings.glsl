@@ -14,7 +14,8 @@
 #define BLOCKLIGHT_STRENGTH 2.2
 #define MIN_LIGHT 0.006
 #define CU_EXPOSURE_SCALE 1.0 // Complementary-port lighting output scale (linear)
-#define LAVA_EMISSION 22.0     // lava emission strength (squared emissive channel times this)
+#define LAVA_EMISSION 22.0
+#define BLOCK_EMISSION 13.0     // glowstone, lanterns, froglights, glow berries: bright enough to bloom     // lava emission strength (squared emissive channel times this)
 
 // Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the
 // camera. Must match the image sizes in shaders.properties.
@@ -53,7 +54,7 @@
 #define WATER_SSR
 #define SSR_STEPS 24
 
-#define BLOOM_STRENGTH 0.1
+#define BLOOM_STRENGTH 0.13
 #define GLARE_STRENGTH 0.08
 #define SUN_RAYS_STRENGTH 0.006
 #define SUN_STREAK_STRENGTH 0.0 // eye-style streaks; reference packs use none and they read as fake

@@ -235,6 +235,8 @@ void main() {
 
     float emissive = 0.0;
     if (mat == MAT_EMISSIVE) emissive = smoothstep(0.45, 0.85, max(albedo.r, max(albedo.g, albedo.b)));
+    // Glow berries: the orange fruit glows, the leaves around it do not.
+    if (mat == MAT_GLOWBERRY) emissive = smoothstep(0.08, 0.3, albedo.r - albedo.g * 0.8) * smoothstep(0.5, 0.8, albedo.r);
 #ifdef PROG_TERRAIN
     if (mat == MAT_LAVA) emissive = lavaEmit;
 #else

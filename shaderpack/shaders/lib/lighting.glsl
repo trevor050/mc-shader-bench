@@ -281,7 +281,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #endif
 
     // Emission, kept additive in linear: lava is far brighter than the rest.
-    col += albedo * (mat == MAT_LAVA ? emissive * emissive * LAVA_EMISSION : emissive * 6.0);
+    col += albedo * (mat == MAT_LAVA ? emissive * emissive * LAVA_EMISSION : emissive * BLOCK_EMISSION);
 #if defined DIM_END
     if (mat == MAT_NONE || mat == MAT_LOD || mat == MAT_GLASSY) {
         float darkSurface = 1.0 - smoothstep(0.012, 0.075, luminance(albedo));
