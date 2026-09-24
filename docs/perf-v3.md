@@ -54,6 +54,37 @@ py harness\perf_analysis.py harness\out\perf-YYYYMMDD\perf-runs.json --metric cp
 py harness\perf_analysis.py harness\out\perf-YYYYMMDD\perf-runs.json --metric present-interval --json-out harness\out\perf-YYYYMMDD\present-interval.json
 ```
 
+### Combined A/B/A acceptance gate
+
+For a single shader-cost change, use the optional gate after all three CSVs and
+the manifest are complete. Add a `dh_state` string to every run in the manifest.
+Use the same categorical attestation for all three runs, such as
+`"idle"` or `"active:worldgen+render-loader"`, based on an existing passive
+observation. Use `"unknown"` when DH queue activity was not observed. Do not
+infer it from BenchCam's `chunks=true`, which only describes vanilla section
+rendering. A missing, unknown, or changing DH state makes the result
+inconclusive.
+
+```powershell
+py harness\perf_gate.py harness\out\perf-YYYYMMDD\perf-runs.json --json-out harness\out\perf-YYYYMMDD\gate.json
+```
+
+The gate requires exactly A/B/A, matching scene/pose, resolution, environment,
+process, swapchain, runtime, frame type, and at least 1,000 usable frames per
+run for each metric after warm-up. It analyzes GPU Busy, CPU Busy, and Present
+Interval together. A result passes only when A1-to-A2 median drift is at most
+3% for every metric, B reduces GPU Busy median by at least 5% and at least
+twice the observed GPU Busy bracket drift, and neither CPU Busy nor Present
+Interval median or p95 regresses by more than 3%. Excess baseline drift or a
+smaller-than-threshold improvement is inconclusive. A >3% regression in any
+metric's median or p95 is reported as a regression. These are a conservative
+local acceptance policy, not a universal statistical significance test.
+
+Exit codes are 0 for pass, 1 for regression, and 2 for inconclusive or invalid
+captures. The gate is read-only and offline; it does not start Minecraft,
+PresentMon, JFR, or DH instrumentation. `dh_state` is an operator attestation,
+not something the current BenchCam status command can verify.
+
 Per capture it reports sample count, median, nearest-rank p95/p99, mean, and sample variance in ms² after warm-up. Variant summaries are the median of each capture's summary, so longer CSVs do not silently dominate by contributing more frames. It reports A1-to-A2 baseline median drift and each candidate's percentage change from the baseline. The example manifest uses a 2-second warm-up; each capture must have at least 1,000 usable samples by default. Change these only deliberately. A result with high baseline drift or active DH queue changes is inconclusive and should be recaptured. `--metric gpu-time` selects PresentMon's `MsGPUTime` span; the default `gpu-busy` is the active GPU work duration. For timing metrics, a negative candidate percentage means a lower value than the baseline.
 
 Run the offline regression checks with:

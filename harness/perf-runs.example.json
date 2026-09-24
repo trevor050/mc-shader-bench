@@ -9,6 +9,7 @@
       "variant": "A",
       "pack": "ClaudeBench",
       "pack_revision": "<commit-or-settings-fingerprint>",
+      "dh_state": "<same-observed-state-for-all-runs-or-unknown>",
       "csv": "perf-captures/A1.csv",
       "scene": {
         "id": "overworld-vista",
@@ -39,6 +40,7 @@
       "variant": "B",
       "pack": "ClaudeBench",
       "pack_revision": "<candidate-commit-or-settings-fingerprint>",
+      "dh_state": "<same-observed-state-for-all-runs-or-unknown>",
       "csv": "perf-captures/B1.csv",
       "scene": {
         "id": "overworld-vista",
@@ -69,6 +71,7 @@
       "variant": "A",
       "pack": "ClaudeBench",
       "pack_revision": "<commit-or-settings-fingerprint>",
+      "dh_state": "<same-observed-state-for-all-runs-or-unknown>",
       "csv": "perf-captures/A2.csv",
       "scene": {
         "id": "overworld-vista",
