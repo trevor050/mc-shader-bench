@@ -53,7 +53,9 @@ flat in vec3 envAmbient;
 // but not overwhelming). The Nether and End meter a log average instead: there a lava sea is both the brightest
 // thing and a large part of the frame, and an arithmetic mean let it expose every other surface to black.
 #if defined DIM_NETHER || defined DIM_END
-vec4 adaptMeter(vec3 c) { return vec4(log2(max(luminance(c), 1e-6)) + 24.0); }
+// Each pixel's reading is capped near a lit-surface level, so a lava sea counts as "bright" but cannot pull the
+// exposure down to its own level: the lava stays blinding and the smoke and rock around it stay readable.
+vec4 adaptMeter(vec3 c) { return vec4(log2(clamp(luminance(c), 1e-6, 0.8)) + 24.0); }
 #else
 vec4 adaptMeter(vec3 c) { return vec4(min(luminance(c), 4.0)); }
 #endif

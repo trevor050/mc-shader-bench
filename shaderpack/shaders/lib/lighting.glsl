@@ -85,7 +85,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     float skyVis = lm.y * lm.y * lm.y;
     float diffuse = foliage ? (0.45 + 0.55 * saturate(NdotL)) : saturate(NdotL);
     // Direct light also needs open sky: stops light leaking into sealed caves beyond shadow range.
-    float leak = smoothstep(0.0, 0.35, lm.y);
+    float leak = smoothstep(0.08, 0.45, lm.y);
     vec3 direct = env.directLight * diffuse * shadow * leak;
 
     // Subsurface glow when backlit, strongest looking toward the light.

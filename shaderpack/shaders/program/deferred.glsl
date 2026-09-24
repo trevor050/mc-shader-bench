@@ -283,11 +283,13 @@ void main() {
         // Water lowers Minecraft's sky light by one level per block, so a seafloor looks like a sealed cave to
         // the sky-light gates in shadeSurface. When the shadow map shows light arriving through water, the
         // surface is open to the sky above that water; its absorption is already applied via the shadow term.
-        // The same applies under ice or glass. Sealed caves never trip this: rock blocks the shadow map there.
+        // Only water triggers this. Trusting any lit shadow sample made caves glow: the shadow map is not a
+        // reliable occluder underground (casters beyond its depth range or culled chunks read as open sky), and
+        // lifting the sky light there also re-enabled direct sun, which lit whole cave walls blue-white next to
+        // pitch-black faces. Glass does not reduce vanilla sky light, so it needs no lift.
 #if !defined DIM_NETHER && !defined DIM_END
         vec2 lm = nl.zw;
-        float reaching = saturate(luminance(shadow) * 8.0);
-        if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
+        if (!isLod && !isHand && shadowWaterDepth > 0.05) lm.y = max(lm.y, 0.8);
 #else
         vec2 lm = nl.zw;
 #endif
