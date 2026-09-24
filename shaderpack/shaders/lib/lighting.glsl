@@ -73,7 +73,10 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     // Hot, directionless nether glow.
     ambient = vec3(1.1, 0.5, 0.32) * (0.7 + 0.3 * n.y) * ao;
 #elif defined DIM_END
-    ambient = vec3(0.30, 0.22, 0.42) * (0.75 + 0.25 * n.y) * ao;
+    // Dim violet ambient plus a soft light from the storm overhead, so pillars and islands keep their shape.
+    const vec3 endLightDir = vec3(0.37, 0.83, 0.42);
+    ambient = vec3(0.26, 0.18, 0.40) * (0.75 + 0.25 * n.y) * ao
+            + vec3(0.9, 0.55, 1.5) * saturate(dot(n, endLightDir) * 0.8 + 0.2) * 0.55 * ao;
 #endif
     vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
     vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao;

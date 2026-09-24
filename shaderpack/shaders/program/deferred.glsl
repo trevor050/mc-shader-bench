@@ -160,7 +160,9 @@ void main() {
         // Reconstructing the direction from the far-plane depth loses precision; stars need an exact ray.
         vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
+#ifndef DIM_END
         col += moonSky(starDir, -sunDir);
+#endif
         if (night > 0.0 && rainStrength < 1.0 && starDir.y > -0.02) {
             col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
                             vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
@@ -228,6 +230,18 @@ void main() {
 #ifdef DIM_NETHER
         if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao) / PI;
 #endif
+        // Glassy dark stone (obsidian, blackstone, basalt): very dark albedos get a glossy sky reflection,
+        // so they read as polished volcanic glass instead of a black hole.
+        float darkness = 1.0 - smoothstep(0.02, 0.07, luminance(gAlbedo.rgb));
+        if (darkness > 0.0 && !isHand && mat != MAT_LAVA) {
+            vec3 rr = reflect(rd, n);
+            float fr = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, n)), 5.0);
+            vec3 env = skyRadiance(normalize(vec3(rr.x, max(rr.y, 0.05), rr.z)), sunDir, 4);
+#if !defined DIM_NETHER && !defined DIM_END
+            env *= lm.y * lm.y;
+#endif
+            col += env * fr * darkness * ao * 0.8;
+        }
         if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter);
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
 

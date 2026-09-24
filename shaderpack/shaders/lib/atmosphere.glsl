@@ -139,20 +139,44 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
 }
 
+#ifdef DIM_END
+float endFbm(vec2 p) {
+    float n = 0.0, amp = 0.5;
+    for (int i = 0; i < 5; i++) { n += valueNoise(p) * amp; p = p * 2.03 + vec2(11.3, 7.7); amp *= 0.5; }
+    return n;
+}
+
+// The End sky: a black-violet void with a slow nebula storm wheeling around a dim glow overhead. Magenta
+// dust and faint teal currents, a pale void haze along the horizon. Everything drifts very slowly.
+vec3 endSky(vec3 rd) {
+    float t = frameTimeCounter * 0.004;
+    // Project the upper sky onto a plane so the storm has a centre overhead; swirl angle grows toward it.
+    vec2 p = rd.xz / (max(rd.y, 0.0) + 0.45);
+    float r = length(p);
+    float ang = t * 2.0 + 1.6 / (r + 0.6);
+    p = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p;
+    vec2 warp = vec2(endFbm(p * 0.9 + 1.7), endFbm(p * 0.9 + 9.2)) - 0.5;
+    float n = endFbm(p * 1.4 + warp * 2.2 + t);
+    float m = endFbm(p * 2.6 - warp * 1.3 - t * 1.4 + 4.0);
+    float dust = smoothstep(0.42, 0.85, n);
+    float threads = pow(smoothstep(0.5, 0.9, m), 3.0);
+    float up = saturate(rd.y * 1.2 + 0.2);
+
+    vec3 col = vec3(0.010, 0.004, 0.022);
+    col += vec3(0.34, 0.07, 0.46) * dust * dust * 0.28 * up;
+    col += vec3(0.05, 0.30, 0.34) * threads * 0.22 * up;
+    col += vec3(0.30, 0.12, 0.50) * exp(-r * 2.2) * 0.10 * up;              // heart of the storm
+    col += vec3(0.10, 0.04, 0.16) * exp(-abs(rd.y) * 7.0) * 0.55;           // void haze at the horizon
+    return col;
+}
+#endif
+
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
     return netherHaze(rd, 90.0);
 #elif defined DIM_END
-    // Faint nebula: domain-warped value noise over the view direction.
-    vec2 p = rd.xz / (abs(rd.y) + 0.35) * 2.2;
-    float warp = valueNoise(p * 0.8 + 3.1);
-    float n = 0.0, amp = 0.5;
-    vec2 q = p + warp * 1.7;
-    for (int i = 0; i < 4; i++) { n += valueNoise(q) * amp; q = q * 2.07 + 11.3; amp *= 0.5; }
-    n = smoothstep(0.35, 0.95, n);
-    vec3 neb = mix(vec3(0.05, 0.015, 0.09), vec3(0.01, 0.06, 0.07), valueNoise(p * 0.5 + 7.0));
-    return vec3(0.006, 0.004, 0.011) + neb * n * 0.25;
+    return endSky(rd);
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
