@@ -82,6 +82,7 @@ uniform sampler2D colortex9;
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
+#include "/lib/portal.glsl"
 
 in vec2 texcoord;
 in vec2 lmcoord;
@@ -291,24 +292,15 @@ void main() {
 
 #ifndef PROG_DH
     if (mat == MAT_PORTAL) {
-        // Nether portal: a violet vortex. Two layers of domain-warped noise swirl at different speeds; bright
-        // filaments trace the noise's ridges and slowly crackle; the whole sheet pulses gently. World-space
-        // coordinates on the portal plane keep the pattern continuous across blocks.
+        // Keep the animated sheet continuous across the portal's blocks. A broad
+        // lavender current, modest emitted light, and grazing tint supply motion/depth
+        // without the busy noise field that made the previous version look marbled.
         vec3 wp = playerPos + cameraPosition;
         vec3 pn = abs(normalize(worldNormal));
         vec2 q = pn.x > pn.z ? wp.zy : wp.xy;
-        float t = frameTimeCounter;
-        vec2 w1 = vec2(cloudTex(vec3(q * 0.18, t * 0.03)).r, cloudTex(vec3(q * 0.18 + 0.5, t * 0.03)).r) - 0.5;
-        vec2 qa = q * 0.16 + w1 * 1.6 + vec2(0.0, t * 0.06);
-        float n1 = cloudTex(vec3(qa, t * 0.05)).r;
-        float n2 = cloudTex(vec3(q * 0.4 - w1 * 1.4 - vec2(t * 0.05, 0.0), 0.5 + t * 0.07)).g;
-        float ridge = pow(saturate(1.0 - abs(n1 - 0.55) * 3.2), 8.0);
-        float fil = pow(saturate(1.0 - abs(n2 - 0.5) * 4.5), 16.0) * smoothstep(0.45, 0.7, n1);
-        float pulse = 0.85 + 0.15 * sin(t * 2.1 + n1 * 6.0);
-        vec3 deep = vec3(0.06, 0.006, 0.16);
-        vec3 glow = vec3(0.5, 0.12, 1.0) * ridge * 1.6 + vec3(1.0, 0.7, 1.0) * fil * 4.0;
-        vec3 portalCol = (deep * (0.4 + 1.2 * n1 * n1) + glow) * pulse * 1.3;
-        outColor = vec4(applyCloudsInFront(portalCol, uv), mix(0.78, 0.95, saturate(ridge + fil)));
+        float grazing = pow(1.0 - saturate(abs(dot(normalize(worldNormal), -rd))), 3.0);
+        PortalSurface portal = shadePortal(q, frameTimeCounter, grazing);
+        outColor = vec4(applyCloudsInFront(portal.color, uv), portal.alpha);
         return;
     }
 #endif
