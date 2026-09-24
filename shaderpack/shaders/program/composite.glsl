@@ -31,18 +31,13 @@ void main() {
 uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
-uniform sampler2D shadowtex1;
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 dhProjectionInverse;
-uniform mat4 shadowModelView;
-uniform mat4 shadowProjection;
 uniform vec3 cameraPosition;
 uniform int isEyeInWater;
 uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
-#define SHADOW_PASS
-#include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 
 in vec2 texcoord;

@@ -52,6 +52,10 @@ def main():
         out = SHADERS / folder
         out.mkdir(exist_ok=True)
         for name, (source, define) in PROGRAMS.items():
+            # Keep shadow rendering in the Overworld only. Dimension variants compile out all
+            # shadow samplers, so these entry points would otherwise only request empty targets.
+            if folder and name == "shadow":
+                continue
             for ext, stage in (("vsh", "VERTEX"), ("fsh", "FRAGMENT")):
                 lines = ["#version 330 compatibility", f"#define {stage}"]
                 if dim_define:

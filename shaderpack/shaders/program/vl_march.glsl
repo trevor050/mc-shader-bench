@@ -35,16 +35,22 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
+#if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 uniform sampler2D shadowtex1;
+#endif
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 dhProjectionInverse;
+#if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
+#endif
 uniform vec3 cameraPosition;
 uniform int isEyeInWater;
 uniform ivec2 eyeBrightnessSmooth;
+#if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 #define SHADOW_PASS
 #include "/lib/shadows.glsl"
+#endif
 #include "/lib/clouds.glsl"
 #include "/lib/mist.glsl"
 
@@ -57,12 +63,14 @@ flat in vec3 envAmbient;
 layout(location = 0) out vec4 outScatter;
 layout(location = 1) out vec4 outDist;
 
+#if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 float shadowVisibility(vec3 playerPos) {
     vec3 sp = (shadowProjection * (shadowModelView * vec4(playerPos, 1.0))).xyz;
     vec3 ds = distortShadow(sp) * 0.5 + 0.5;
     if (any(lessThan(ds.xy, vec2(0.0))) || any(greaterThan(ds.xy, vec2(1.0)))) return 1.0;
     return step(ds.z - 0.0002, texture(shadowtex1, ds.xy).r);
 }
+#endif
 
 void main() {
     // Use the actual half-resolution target grid. Iris truncates relative buffer sizes, so this keeps
@@ -89,7 +97,7 @@ void main() {
 #if defined DIM_NETHER || defined DIM_END || !defined VOLUMETRIC_LIGHT
     outScatter = vec4(0.0, 0.0, 0.0, 1.0);
     return;
-#endif
+#else
     if (isEyeInWater != 0) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
 
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
@@ -150,5 +158,6 @@ void main() {
         }
     }
     outScatter = vec4(scatter, trans);
+#endif
 }
 #endif

@@ -62,11 +62,13 @@ uniform sampler2D gtexture;
 uniform sampler2D colortex4;
 uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex1;
+#if !defined DIM_NETHER && !defined DIM_END
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
 uniform sampler2D shadowcolor0;
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
+#endif
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 dhProjectionInverse;
@@ -75,7 +77,9 @@ uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
 uniform sampler2D colortex9;
+#if !defined DIM_NETHER && !defined DIM_END
 #include "/lib/shadows.glsl"
+#endif
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
 

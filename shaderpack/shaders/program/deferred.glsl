@@ -31,19 +31,23 @@ void main() {
 
 #ifdef FRAGMENT
 uniform int frameCounter;
-#define SHADOWS_AVAILABLE
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
+#if !defined DIM_NETHER && !defined DIM_END
+#define SHADOWS_AVAILABLE
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
 uniform sampler2D shadowcolor0;
+#endif
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 dhProjectionInverse;
+#if !defined DIM_NETHER && !defined DIM_END
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
+#endif
 uniform vec3 cameraPosition;
 uniform float wetness;
 uniform mat4 gbufferProjection;
@@ -52,7 +56,9 @@ uniform sampler2D colortex8;
 uniform sampler2D colortex9;
 uniform float viewWidth;
 uniform float viewHeight;
+#if !defined DIM_NETHER && !defined DIM_END
 #include "/lib/shadows.glsl"
+#endif
 #include "/lib/clouds.glsl"
 #include "/lib/stars.glsl"
 #include "/lib/lava.glsl"
@@ -249,9 +255,13 @@ void main() {
         // the sky-light gates in shadeSurface. When the shadow map shows light arriving through water, the
         // surface is open to the sky above that water; its absorption is already applied via the shadow term.
         // The same applies under ice or glass. Sealed caves never trip this: rock blocks the shadow map there.
+#if !defined DIM_NETHER && !defined DIM_END
         vec2 lm = nl.zw;
         float reaching = saturate(luminance(shadow) * 8.0);
         if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
+#else
+        vec2 lm = nl.zw;
+#endif
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
 #ifdef DIM_NETHER
         if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao) / PI;
