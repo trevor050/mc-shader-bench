@@ -164,6 +164,7 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     vec3 flash = vec3(0.85, 0.65, 1.0) * bolt.w * 6.0 * exp(-bd / 24.0);
     if (!storm) {
         // Serene: luminous lavender and teal clouds, lighter and cleaner than the storm's bruised tones.
+        // Pale, airy and open (Trevor preferred the washed look for the serene End).
         vec3 calm = mix(vec3(0.34, 0.24, 0.62), vec3(0.16, 0.38, 0.52), smoothstep(0.35, 0.8, variation));
         vec3 calmVoid = vec3(0.35, 0.12, 0.55) * exp(-max(p.y + 20.0, 0.0) / 60.0);
         return core + calm * 0.14 + calmVoid * 0.35;
