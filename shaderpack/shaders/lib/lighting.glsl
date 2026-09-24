@@ -135,7 +135,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     float darkRock = (mat == MAT_NONE || mat == MAT_LOD)
         ? 1.0 - smoothstep(0.025, 0.16, luminance(albedo))
         : 0.0;
-    col += vec3(0.035, 0.025, 0.017) * darkRock * ao * (0.72 + 0.28 * n.y);
+    col += vec3(0.016, 0.011, 0.008) * darkRock * ao * (0.72 + 0.28 * n.y);
 #endif
     // Lava stores its heat-dependent emission here and is far brighter than other emitters: seams glow dull
     // red, the molten body is bright, white-hot upwellings are blinding and bloom.

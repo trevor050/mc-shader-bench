@@ -28,7 +28,7 @@ vec3 portalPalette(float e) {
     vec3 deep = vec3(0.020, 0.002, 0.055);
     vec3 violet = vec3(0.22, 0.025, 0.62);
     vec3 magenta = vec3(0.80, 0.16, 0.95);
-    vec3 core = vec3(1.00, 0.78, 1.00);
+    vec3 core = vec3(0.95, 0.50, 1.00);  // hot orchid, never white: the sheet should stay unmistakably purple
     vec3 c = mix(deep, violet, smoothstep(0.0, 0.25, e));
     c = mix(c, magenta, smoothstep(0.2, 0.6, e));
     return mix(c, core, smoothstep(0.6, 1.0, e));
@@ -47,17 +47,19 @@ PortalSurface shadePortal(vec2 q, vec2 viewPlane, float spriteLum, float edge, f
     const float scales[3] = float[3](0.55, 0.85, 1.25);
     const float gains[3] = float[3](0.55, 0.9, 1.4);
     for (int i = 0; i < 3; i++) {
-        vec2 lp = (q + viewPlane * depths[i]) * scales[i];
+        // Every layer lives on Minecraft's 16-per-block texel grid (in its own parallax space), so the void is
+        // pixel art rather than an airbrushed nebula.
+        vec2 lp = floor((q + viewPlane * depths[i]) * 16.0) / 16.0 * scales[i];
         float e = portalEnergy(lp, time * (0.6 + 0.25 * float(i)), float(i) * 11.3);
-        vec3 layer = portalPalette(e * (0.55 + 0.2 * float(i))) * gains[i];
+        vec3 layer = portalPalette(e * (0.45 + 0.15 * float(i))) * gains[i];
         // Nearer layers partly occlude deeper ones where they are bright.
         col = col * (1.0 - e * 0.5) + layer;
     }
 
     // Surface: vanilla swirl pixels as sparkle riding on a sparse energy veil (after Solas).
-    float veil = portalEnergy(q * 1.1, time, 5.0);
-    float sparkle = pow(saturate(spriteLum), 4.0);
-    col += portalPalette(0.55 + veil * 0.45) * (sparkle * (0.6 + 2.2 * veil) + veil * 1.6);
+    float veil = portalEnergy(floor(q * 16.0) / 16.0 * 1.1, time, 5.0);
+    float sparkle = pow(saturate(spriteLum), 3.0);
+    col += portalPalette(0.5 + veil * 0.3) * (sparkle * (1.4 + 1.6 * veil) + veil * 0.7);
 
     // Energy rim along the obsidian frame, crackling.
     float crackle = valueNoise(q * 6.0 + vec2(time * 2.3, -time * 1.7));
@@ -67,7 +69,7 @@ PortalSurface shadePortal(vec2 q, vec2 viewPlane, float spriteLum, float edge, f
     col += vec3(0.30, 0.05, 0.36) * grazing;
 
     PortalSurface result;
-    result.color = col * breath * 2.2;
+    result.color = col * breath * 1.6;
     result.alpha = 0.94;
     return result;
 }

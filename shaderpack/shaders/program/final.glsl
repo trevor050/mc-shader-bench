@@ -197,7 +197,7 @@ void main() {
     float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
     exposure = clamp(exposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
 #else
-    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN, EXPOSURE_MAX_CAVE);
+    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN, EXPOSURE_MAX_OTHERWORLD);
 #endif
     col *= exposure;
 #if !defined DIM_NETHER && !defined DIM_END
