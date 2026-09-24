@@ -1,6 +1,6 @@
-# BenchCam memory-owner snapshot (offline candidate)
+# BenchCam memory-owner snapshot
 
-This diagnostic is built for Minecraft 26.2, Sodium 0.9.2, DH 3.3.2, and Iris 1.11.4. It has **not** been tested in a live game. Build the optional BenchCam jar in this worktree, and keep the original live jar until a guarded smoke passes. The command neither changes render settings nor reads pixels or GPU memory.
+This diagnostic is built for Minecraft 26.2, Sodium 0.9.2, DH 3.3.2, and Iris 1.11.4. It passed a guarded live smoke alongside Art-only automatic DH64; see [the trial record](../../docs/auto-art-dh64-memory-owner-smoke-20260924.md). The command neither changes render settings nor reads pixels or GPU memory.
 
 ```powershell
 cd harness\benchcam
@@ -27,4 +27,4 @@ Fields:
 
 `sodium_state=unavailable` means no Sodium world renderer/arena was present. In that case the Sodium numeric fields are omitted. The Sodium total excludes staging buffers, uniform buffers, textures, and other Minecraft buffers. DH tracking excludes DH textures and buffers not using this `GLBuffer` storage path. Iris targets, vanilla resources, driver heaps, and Java arrays are not attributed by this command. The GL storage values are **not** dedicated or resident GPU memory. Do not call `process dedicated allocation - these values` an exact residual; the gap also includes residency and driver accounting differences. Compare each field's A/B/A *change* with the separately sampled Windows process dedicated GPU allocation, private bytes, system commit, and available RAM.
 
-For the first guarded validation, use a low-pressure fixed pose. Confirm `dh_tracking=on`, `sodium_state=ready`, DH count and bytes greater than zero after LODs load, nonnegative values, and a plausible DH response to an existing opt-in radius change. Compare the original jar and this candidate with shaders off before interpreting any shader result. Reject the diagnostic if mixin injection fails, the DH ledger remains empty despite loaded LODs, the game or desktop stalls, or system available memory approaches the prior 2.2 GiB low point. No live validation has been done for this branch.
+The live smoke confirmed `dh_tracking=on`, `sodium_state=ready`, nonzero DH storage, pack/dimension transitions, and delayed DH buffer cleanup after an End transition. It did not turn this diagnostic into a GPU residency profiler. Keep the launch-time property off for ordinary play; repeat guarded owner captures at settled points when investigating allocations.
