@@ -60,6 +60,42 @@ capture.
 
 ## Immediate operating implications
 
+### 18:00 EDT live pressure event
+
+This is a later, separate observation, not an attribution of the RAMMap
+page-table growth above. Around 18:00:54, eleven `uvx.exe windows-mcp serve`
+roots appeared as direct children of the Codex app-server PID 425904. Their
+55 descendant `uv.exe`, `windows-mcp.exe`, and `python.exe` processes included
+many Python processes each reserving about 0.62 GiB private. All 26 observed
+Python processes were `windows-mcp serve`, not Claude's shader scripts.
+Windows Available RAM fell below 1 GiB and commit approached its limit.
+
+The 55 recent Codex helper descendants were stopped by verified PID ancestry
+and command line, without stopping Codex, Claude, or Minecraft. Available RAM
+rose from 0.85 to 2.57 GiB. Two older Codex `windows-mcp` root trees (ten
+descendants) were then stopped; they released little additional physical RAM.
+No new `windows-mcp` server was needed for the shader work. If Computer Use is
+needed later, its server may need to start again. This event shows a concrete
+Codex helper fanout contributing to *current commit pressure*; it does not
+prove which component retained the older RAMMap Page Table/Unused pages.
+
+At the same time, Minecraft PID 506168 private bytes rose from about 10.4 to
+14.1 GiB over several minutes, while working set reached 5.6 GiB and
+Available RAM stayed near 1.5 GiB. A read-only `jcmd GC.heap_info` first
+reported 8 GiB heap reserved, 4.5 GiB committed and 2.1 GiB used. A later
+BenchCam `memowners` reply reported 3.56 GiB heap used, 4.65 GiB committed,
+2.03 GiB Sodium arena allocated, 1.86 GiB used, and 2,085 Distant Horizons
+GL buffers. DH buffer byte tracking was off, so the remaining native/private
+allocation is not assigned. `VM.native_memory` reported NMT disabled. The
+user confirmed they were playing and requested the game remain running;
+no game setting, camera, shader, or Java process was changed.
+
+While this pressure persists, avoid new Codex subagent or Windows MCP server
+fanout and broad compile/capture runs. Recheck Available RAM before any game
+test. When the game is free, compare Java heap/Sodium/DH storage across time
+and perform the previously approved driver test only after a baseline is
+captured and interactive work has stopped.
+
 - Keep wide shader compile/build matrices paused while physical available RAM
   is low. Tens of thousands of short-lived compilers and shell processes can
   amplify a process-lifecycle leak if one exists.
