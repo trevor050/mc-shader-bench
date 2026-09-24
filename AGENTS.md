@@ -27,13 +27,17 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Stars: raSun pinned (fract(day/3650+0.44)) so the Milky Way is up at midnight, not behind the full moon.
 
 ## V4 systems (claude/v4-art)
-- Light field: shadow pass voxelizes (lib/voxel.glsl; r32ui voxelImg 128x64x128, type|level|rgb8) -> shadowcomp.csh diffuses into rgba16f lightFieldA/B (ping-pong by frameCounter parity; readers use B on even frames). Emitters = at_midBlock.w (Iris block emission byte) + brightness-weighted sprite colour. KEEP 0.992 ~= vanilla torch falloff (numpy-calibrated); ~1 block/frame spread.
-- Nether/End have voxel-only shadow stubs (VOXEL_ONLY clips all vertices; map 256, dist 80). gen_stubs writes shadow/shadowcomp at #version 430.
-- Nether smog = vl_march (DIM_NETHER branch) + TEMPORAL_VL + composite upsample; lib/nether_atmosphere.glsl. Nether/End eye adaptation meters log2(lum)+24 (composite) decoded in taa.glsl.
-- Lava: lib/lava.glsl heat palette; emissive channel = heat emission, lighting squares it (x20). Shore rim reads voxelSampler in gbuffers_terrain.
-- MAT_ICE 11 (translucent, gbuffers_translucent branch), MAT_ICE_SOLID 12 (deferred gloss). Portal: lib/portal.glsl + portalFrameEdge (voxel).
+- Light field: shadow pass voxelizes (lib/voxel.glsl; r32ui voxelImg 128x64x128, type|level|extra2|rgb8) -> shadowcomp.csh diffuses rgba16f lightFieldA/B (ping-pong by frameCounter parity; readers use B on even frames). rgb = colour ENERGY (sources stored c*c, read back with sqrt), a = extra-light energy (class 3 lava, 2 portal, 1 fire-like). Surfaces: brightness from vanilla lm.x (blockLightLevel, gentle curve), hue + direction + extra reach from the field (fieldBlockLight). Never let the field alone decide brightness (black pockets where it has not spread).
+- Emitter colour: auto from sprite (l^8 * saturation weighted, 6x6 taps); lava/portal fixed colours.
+- Nether/End have voxel-only shadow stubs (VOXEL_ONLY clips all vertices; map 256, dist 80). gen_stubs writes shadow/shadowcomp at #version 430. shadow.enabled=true required.
+- Nether smog = vl_march (DIM_NETHER) netherSmog() -> vec2(sigma, sootFraction); glow gated by field alpha (real lava proximity). composite: heat haze (only non-lava pixels seen through y 31..38 layer), far analytic smog. Air is grey soot; orange only near lava.
+- Exposure: Nether/End meter log2(min(lum,0.8)); clamp [EXPOSURE_MIN_OTHERWORLD, MAX]. final: agxHuePreserving (bright saturated colours keep hue; AgX per-channel turned lava salmon/pink).
+- Lava: lib/lava.glsl. Sources (block 10007 = lava:level=0) get per-patch (Voronoi on texel grid) orientation/offset, static; flowing lava (10016 -> MAT_LAVA + lavaFlowing flag) keeps vanilla flow sprite. Trevor rejects anything non-vanilla-looking, drifting patches and painted hot spots.
+- Reflections: lib/reflections.glsl traced in composite for c2.a smoothness > 0 (MAT_POLISHED 13, MAT_METAL 14, MAT_GLASSY 15 obsidian, MAT_ICE_SOLID). Smoothness written in gbuffers_solid.
+- MAT_ICE 11 (translucent, gbuffers_translucent branch). Portal: lib/portal.glsl + portalFrameEdge (voxel).
 - Offline gate: `py shaderpack/tools/check_compile.py [filter]` (glslang in ~/tools/glslang/bin). Compile-only.
-- Coordination with Codex: docs/claude-to-codex.md (AgentBridge does not work). Codex owns the live game.
+- Coordination with Codex: docs/claude-to-codex.md. Reference notes: ../refpacks/notes-*.md (Complementary lighting, Bliss/Solas/Photon Nether, ice, perf). Licenses: ideas only for Complementary/Bliss/Solas; Photon portions OK off Modrinth/CurseForge.
+- Capture helper: harness/cap_v4.py <dim> x y z yaw pitch time name [settle] (tp via execute in <dim>).
 
 ## Hazards
 - Python `open(p,'w')` on Windows writes CRLF; use newline='' (string matches with 

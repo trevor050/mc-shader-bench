@@ -11,7 +11,7 @@
 #define SUN_ILLUMINANCE 16.0
 #define MOON_ILLUMINANCE 0.02
 #define BLOCKLIGHT_COLOR vec3(1.0, 0.62, 0.32)
-#define BLOCKLIGHT_STRENGTH 3.2
+#define BLOCKLIGHT_STRENGTH 2.2
 #define MIN_LIGHT 0.006
 
 // Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the

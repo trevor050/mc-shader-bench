@@ -47,10 +47,12 @@ LightEnv makeLightEnv(vec3 sunDir) {
     return e;
 }
 
-// Inverse-square-ish falloff mapped onto Minecraft's linear light levels.
+// Block light versus Minecraft's linear light levels. A gentle curve (level 15 is only ~8x level 7), close to
+// what Complementary's lightmap curve works out to after its square-root light mix: light pools and spreads
+// through a cave or room instead of dying a couple of blocks from the source, with a brighter core near it.
 float blockLightLevel(float lmBlock) {
-    float l = lmBlock * lmBlock;
-    return BLOCKLIGHT_STRENGTH * l / (1.0 + (1.0 - lmBlock) * 22.0);
+    float l2 = lmBlock * lmBlock;
+    return BLOCKLIGHT_STRENGTH * pow(lmBlock, 1.6) * (0.35 + 0.65 * l2 * l2);
 }
 
 vec3 blockLight(float lmBlock) {
