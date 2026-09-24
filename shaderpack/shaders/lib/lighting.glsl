@@ -101,6 +101,16 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     col += vec3(0.035, 0.025, 0.017) * darkRock * ao * (0.72 + 0.28 * n.y);
 #endif
     col += albedo * emissive * 6.0;
+#if defined DIM_END
+    // Near-black obsidian and unclassified terrain otherwise collapse into flat cutouts. A restrained violet
+    // bounce lifts only dark terrain/LOD texels; AO and storm-facing direction keep it shaped and localized.
+    if (mat == MAT_NONE || mat == MAT_LOD) {
+        float darkSurface = 1.0 - smoothstep(0.012, 0.075, luminance(albedo));
+        float textureDetail = 0.62 + 0.38 * sqrt(saturate(luminance(albedo) * 48.0));
+        float stormFacing = 0.65 + 0.35 * saturate(dot(n, vec3(0.37, 0.83, 0.42)) * 0.5 + 0.5);
+        col += vec3(0.006, 0.002, 0.012) * darkSurface * textureDetail * stormFacing * ao;
+    }
+#endif
     return col;
 }
 
