@@ -173,7 +173,9 @@ void main() {
         vec4 m = texture(colortex2, texcoord);
         vec3 n = decodeNormal(nl.xy);
         int mat = int(m.r * 255.0 + 0.5);
-        vec3 albedo = toLinear(gAlbedo.rgb);
+        // Very dark textures (obsidian, blackstone) crush to pure black with a plain 2.2 decode; ease the
+        // curve at the bottom so their texture and hue survive.
+        vec3 albedo = pow(gAlbedo.rgb, vec3(mix(1.75, 2.2, smoothstep(0.0, 0.25, luminance(gAlbedo.rgb)))));
         float NdotL = dot(n, envLightDir);
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
