@@ -10,6 +10,9 @@ uniform float rainStrength;
 uniform float frameTimeCounter;
 #include "/lib/atmosphere.glsl"
 #include "/lib/end_portal.glsl"
+#if !defined DIM_NETHER && !defined DIM_END
+#include "/lib/cloud_weather.glsl"
+#endif
 #if defined FRAGMENT && defined LIGHT_FIELD
 #define VOXEL_READ
 #define FIELD_SHADING
@@ -36,6 +39,10 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+flat out vec4 cloudWeather0;
+flat out vec3 cloudWeather1;
+#endif
 
 void main() {
     gl_Position = ftransform();
@@ -45,6 +52,11 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+    CloudWeather w = cloudWeather();
+    cloudWeather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
+    cloudWeather1 = vec3(w.low, w.lowCov, w.cb);
+#endif
 }
 #endif
 
@@ -85,6 +97,10 @@ flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+flat in vec4 cloudWeather0;
+flat in vec3 cloudWeather1;
+#endif
 
 /* RENDERTARGETS: 0,4 */
 layout(location = 0) out vec4 outColor;
@@ -257,7 +273,12 @@ void main() {
                 shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
             }
         }
-        if (!isHand) shadow *= cloudShadow(wp, envLightDir);
+        if (!isHand) {
+            CloudWeather w = CloudWeather(cloudWeather0.x, cloudWeather0.y, cloudWeather0.z,
+                                          cloudWeather0.w, cloudWeather1.x, cloudWeather1.y,
+                                          cloudWeather1.z);
+            shadow *= cloudShadow(wp, envLightDir, w);
+        }
 #endif
 
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.

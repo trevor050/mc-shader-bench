@@ -163,6 +163,8 @@ void main() {
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
     bool directLightEnabled = skyExposure != 0.0 && any(notEqual(envDirect, vec3(0.0)));
     bool cloudShadowEnabled = !(envLightDir.y < 0.05);
+    CloudWeather shadowWeather;
+    if (directLightEnabled && cloudShadowEnabled) shadowWeather = cloudWeather();
     float mu = dot(rd, envLightDir);
     // Air: thin haze whose shafts are strongest along the long, golden light path of a low sun.
     float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
@@ -186,7 +188,8 @@ void main() {
         float vis = 1.0;
         if (directLightEnabled) {
             vis = shadowVisibility(p);
-            if (cloudShadowEnabled) vis *= cloudShadow(wp, envLightDir);
+            // A fully blocked terrain sample has no direct term for clouds to attenuate.
+            if (vis > 0.0 && cloudShadowEnabled) vis *= cloudShadow(wp, envLightDir, shadowWeather);
         }
         // mistDensity returns zero before sampling cloud noise whenever falloff * amount < 0.01.
         // Since falloff is at most 1, amounts below 0.01 can skip the call exactly.
@@ -208,7 +211,7 @@ void main() {
             vec3 wp = rd * (nearEnd + (float(i) + dither) * fl) + cameraPosition;
             float mist = mistDensity(wp, amount);
             if (mist <= 1e-6) continue;
-            float cloudVis = directLightEnabled && cloudShadowEnabled ? cloudShadow(wp, envLightDir) : 1.0;
+            float cloudVis = directLightEnabled && cloudShadowEnabled ? cloudShadow(wp, envLightDir, shadowWeather) : 1.0;
             vec3 sun = envDirect * cloudVis * skyExposure;
             vec3 inscatter = (sun * mistPhase + mistAmbient * skyExposure) * mist;
             float stepT = exp(-mist * fl);

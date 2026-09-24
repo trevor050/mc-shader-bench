@@ -16,9 +16,7 @@
 //      and night clouds are lit by the moon with the same model instead of a flat dimming factor.
 
 uniform sampler3D cloudNoise;
-uniform int worldDay;
-uniform int worldTime;
-uniform float thunderStrength;
+#include "/lib/cloud_weather.glsl"
 uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exists
 
 #define L0_BASE 250.0         // lowest cloud base (blocks)
@@ -35,52 +33,6 @@ vec4 cloudTex(vec3 p) { return texture(cloudNoise, fract(p) * (64.0 / 65.0) + 0.
 
 float remap(float v, float lo, float hi, float nlo, float nhi) {
     return nlo + (v - lo) * (nhi - nlo) / (hi - lo);
-}
-
-float noise1(float x) {
-    float i = floor(x), f = fract(x);
-    float a = fract(sin(i * 127.1) * 43758.5453), b = fract(sin((i + 1.0) * 127.1) * 43758.5453);
-    return mix(a, b, f * f * (3.0 - 2.0 * f));
-}
-
-struct CloudWeather {
-    float cov0;    // cumulus coverage
-    float tower;   // how tall cumulus grow
-    float cov1;    // altocumulus coverage
-    float cirrus;  // cirrus amount
-    float low;     // share of the map under the low deck
-    float lowCov;  // extra coverage in low-deck regions
-    float cb;      // thunderstorm tower strength
-};
-
-CloudWeather cloudWeather() {
-    // Weather clock in days; octaves drift at different rates so the sky never repeats on a fixed cycle.
-    float t = float(worldDay) + float(worldTime) / 24000.0;
-    CloudWeather w;
-    float a = noise1(t * 0.9) * 0.65 + noise1(t * 2.3 + 5.0) * 0.35;
-    float b = noise1(t * 0.7 + 17.0);
-    float c = noise1(t * 1.1 + 41.0);
-    w.cov0 = mix(0.26, 0.58, a) * CLOUD_COVERAGE / 0.34;
-    w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
-    w.cov1 = mix(0.0, 0.45, b);
-    // Cirrus stays a light accent: at full strength the thin high sheet read as flat and painted.
-    w.cirrus = mix(0.0, 0.5, c);
-    // Regimes: some days bring a low grey deck over the valleys, some build afternoon thunderstorms.
-    w.low = mix(0.05, 0.75, smoothstep(0.3, 0.8, noise1(t * 0.8 + 131.0)));
-    w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
-    float afternoon = smoothstep(0.1, 0.35, float(worldTime) / 24000.0) * (1.0 - smoothstep(0.45, 0.55, float(worldTime) / 24000.0));
-    w.cb = smoothstep(0.45, 0.85, noise1(t * 0.6 + 97.0)) * mix(0.55, 1.0, afternoon);
-    // Rain: thick, low, flat-bottomed overcast.
-    w.cov0 = mix(w.cov0, 0.9, rainStrength);
-    w.tower = mix(w.tower, 0.8, rainStrength);
-    w.cov1 = mix(w.cov1, 0.85, rainStrength);
-    w.cirrus *= 1.0 - rainStrength;
-    w.low = mix(w.low, 0.9, rainStrength);
-    w.cb = max(w.cb, thunderStrength);
-#ifdef CLOUD_DEBUG_WEATHER
-    w.cov0 = 0.0; w.tower = 0.8; w.cov1 = 0.0; w.cirrus = 0.0; w.low = 0.45; w.lowCov = 0.0; w.cb = 0.0;
-#endif
-    return w;
 }
 
 vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1.3); }
@@ -500,12 +452,11 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
 
 // Transmittance of direct light through the cumulus volume above a world position. Taps are spread over the
 // heights where cloud bodies live (low deck to storm towers).
-float cloudShadow(vec3 worldPos, vec3 lightDir) {
+float cloudShadow(vec3 worldPos, vec3 lightDir, CloudWeather w) {
     if (lightDir.y < 0.05) return 1.0;
     const float ys[5] = float[5](205.0, 250.0, 310.0, 390.0, 560.0);
     const float thick[5] = float[5](45.0, 50.0, 70.0, 110.0, 250.0);
     if (worldPos.y > ys[4]) return 1.0;
-    CloudWeather w = cloudWeather();
     float od = 0.0;
     for (int i = 0; i < 5; i++) {
         if (ys[i] < worldPos.y) continue;
@@ -513,6 +464,11 @@ float cloudShadow(vec3 worldPos, vec3 lightDir) {
         od += l0Density(p, w, 2) * thick[i];
     }
     return mix(exp(-od * 0.05), 1.0, 0.12);
+}
+
+float cloudShadow(vec3 worldPos, vec3 lightDir) {
+    if (lightDir.y < 0.05 || worldPos.y > 560.0) return 1.0;
+    return cloudShadow(worldPos, lightDir, cloudWeather());
 }
 
 // Tileable caustic pattern (after joltz0r's water shader). Returns roughly 0..1 bright filaments.
