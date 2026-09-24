@@ -153,7 +153,7 @@ public final class StormAmbience implements ClientModInitializer {
 	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon, float gust) {
 		if (boltAge < 0 && random.nextFloat() < 0.004F + 0.009F * intensity * intensity * (dragon ? 1.3F : 1.0F)) {
 			boltAge = 0;
-			boltCode = random.nextInt(16) / 16.0F;
+			boltCode = random.nextInt(8) / 8.0F;
 			boltSeed = random.nextFloat() * 10.0F;
 			Vec3 pos = boltPosition(boltCode);
 			double distance = pos.distanceTo(player.position());
@@ -171,11 +171,14 @@ public final class StormAmbience implements ClientModInitializer {
 		// Channels for the shader (decoded in the shaderpack's lib/end_atmosphere.glsl). Rain carries only the storm
 		// intensity, which changes smoothly: packing the bolt direction in with it made the value jump at every
 		// strike, and the in-between value the renderer blends to decoded as a random intensity for a frame (the
-		// "random pink frame"). Thunder carries the gust (0..0.5), or during a strike the bolt direction and flash
-		// (0.5..1.0: 16 directions, flash in the fraction). Minecraft reports thunder multiplied by rain.
+		// "random pink frame"). Thunder packs bolt direction (8), gust (32 levels) and flash (fraction) together:
+		// thunder = (direction * 32 + gust level + flash) / 256. Carrying the gust through strikes matters: when
+		// the shader had to assume a full gust during a flash, every gust effect slammed on for half a second and
+		// the view washed violet. Minecraft reports thunder multiplied by rain; the shader divides it back out.
 		level.setRainLevel(0.2F + 0.8F * Math.min(intensity, 0.999F));
-		float boltDir = Math.round(boltCode * 16.0F) % 16;
-		level.setThunderLevel(flash > 0.02F ? 0.5F + 0.5F * (boltDir + Math.min(flash, 0.999F)) / 16.0F : 0.499F * gust);
+		int boltDir = Math.round(boltCode * 8.0F) % 8;
+		int gustLevel = Math.round(Math.min(gust, 1.0F) * 31.0F);
+		level.setThunderLevel((boltDir * 32 + gustLevel + Math.min(flash, 0.99F)) / 256.0F);
 
 		pending.removeIf(p -> {
 			if (ticks < p.dueTick()) return false;

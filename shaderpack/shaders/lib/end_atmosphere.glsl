@@ -25,17 +25,15 @@ float endStormIntensity() {
     if (rainStrength < 0.1) return 0.55;
     return saturate((rainStrength - 0.2) / 0.8 * 1.001);
 }
-// Thunder channel from the mod: 0.5..1.0 = lightning flash, 0..0.5 = gust strength (Minecraft reports thunder
-// multiplied by rain, so divide it back out).
-float endThunderRaw() { return rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3); }
+// Thunder channel from the mod: thunder = (direction * 32 + gust level + flash) / 256 (see StormAmbience);
+// Minecraft reports thunder multiplied by rain, so divide it back out.
+float endThunderRaw() { return rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3) * 256.0 + 1e-3; }
 float endGust() {
     if (rainStrength < 0.1) return 0.5 + 0.5 * sin(frameTimeCounter * 0.9) * sin(frameTimeCounter * 0.37 + 2.0);
-    float v = endThunderRaw();
-    return v < 0.5 ? saturate(v / 0.499) : 1.0;
+    return mod(floor(endThunderRaw()), 32.0) / 31.0;
 }
-// During a strike: thunder = 0.5 + 0.5 * (direction + flash) / 16.
 float endBoltCode() {
-    return floor(max(endThunderRaw() - 0.5, 0.0) * 2.0 * 16.0 + 1e-3) / 16.0;
+    return floor(endThunderRaw() / 32.0) / 8.0;
 }
 
 // Wind at a point: a fast tangential gale around the vortex axis with an updraft, faster when the storm rages.
@@ -115,8 +113,7 @@ vec4 endLightning(float t) {
     // thunder (which Minecraft reports multiplied by rain) = flash brightness. Mirrors StormAmbience.boltPosition.
     if (rainStrength > 0.1) {
         float code = endBoltCode();
-        float v = endThunderRaw();
-        float flash = v >= 0.5 ? fract((v - 0.5) * 2.0 * 16.0) : 0.0;
+        float flash = saturate(fract(endThunderRaw()) - 1e-3);
         float ang = code * TAU;
         float y = 90.0 + 170.0 * fract(code * 7.31);
         return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);

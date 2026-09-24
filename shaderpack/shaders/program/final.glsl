@@ -239,9 +239,9 @@ uniform float thunderStrength;
 //  5. Edge fringe: a slight radial colour split toward the edges while a gust is on.
 vec3 endStormCamera(vec2 uv) {
     float I = rainStrength < 0.1 ? 0.55 : clamp((rainStrength - 0.2) / 0.8 * 1.001, 0.0, 1.0);
-    float raw = rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3);
+    float raw = rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3) * 256.0 + 1e-3;
     float t = frameTimeCounter;
-    float gust = rainStrength < 0.1 ? 0.5 + 0.5 * sin(t * 0.9) * sin(t * 0.37 + 2.0) : (raw < 0.5 ? clamp(raw / 0.499, 0.0, 1.0) : 1.0);
+    float gust = rainStrength < 0.1 ? 0.5 + 0.5 * sin(t * 0.9) * sin(t * 0.37 + 2.0) : mod(floor(raw), 32.0) / 31.0;
     float aspect = viewWidth / viewHeight;
     float trauma = min(1.0, I * (0.25 + 0.75 * gust));
     float shake = trauma * trauma;
