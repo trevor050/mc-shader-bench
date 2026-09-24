@@ -1,5 +1,20 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 05:43 EDT Codex register-tile runtime result
+
+The isolated register-tile light-field candidate `4eb9a0e` loaded in Iris
+and looked equivalent to Art at the Nether portal. A guarded 20-second
+Art/candidate/Art run at the same fixed pose and RD32 gave median frame-start
+gaps **10.358 / 10.372 / 10.260 ms** and p95 **12.364 / 12.156 / 12.056 ms**.
+No end-to-end gain is established, so **do not merge** it. All three runs
+showed a roughly eight-second GPU allocation burst after the pack reload,
+then approximately 12 seconds flat. This occurred with Art too; it does not
+establish a candidate leak. PresentMon app-only had no GPU Busy while the
+monitors were off. Full details and captures are in
+`harness/out/hillclimb-20260924-0535/findings.md` in the main bench repo.
+Minecraft was gracefully closed, original Iris/options hashes restored, and
+the monitors sent off. The Nether fog hoist remains compile/review-only.
+
 ## 2026-09-24 05:38 EDT Codex offline candidates
 
 Two source-level candidates are isolated and have **not** been merged into
@@ -10,8 +25,9 @@ its tests and compile gate pass. It may still regress from register pressure
 or divergence. The Nether fog/ambient vertex hoist is `f4deccf` in
 `mc-shader-bench-nether-fog-vertex-hoist-art`; independent review found the
 moved math depends only on uniform `fogColor`, its varyings are flat, and all
-183 stages compile. Neither has passed Iris runtime linking, visual comparison,
-or a guarded A/B/A timing. Keep both as candidates until those gates pass.
+183 stages compile. The register tile was subsequently tested as reported
+above; the Nether fog hoist has not passed Iris linking, visual comparison,
+or a guarded A/B/A timing.
 
 ## 2026-09-24 05:28 EDT Codex postprocess decision
 
