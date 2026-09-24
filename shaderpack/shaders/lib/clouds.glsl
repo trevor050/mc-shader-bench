@@ -75,7 +75,7 @@ CloudWeather cloudWeather() {
     w.low = mix(w.low, 0.9, rainStrength);
     w.cb = max(w.cb, thunderStrength);
 #ifdef CLOUD_DEBUG_WEATHER
-    w.cov0 = 0.42; w.tower = 0.8; w.cov1 = 0.3; w.cirrus = 0.4; w.low = 0.45; w.lowCov = 0.1; w.cb = 1.0;
+    w.cov0 = 0.0; w.tower = 0.8; w.cov1 = 0.0; w.cirrus = 0.0; w.low = 0.45; w.lowCov = 0.0; w.cb = 0.0;
 #endif
     return w;
 }
@@ -373,6 +373,8 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
     if (maxDist > 1e5) {
         c1 = marchL1(ro, rd, w, lightDir, directLight, skyLight, dither, d1);
         c2 = cirrus(ro, rd, w, lightDir, directLight, skyLight, d2);
+        // Thin ice cloud all but disappears by moonlight; keep it from smearing grey over the stars.
+        c2 = mix(vec4(0.0, 0.0, 0.0, 1.0), c2, smoothstep(-0.1, 0.05, sunDir.y));
     }
     float d01;
     vec4 c = mergeClouds(c0, d0, c1, d1, d01);

@@ -12,7 +12,7 @@ uniform sampler2D milkyway;
 
 const vec3 CELESTIAL_NORTH = vec3(0.0, 0.42262, -0.90631);
 #define STAR_BRIGHTNESS 3.0e-5
-#define MILKYWAY_BRIGHTNESS 0.018
+#define MILKYWAY_BRIGHTNESS 0.15
 
 vec3 starColor(float bv) {
     // B-V colour index -> temperature (Ballesteros 2012) -> approximate blackbody colour.
@@ -39,14 +39,36 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     // Sun's right ascension: pinned near the June solstice, when the galactic core (RA 266 deg) crosses the
     // meridian around midnight, so the brightest part of the Milky Way arcs overhead on every clear night.
     // A slow drift (one cycle per ten years of game days) keeps the sky from being perfectly static.
-    float raSun = fract(float(worldDay) / 3650.0 + 0.24) * TAU;
+    float raSun = fract(float(worldDay) / 3650.0 + 0.44) * TAU;
 
     float sinDec = clamp(dot(rd, CELESTIAL_NORTH), -1.0, 1.0);
     float dec = asin(sinDec);
     float ra = mod(raSun + atan(dot(rd, b2), dot(rd, b1)), TAU);
     vec2 uv = vec2(ra / TAU, dec / PI + 0.5);
 
-    vec3 col = textureLod(milkyway, uv, 0.0).rgb * MILKYWAY_BRIGHTNESS;
+    vec3 mw = textureLod(milkyway, uv, 0.0).rgb;
+    // Contrast: the faint wide glow stays faint while the bright star clouds and dust lanes stand out.
+    mw = pow(mw, vec3(1.25)) * 1.2;
+    // Starlight is only faintly warm to the eye: pull the dusty core toward cream.
+    mw = mix(vec3(luminance(mw)), mw, 0.45) * vec3(0.95, 0.97, 1.05);
+    vec3 col = mw * MILKYWAY_BRIGHTNESS;
+
+    // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
+    // density follows the galaxy's brightness (dense in the band, sparse elsewhere). Cells are fixed on the
+    // celestial sphere so the dust turns with the sky.
+    {
+        vec3 cs = vec3(dot(rd, b1), dot(rd, b2), sinDec);
+        vec3 sp = cs / pixelAngle / 2.2;
+        vec3 cell = floor(sp);
+        float hsh = hash12(cell.xy * 0.713 + cell.z * 1.37);
+        float density = 0.006 + 0.42 * smoothstep(0.02, 0.4, luminance(mw));
+        if (hsh < density) {
+            vec3 f = fract(sp) - 0.5;
+            float core = exp(-dot(f, f) * 9.0);
+            float b = hash12(cell.zy * 1.91 + 4.3);
+            col += vec3(0.85, 0.9, 1.0) * core * (0.25 + b * b * 1.6) * STAR_BRIGHTNESS * 6000.0 / (pixelAngle * pixelAngle * 1.0e6);
+        }
+    }
 
     const vec2 size = vec2(2048.0, 1024.0);
     vec2 st = uv * size;
