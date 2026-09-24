@@ -36,6 +36,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - RDP session => no NVIDIA OpenGL. Game must run on the console session.
 - MC grabs + ClipCursor()s the mouse; BenchCam mixin blocks it unless `mouse grab`. Stale clip after a kill: user32 ClipCursor(NULL).
 - Only the lead controls the live BenchCam/game. Parallel shader reloads once coincided with a prolonged partial input lock while DH generated; cause unproven. After captures send `mouse free`, and keep agents on offline worktrees.
+- V4 art at `13d1375` repeatedly caused 1-12-second whole-desktop stalls when turning near a Nether portal; the same movement with shaders off was smooth. VRAM briefly reached 11.2/12.3 GiB, but the cause is unproven. Leave the live pack disabled after tests, use short guarded candidate runs, and log per-process GPU memory and frame times during any repro. The current 32-chunk vanilla / 512-chunk DH setup adds substantial chunk pressure; changing DH radius also requires changing `LOD_DISTANCE` below.
 - Iris fallback programs render pure fog on 26.2: every geometry type needs a program (see gen_stubs table).
 - gbuffers_line must not touch gl_Vertex (link error with iris_Position); PROG_BASIC uses ftransform only.
 - Iris auto-declares dhMaterialId in DH programs. dhRenderDistance is int (unclear units): use dhFarPlane.
