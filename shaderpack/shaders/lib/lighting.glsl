@@ -71,7 +71,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
 #if defined DIM_NETHER
     // Hot, directionless nether glow.
-    ambient = vec3(2.6, 1.15, 0.62) * (0.7 + 0.3 * n.y) * ao;
+    ambient = vec3(1.1, 0.5, 0.32) * (0.7 + 0.3 * n.y) * ao;
 #elif defined DIM_END
     ambient = vec3(0.30, 0.22, 0.42) * (0.75 + 0.25 * n.y) * ao;
 #endif
@@ -100,3 +100,13 @@ vec3 handheldLight(vec3 playerPos, vec3 n, float ao) {
     float wrap = saturate(dot(n, toLight / max(d, 1e-3)) * 0.75 + 0.25);
     return blockLight(lm) * wrap * mix(ao, 1.0, 0.3) * 0.7;
 }
+
+#ifdef DIM_NETHER
+// Heat rising off the lava seas: surfaces low down and facing down (ceilings, overhangs, cliff undersides)
+// catch warm light from below.
+vec3 netherUplight(vec3 wp, vec3 n, float ao) {
+    float nearLava = exp(-max(wp.y - 31.0, 0.0) / 30.0);
+    float facing = saturate(0.55 - n.y * 0.45);
+    return vec3(3.2, 0.9, 0.18) * nearLava * facing * mix(ao, 1.0, 0.3);
+}
+#endif

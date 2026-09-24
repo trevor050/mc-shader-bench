@@ -16,7 +16,8 @@ vec3 lavaRamp(float heat) {
 // Emitted radiance of a lava surface at world position wp with geometric normal n.
 vec3 lavaRadiance(vec3 wp, vec3 n, float time) {
     bool falling = abs(n.y) < 0.5;
-    vec2 p = falling ? vec2(dot(wp.xz, vec2(n.z, -n.x)), wp.y + time * 1.6) : wp.xz;
+    // Falling lava: pattern stretched 4:1 downward so it streaks as it pours.
+    vec2 p = falling ? vec2(dot(wp.xz, vec2(n.z, -n.x)) * 1.6, (wp.y + time * 2.2) * 0.35) : wp.xz;
     vec2 drift = falling ? vec2(0.0) : vec2(time * 0.05, time * 0.032);
 
     // Plates: cellular noise (inverted Worley in G/B, high in cell centres) gives crust islands; the gaps

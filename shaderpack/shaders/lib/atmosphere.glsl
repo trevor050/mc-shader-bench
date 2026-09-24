@@ -89,6 +89,20 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
 
 #ifdef DIM_NETHER
 uniform vec3 fogColor;
+
+// Nether air: dark ashen smoke, lit from below by the lava seas (lava level is y = 31). The biome's fog
+// colour only tints it (soul sand valley turns cold and ghostly, warped forest a little teal), instead of
+// replacing it, so no biome turns into a glowing blue box.
+vec3 netherHaze(vec3 rd, float y) {
+    vec3 tint = toLinear(fogColor);
+    tint = mix(vec3(luminance(tint)), tint, 0.45) / max(luminance(tint), 0.02);
+    vec3 smoke = vec3(0.07, 0.028, 0.02) * mix(vec3(1.0), tint, 0.5);
+    float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
+    // Looking down toward the lava sea the haze glows; looking up into the smoke it goes dark.
+    float look = saturate(0.35 - rd.y * 0.65);
+    vec3 ember = vec3(1.0, 0.3, 0.06) * (0.12 + 0.55 * nearLava) * look;
+    return smoke + ember * mix(vec3(1.0), tint, 0.2);
+}
 #endif
 
 // Twilight effects that single scattering misses, shaped by eye from photographs:
@@ -128,7 +142,7 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
-    return toLinear(fogColor) * 1.2 + vec3(0.02, 0.006, 0.003);
+    return netherHaze(rd, 90.0);
 #elif defined DIM_END
     // Faint nebula: domain-warped value noise over the view direction.
     vec2 p = rd.xz / (abs(rd.y) + 0.35) * 2.2;

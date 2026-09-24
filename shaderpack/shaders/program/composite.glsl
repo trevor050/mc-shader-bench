@@ -130,7 +130,9 @@ void main() {
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
         float density = (0.00018 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
 #if defined DIM_NETHER
-        density = 0.014;
+        // Thick near the lava seas, thinning with height; the smoke never fully clears.
+        float fogY = min(worldY, cameraPosition.y);
+        density = 0.005 + 0.011 * exp(-max(fogY - 31.0, 0.0) / 40.0);
 #elif defined DIM_END
         density = 0.0025;
 #endif
@@ -147,7 +149,11 @@ void main() {
         // The ramp only covers the last stretch: starting it earlier flattened distant hills into grey slabs.
         fogAmt = max(fogAmt, smoothstep(LOD_DISTANCE * 0.72, LOD_DISTANCE * 0.97, dist));
 #endif
+#if defined DIM_NETHER
+        col = mix(col, netherHaze(rd, mix(worldY, cameraPosition.y, 0.5)), saturate(fogAmt));
+#else
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
+#endif
 
     }
 
