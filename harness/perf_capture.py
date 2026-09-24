@@ -118,6 +118,34 @@ def read_active_pack(iris_properties: Path, expected_pack: str, game_log: Path |
     return result
 
 
+def attest_pack_artifact(
+    iris_properties: Path,
+    selected_pack: str,
+    artifact: Path | None,
+    expected_sha256: str | None = None,
+) -> str | None:
+    """Hash the supplied artifact only after matching the selected live pack."""
+    if artifact is None:
+        return None
+    live_path = iris_properties.resolve().parent.parent / "shaderpacks" / selected_pack
+    artifact_path = artifact.resolve()
+    try:
+        artifact_hash = shaderpack_sha256(artifact_path)
+        live_hash = artifact_hash if artifact_path == live_path.resolve() else shaderpack_sha256(live_path)
+    except (OSError, ValueError) as exc:
+        raise CaptureError(f"cannot fingerprint selected live pack and supplied artifact: {exc}") from exc
+    if artifact_hash != live_hash:
+        raise CaptureError(
+            f"--pack-artifact does not match selected live pack {selected_pack!r}: "
+            f"artifact SHA-256 {artifact_hash}, live SHA-256 {live_hash}"
+        )
+    if expected_sha256 and artifact_hash != expected_sha256.casefold():
+        raise CaptureError(
+            f"shaderpack artifact SHA-256 {artifact_hash} does not match expected {expected_sha256}"
+        )
+    return artifact_hash
+
+
 def read_benchcam_status(port: int, timeout: float) -> dict[str, Any]:
     """Read status only; does not issue any state-changing BenchCam command."""
     try:
@@ -178,11 +206,9 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     pack = read_active_pack(args.iris_properties, args.pack, args.game_log)
-    pack_artifact_sha256 = shaderpack_sha256(args.pack_artifact) if args.pack_artifact else None
-    if args.expected_pack_sha256 and pack_artifact_sha256 != args.expected_pack_sha256.casefold():
-        raise CaptureError(
-            f"shaderpack artifact SHA-256 {pack_artifact_sha256} does not match expected {args.expected_pack_sha256}"
-        )
+    pack_artifact_sha256 = attest_pack_artifact(
+        args.iris_properties, pack["selected_pack"], args.pack_artifact, args.expected_pack_sha256
+    )
     pose = read_benchcam_status(args.benchcam_port, args.status_timeout)
     if pose["world_time"] < 0:
         raise CaptureError("BenchCam reports no loaded world clock")

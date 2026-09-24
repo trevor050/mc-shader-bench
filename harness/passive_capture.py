@@ -21,8 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pack_fingerprint import shaderpack_sha256
-from perf_capture import CaptureError, read_active_pack
+from perf_capture import CaptureError, attest_pack_artifact, read_active_pack
 
 
 MAX_SECONDS = 900
@@ -141,11 +140,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     active_pack_attestation = None
     if args.pack:
         pack_observation = read_active_pack(args.iris_properties, args.pack, args.game_log)
-        pack_sha256 = shaderpack_sha256(args.pack_artifact) if args.pack_artifact else None
-        if args.expected_pack_sha256 and pack_sha256 != args.expected_pack_sha256.casefold():
-            raise CaptureError(
-                f"shaderpack artifact SHA-256 {pack_sha256} does not match expected {args.expected_pack_sha256}"
-            )
+        pack_sha256 = attest_pack_artifact(
+            args.iris_properties, pack_observation["selected_pack"], args.pack_artifact, args.expected_pack_sha256
+        )
         active_pack_attestation = {
             **pack_observation,
             "pack_revision": args.pack_revision,
