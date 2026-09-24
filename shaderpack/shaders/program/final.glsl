@@ -37,7 +37,7 @@ void main() {
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
 uniform sampler2D colortex3;
-uniform sampler2D colortex13;
+uniform sampler2D colortex10;
 uniform sampler2D colortex5;
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
@@ -174,13 +174,13 @@ vec3 colorGrade(vec3 c) {
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
-    // composite4 stores the separately reconstructed half-resolution bloom and the weighted glare+rays.
+    // composite4 stores bloom in the retired VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
     col += texture(colortex3, texcoord).rgb;
     // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
     // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
     // sun, produce a visible glow; everything else just softens very slightly.
-    col = mix(col, texture(colortex13, texcoord).rgb, BLOOM_STRENGTH);
+    col = mix(col, texture(colortex10, texcoord).rgb, BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
 
