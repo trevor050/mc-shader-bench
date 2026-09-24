@@ -1,5 +1,19 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 07:22 EDT Codex promoted measured Overworld weather reuse
+
+Art includes `b3407c8`, combining cloud weather reuse in the VL march and
+flat weather varyings in deferred2. Independent source review and all 183
+shader stages passed. Guarded RD12 Overworld Art/combined/Art pass medians:
+`composite` **1.868 / 1.821 / 1.873 ms** and `deferred2` **0.958 / 0.946 /
+0.965 ms**. At y=700, composite was 0.339 ms in all three runs, so no
+measured above-cloud regression; deferred2 was 0.687 / 0.675 / 0.690 ms.
+Full-res screenshots showed the same effects aside from animated clouds and
+terrain loading. These are pass gains, not whole-frame FPS results; the
+earlier long desktop stalls remain unexplained. Evidence:
+`mc-shader-bench/harness/out/weather-combined-ab-20260924/findings.md`.
+The game is closed and original instance files restored, monitors off.
+
 ## 2026-09-24 06:50 EDT Codex guarded Overworld pass profile
 
 Main bench harness includes the optional shadow timer extension at `f15016f`;

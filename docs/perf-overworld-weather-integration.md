@@ -9,6 +9,8 @@ Each candidate passed a separate guarded alpine RD12 per-pass A/B/A against Art,
 | VL `composite` | 1.871 / 1.821 / 1.876 |
 | `deferred2` | 0.966 / 0.948 / 0.966 |
 
-These are per-pass observations, not whole-frame FPS results. The integrated source passes `py shaderpack/tools/check_compile.py` (183 stages, zero failures). Its combined runtime result remains unmeasured.
+These are per-pass observations, not whole-frame FPS results. The integrated source passes `py shaderpack/tools/check_compile.py` (183 stages, zero failures).
 
-For the combined gate, compare Art A1, this integrated branch B, and Art A2 at the same guarded RD12 alpine pose, game time, weather, resolution, DH state, profiler build, and reload settling interval. Capture complete GL timer rows for both `composite` and `deferred2`, plus same-pose full-resolution screenshots. Check both pass medians and p95 against the Art bracket and inspect the screenshots before promoting the combined branch.
+The combined guarded runtime gate then passed on 2026-09-24 at the same RD12 Overworld alpine pose. Art / combined / Art `composite` medians were **1.868 / 1.821 / 1.873 ms**; `deferred2` medians were **0.958 / 0.946 / 0.965 ms**. All three captures had 16 rows per frame, clean query drains, and no visible effect difference in full-resolution screenshots beyond animated clouds and terrain loading. An above-cloud y=700 Art / combined / Art control had identical `composite` medians (0.339 ms each), while `deferred2` was 0.687 / 0.675 / 0.690 ms. Full evidence and caveats are in the main repo's `harness/out/weather-combined-ab-20260924/findings.md`.
+
+These are small pass-level gains in tested scenes. Profiler-off/on overhead, whole-frame FPS or GPU Busy, low-sun pixel comparisons, and long-run stability remain unmeasured.
