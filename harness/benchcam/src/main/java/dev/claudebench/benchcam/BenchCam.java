@@ -184,9 +184,9 @@ public final class BenchCam implements ClientModInitializer {
 		if (arg.equals("stop")) return onRenderThread(GpuPassProfiler::stop);
 		if (arg.equals("status")) return onRenderThread(GpuPassProfiler::status);
 		if (!arg.startsWith("start ") || arg.substring(6).isBlank())
-			return CompletableFuture.completedFuture("err usage: gpuprof start <new.csv>|stop|status");
+			return CompletableFuture.completedFuture("err usage: gpuprof start <new-name.csv>|stop|status");
 		try {
-			GpuPassProfiler.Session candidate = GpuPassProfiler.prepare(Path.of(arg.substring(6).strip()));
+			GpuPassProfiler.Session candidate = GpuPassProfiler.prepare(arg.substring(6).strip());
 			return onRenderThread(() -> GpuPassProfiler.start(candidate));
 		} catch (IOException | RuntimeException e) {
 			return CompletableFuture.completedFuture("err " + e);
