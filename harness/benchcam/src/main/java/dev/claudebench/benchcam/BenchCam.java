@@ -118,6 +118,7 @@ public final class BenchCam implements ClientModInitializer {
 
 		return switch (verb) {
 			case "ping" -> CompletableFuture.completedFuture("ok pong");
+			case "framestats" -> CompletableFuture.completedFuture(FrameTimeStats.summarizeRecent(arg));
 			case "status" -> onRenderThread(() -> {
 				var p = mc.player;
 				String pos = p == null ? "none" : String.format("%.2f %.2f %.2f %.1f %.1f", p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot());
