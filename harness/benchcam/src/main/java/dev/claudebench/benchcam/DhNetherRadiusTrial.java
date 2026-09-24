@@ -1,6 +1,8 @@
 package dev.claudebench.benchcam;
 
 import net.fabricmc.loader.api.FabricLoader;
+import net.irisshaders.iris.Iris;
+import net.irisshaders.iris.api.v0.IrisApi;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
 import net.minecraft.resources.ResourceKey;
@@ -11,6 +13,7 @@ public final class DhNetherRadiusTrial {
 	private static final int DEFAULT_END_RADIUS = 64;
 	private static final int MIN_NETHER_RADIUS = 32;
 	private static final int MIN_END_RADIUS = 64;
+	private static final String END_REQUIRED_PACK_NAME = "ClaudeBenchV4Art";
 	private static final long MAX_CLEAR_RETRY_MS = 10_000;
 	private static final boolean DH_PRESENT = FabricLoader.getInstance().isModLoaded("distanthorizons");
 	private static boolean netherEnabled = DH_PRESENT && Boolean.getBoolean("benchcam.dhNetherRadiusTrial");
@@ -60,8 +63,14 @@ public final class DhNetherRadiusTrial {
 
 	private static int desiredRadius(ResourceKey<Level> dimension) {
 		if (Level.NETHER.equals(dimension) && netherEnabled && !netherFailed) return requestedNetherRadius;
-		if (Level.END.equals(dimension) && endEnabled && !endFailed) return requestedEndRadius;
+		if (Level.END.equals(dimension) && endEnabled && !endFailed && isRequiredEndPackActive()) return requestedEndRadius;
 		return 0;
+	}
+
+	/** Iris 1.11.4 currentPackName is set after successful pack load; the public API confirms a non-vanilla pipeline is active. */
+	private static boolean isRequiredEndPackActive() {
+		return END_REQUIRED_PACK_NAME.equals(Iris.getCurrentPackName())
+				&& IrisApi.getInstance().isShaderPackInUse();
 	}
 
 	public static String command(String arg, Minecraft mc) {
@@ -160,8 +169,10 @@ public final class DhNetherRadiusTrial {
 	public static String status(Minecraft mc) {
 		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
 		String ownerDimension = ownedDimension == null ? "none" : ownedDimension.toString();
+		boolean endPackActive = isRequiredEndPackActive();
 		String prefix = "ok enabled=" + netherEnabled + " requested=" + requestedNetherRadius + " dhPresent=" + DH_PRESENT
 				+ " dimension=" + dimension + " endEnabled=" + endEnabled + " endRequested=" + requestedEndRadius
+				+ " endPack=" + END_REQUIRED_PACK_NAME + " endPackActive=" + endPackActive
 				+ " ownerDimension=" + ownerDimension + " owned=" + owned + " apiOwner=not_exposed" + " suspended=" + suspended
 				+ " failed=" + (netherFailed || endFailed) + " netherFailed=" + netherFailed + " endFailed=" + endFailed
 				+ " clearPending=" + clearPending + " clearFailures=" + clearFailures
