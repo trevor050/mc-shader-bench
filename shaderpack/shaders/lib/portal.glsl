@@ -1,40 +1,73 @@
-// Nether portal sheet. Keep the motion broad and block-anchored: vanilla portals
-// read as a purple animated surface, not turbulent marble or a set of bright veins.
+// Nether portal: a window into a swirling violet void.
+//
+// Lineage: Solas's portal (the one Trevor rated best) lights the vanilla sheet with a sparse, cubed noise so
+// drifting clouds of energy flare toward pink-white while the vanilla swirl pixels sparkle. Kept here: the
+// vanilla pixels as the surface sparkle and the sparse cubed energy. Added:
+//  - depth: three parallax layers behind the sheet, each drifting its own way and darker with depth, so the
+//    portal reads as a volume you are looking into rather than a flat animated texture;
+//  - a crackling energy rim where the sheet meets its obsidian frame (found in the voxel grid);
+//  - a slow uneven "breath" in brightness, which makes it feel alive and slightly wrong;
+//  - it lights the frame and the ground around it in purple through the light field (automatic: the portal
+//    is an emitter with a violet texture).
+
 struct PortalSurface {
     vec3 color;
     float alpha;
 };
 
-PortalSurface shadePortal(vec2 p, float time, float grazing) {
-    // Broad vertical bands travel slowly across the sheet. A low-amplitude cross
-    // current bends their edges just enough to suggest a moving surface.
-    float bend = 0.11 * sin(p.x * 0.75 - time * 0.20);
-    float current = 0.5 + 0.5 * sin(p.y * 2.15 + p.x * 0.28 + bend + time * 0.32);
-    float undercurrent = 0.5 + 0.5 * sin(p.y * 0.84 - p.x * 0.48 - time * 0.11);
-    float field = saturate(mix(current, undercurrent, 0.18));
+// Swirling energy field: domain-warped value noise, cubed so bright regions stay sparse.
+float portalEnergy(vec2 p, float time, float seed) {
+    vec2 w = vec2(valueNoise(p * 0.9 + vec2(time * 0.21, seed)), valueNoise(p * 0.9 + vec2(seed * 1.7, -time * 0.17)));
+    vec2 s = p + (w - 0.5) * 1.6 + vec2(sin(time * 0.13 + seed), cos(time * 0.11 - seed)) * 0.7;
+    float n = valueNoise(s * 1.35) * 0.65 + valueNoise(s * 2.9 + seed * 3.1) * 0.35;
+    n = saturate((n - 0.28) / 0.6);
+    return n * n * n;
+}
 
-    // A very fine, stable block pattern keeps the surface from looking airbrushed.
-    // The amplitude is deliberately tiny; no cellular edges or high-contrast veins.
-    float blocks = hash12(floor(p * 3.0));
-    field = saturate(field + (blocks - 0.5) * 0.045);
+vec3 portalPalette(float e) {
+    vec3 deep = vec3(0.020, 0.002, 0.055);
+    vec3 violet = vec3(0.22, 0.025, 0.62);
+    vec3 magenta = vec3(0.80, 0.16, 0.95);
+    vec3 core = vec3(1.00, 0.78, 1.00);
+    vec3 c = mix(deep, violet, smoothstep(0.0, 0.25, e));
+    c = mix(c, magenta, smoothstep(0.2, 0.6, e));
+    return mix(c, core, smoothstep(0.6, 1.0, e));
+}
 
-    vec3 deep = vec3(0.038, 0.005, 0.056);
-    vec3 violet = vec3(0.18, 0.018, 0.225);
-    vec3 orchid = vec3(0.39, 0.055, 0.320);
-    vec3 rose = vec3(0.60, 0.140, 0.430);
+// q: position in the portal plane (blocks). viewPlane: view direction projected into the plane, divided by
+// its depth component (parallax per block of depth). spriteLum: vanilla portal texel brightness.
+// edge: 1 at the frame, 0 a block or more inside.
+PortalSurface shadePortal(vec2 q, vec2 viewPlane, float spriteLum, float edge, float grazing, float time) {
+    // Slow, uneven breathing.
+    float breath = 0.88 + 0.12 * sin(time * 1.3) * sin(time * 0.47 + 1.0);
 
-    float body = smoothstep(0.08, 0.92, field);
-    float glow = smoothstep(0.66, 0.98, field);
-    vec3 color = mix(deep, violet, 0.55 + body * 0.25);
-    color = mix(color, orchid, smoothstep(0.15, 0.86, field) * 0.62);
-    color = mix(color, rose, glow * 0.28);
+    vec3 col = vec3(0.0);
+    // Deep layers first: each further behind the sheet, larger, slower, bluer and dimmer.
+    const float depths[3] = float[3](2.8, 1.3, 0.45);
+    const float scales[3] = float[3](0.55, 0.85, 1.25);
+    const float gains[3] = float[3](0.55, 0.9, 1.4);
+    for (int i = 0; i < 3; i++) {
+        vec2 lp = (q + viewPlane * depths[i]) * scales[i];
+        float e = portalEnergy(lp, time * (0.6 + 0.25 * float(i)), float(i) * 11.3);
+        vec3 layer = portalPalette(e * (0.55 + 0.2 * float(i))) * gains[i];
+        // Nearer layers partly occlude deeper ones where they are bright.
+        col = col * (1.0 - e * 0.5) + layer;
+    }
 
-    // The plane picks up a restrained rose rim at grazing angles, hinting at depth.
-    color += vec3(0.15, 0.025, 0.11) * grazing;
-    color *= 0.98 + 0.02 * sin(time * 0.7 + p.x * 0.5);
+    // Surface: vanilla swirl pixels as sparkle riding on a sparse energy veil (after Solas).
+    float veil = portalEnergy(q * 1.1, time, 5.0);
+    float sparkle = pow(saturate(spriteLum), 4.0);
+    col += portalPalette(0.55 + veil * 0.45) * (sparkle * (0.6 + 2.2 * veil) + veil * 1.6);
+
+    // Energy rim along the obsidian frame, crackling.
+    float crackle = valueNoise(q * 6.0 + vec2(time * 2.3, -time * 1.7));
+    col += vec3(0.95, 0.35, 1.0) * pow(edge, 3.0) * (0.8 + 2.6 * crackle * crackle);
+
+    // Grazing views see more of the glowing surface film.
+    col += vec3(0.30, 0.05, 0.36) * grazing;
 
     PortalSurface result;
-    result.color = color;
-    result.alpha = 1.0;
+    result.color = col * breath * 2.2;
+    result.alpha = 0.94;
     return result;
 }

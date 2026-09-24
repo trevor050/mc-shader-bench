@@ -83,6 +83,30 @@ uniform sampler2D colortex9;
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
 #include "/lib/portal.glsl"
+#if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
+#include "/lib/voxel.glsl"
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+#endif
+
+// 1 on the portal sheet where it meets its frame, 0 about a block inside. Uses the voxel grid (the frame is
+// solid there, the sheet is an emitter); without it the rim is simply absent.
+float portalFrameEdge(vec3 wp, bool alongX) {
+#if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
+    ivec3 v = worldBlockToVoxel(ivec3(floor(wp)), cameraPositionInt);
+    if (!voxelInside(v - 1) || !voxelInside(v + 1)) return 0.0;
+    vec2 f = alongX ? fract(wp.zy) : fract(wp.xy);
+    ivec3 side = alongX ? ivec3(0, 0, 1) : ivec3(1, 0, 0);
+    float d = 2.0;
+    if (voxelType(texelFetch(voxelSampler, v - side, 0).r) == VOXEL_SOLID) d = min(d, f.x);
+    if (voxelType(texelFetch(voxelSampler, v + side, 0).r) == VOXEL_SOLID) d = min(d, 1.0 - f.x);
+    if (voxelType(texelFetch(voxelSampler, v - ivec3(0, 1, 0), 0).r) == VOXEL_SOLID) d = min(d, f.y);
+    if (voxelType(texelFetch(voxelSampler, v + ivec3(0, 1, 0), 0).r) == VOXEL_SOLID) d = min(d, 1.0 - f.y);
+    return 1.0 - smoothstep(0.0, 0.45, d);
+#else
+    return 0.0;
+#endif
+}
 #if defined PROG_DH && defined DIM_END
 #include "/lib/end_lod.glsl"
 #endif
@@ -303,9 +327,13 @@ void main() {
         // without the busy noise field that made the previous version look marbled.
         vec3 wp = playerPos + cameraPosition;
         vec3 pn = abs(normalize(worldNormal));
-        vec2 q = pn.x > pn.z ? wp.zy : wp.xy;
+        bool alongX = pn.x > pn.z;
+        vec2 q = alongX ? wp.zy : wp.xy;
         float grazing = pow(1.0 - saturate(abs(dot(normalize(worldNormal), -rd))), 3.0);
-        PortalSurface portal = shadePortal(q, frameTimeCounter, grazing);
+        // View direction in the portal plane per block of depth, for the parallax layers behind the sheet.
+        vec2 viewPlane = (alongX ? rd.zy : rd.xy) / max(abs(alongX ? rd.x : rd.z), 0.25);
+        float spriteLum = luminance(texture(gtexture, texcoord).rgb);
+        PortalSurface portal = shadePortal(q, viewPlane, spriteLum, portalFrameEdge(wp, alongX), grazing, frameTimeCounter);
         outColor = vec4(applyCloudsInFront(portal.color, uv), portal.alpha);
         return;
     }
