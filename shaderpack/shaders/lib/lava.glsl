@@ -93,7 +93,7 @@ float lavaPoolHeat(vec2 q, float broadHeat, float spriteDetail, float shore, flo
     float upwell = core * pulse * smoothstep(0.7, 0.8, c.z);
     // Cooler skin: streaky drifting bands of deeper red (no cracks, which read as dried mud).
     float skin = smoothstep(0.55, 0.85, valueNoise(qs * 0.075 + vec2(time * 0.02, 0.0)));
-    float h = 0.44 + (broadHeat - 0.5) * 0.45 + upwell - skin * 0.2 + spriteDetail;
+    float h = 0.5 + (broadHeat - 0.5) * 0.4 + upwell - skin * 0.18 + spriteDetail;
     // Where lava meets rock: a thin white-hot contact line with a slightly cooler band just behind it.
     h += shore * shore * 0.55 - smoothstep(0.25, 0.7, shore) * (1.0 - shore) * 0.25;
     return h;
