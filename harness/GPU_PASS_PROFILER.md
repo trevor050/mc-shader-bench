@@ -6,16 +6,16 @@ The composite hook is pinned to the installed Iris jar's `CompositeRenderer.rend
 
 ## Build and runtime gate
 
-Build only in this worktree:
+Build from the main repository:
 
 ```powershell
-cd C:\Users\Trevor\codeprojects\mc-shader-bench-gpu-pass-profiler\harness\benchcam
+cd C:\Users\Trevor\codeprojects\mc-shader-bench\harness\benchcam
 .\gradlew.bat build
 ```
 
-The build reads the installed Iris jar from the ShaderBench Prism instance for compilation. Set `BENCHCAM_IRIS_JAR` to its path if it has moved. The output is `build\libs\benchcam-0.1.0.jar`. The existing composite/final profiler has had a live smoke test; **the shadow extension in this worktree has not been installed or run.** The lead controls installation, the live game, shader selection, and monitors; a guarded shadow smoke test is the next gate.
+The build reads the installed Iris jar from the ShaderBench Prism instance for compilation. Set `BENCHCAM_IRIS_JAR` to its path if it has moved. The output is `build\libs\benchcam-0.1.0.jar`. This optional build is **not installed in Prism by default**. The lead controls installation, the live game, shader selection, and monitors. A guarded RD12 Overworld smoke of the shadow extension captured 4,290 complete rows across 390 frames with no drops or GL/mixin errors; see `harness/out/shadow-profile-smoke-20260924/findings.md`. It does not establish profiler overhead or optimization gains.
 
-## Capture protocol (after the shadow runtime gate)
+## Capture protocol
 
 Use the existing BenchCam socket, for example from `harness`:
 
@@ -34,4 +34,4 @@ The timer measures elapsed time between GPU query markers for submitted commands
 
 No broad terrain or DH timer is included. Iris wraps the normal `ChunkSectionsToRender.renderGroup()` call, Sodium injects a cancellable replacement into that method, and shadow rendering invokes the same method. A timer at the shared boundary would need reliable phase gating and live validation before its labels could be trusted. DH 3.3.2 also has before/after render events, but the Iris integration shown in `LodRendererEvents` mainly binds before events, and DH's `LodRenderer.render`/`renderDeferred` can occur in different frame phases. A broad DH span could overlap an Iris timer. The profiler conservatively fails captures if another elapsed query is active instead of nesting or ending a foreign query.
 
-The first shadow live test should confirm both shadow rows arrive in an Overworld scene while the monitors are off, confirm that no shadow rows appear when shadows are disabled, compare profile-off versus profile-on frame time for overhead, and verify identical screenshots at a fixed scene. The shadow extension has had compile and bytecode checks only; no shadow runtime test has been performed in this worktree.
+The guarded Overworld runtime smoke confirmed both shadow rows while the monitors were off and no obvious rendering change across the two captures. It did not test a shadows-disabled scene or measure profile-off versus profile-on overhead. Those gates remain before interpreting a small A/B delta.
