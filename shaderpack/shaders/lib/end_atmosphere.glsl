@@ -19,12 +19,11 @@ const vec3 END_VORTEX_CENTRE = vec3(0.0, 100.0, 0.0);
 const vec3 END_CORE_LIGHT = vec3(0.0, 260.0, 0.0);
 const float END_EYE_RADIUS = 250.0;
 
-// Storm state from the ClaudeBench Ambience mod, packed into the End's unused rain level:
-// rain = 0.2 + 0.8 * (direction + intensity) / 64, direction an integer 0..63 (the current bolt), intensity 0..1
-// (0.5 in the eye at rest, 1.0 during the dragon fight). Without the mod: a fixed, moderate storm.
+// Storm state from the ClaudeBench Ambience mod, carried by the End's unused weather (see StormAmbience):
+// rain = 0.2 + 0.8 * intensity (0.5 at rest, 1.0 during the dragon fight). Without the mod: a moderate storm.
 float endStormIntensity() {
     if (rainStrength < 0.1) return 0.55;
-    return saturate(fract((rainStrength - 0.2) / 0.8 * 64.0) * 1.01);
+    return saturate((rainStrength - 0.2) / 0.8 * 1.001);
 }
 // Thunder channel from the mod: 0.5..1.0 = lightning flash, 0..0.5 = gust strength (Minecraft reports thunder
 // multiplied by rain, so divide it back out).
@@ -34,8 +33,9 @@ float endGust() {
     float v = endThunderRaw();
     return v < 0.5 ? saturate(v / 0.499) : 1.0;
 }
+// During a strike: thunder = 0.5 + 0.5 * (direction + flash) / 16.
 float endBoltCode() {
-    return floor((rainStrength - 0.2) / 0.8 * 64.0 + 1e-3) / 64.0;
+    return floor(max(endThunderRaw() - 0.5, 0.0) * 2.0 * 16.0 + 1e-3) / 16.0;
 }
 
 // Wind at a point: a fast tangential gale around the vortex axis with an updraft, faster when the storm rages.
@@ -115,7 +115,8 @@ vec4 endLightning(float t) {
     // thunder (which Minecraft reports multiplied by rain) = flash brightness. Mirrors StormAmbience.boltPosition.
     if (rainStrength > 0.1) {
         float code = endBoltCode();
-        float flash = saturate((endThunderRaw() - 0.5) * 2.0);
+        float v = endThunderRaw();
+        float flash = v >= 0.5 ? fract((v - 0.5) * 2.0 * 16.0) : 0.0;
         float ang = code * TAU;
         float y = 90.0 + 170.0 * fract(code * 7.31);
         return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);

@@ -153,7 +153,7 @@ public final class StormAmbience implements ClientModInitializer {
 	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon, float gust) {
 		if (boltAge < 0 && random.nextFloat() < 0.004F + 0.009F * intensity * intensity * (dragon ? 1.3F : 1.0F)) {
 			boltAge = 0;
-			boltCode = random.nextInt(64) / 64.0F;
+			boltCode = random.nextInt(16) / 16.0F;
 			boltSeed = random.nextFloat() * 10.0F;
 			Vec3 pos = boltPosition(boltCode);
 			double distance = pos.distanceTo(player.position());
@@ -168,13 +168,14 @@ public final class StormAmbience implements ClientModInitializer {
 			flash = (float) (Math.exp(-t / 2.5) + (t >= 4.0F ? 0.35 * Math.exp(-(t - 4.0) / 2.5) : 0.0));
 			if (++boltAge > 16) boltAge = -1;
 		}
-		// Encode for the shader: rain = 0.2 + 0.8 * (direction + intensity) / 64 (see endStormIntensity() in the
-		// shaderpack's lib/end_atmosphere.glsl), thunder level = flash.
-		float packed = (boltCode * 64.0F + Math.min(intensity, 0.999F)) / 64.0F;
-		level.setRainLevel(0.2F + 0.8F * packed);
-		// Thunder carries the flash when there is one (0.5..1.0), otherwise the gust (0..0.5). Minecraft reports
-		// thunder multiplied by rain; the shader divides it back out.
-		level.setThunderLevel(flash > 0.02F ? 0.5F + 0.5F * Math.min(flash, 1.0F) : 0.499F * gust);
+		// Channels for the shader (decoded in the shaderpack's lib/end_atmosphere.glsl). Rain carries only the storm
+		// intensity, which changes smoothly: packing the bolt direction in with it made the value jump at every
+		// strike, and the in-between value the renderer blends to decoded as a random intensity for a frame (the
+		// "random pink frame"). Thunder carries the gust (0..0.5), or during a strike the bolt direction and flash
+		// (0.5..1.0: 16 directions, flash in the fraction). Minecraft reports thunder multiplied by rain.
+		level.setRainLevel(0.2F + 0.8F * Math.min(intensity, 0.999F));
+		float boltDir = Math.round(boltCode * 16.0F) % 16;
+		level.setThunderLevel(flash > 0.02F ? 0.5F + 0.5F * (boltDir + Math.min(flash, 0.999F)) / 16.0F : 0.499F * gust);
 
 		pending.removeIf(p -> {
 			if (ticks < p.dueTick()) return false;
