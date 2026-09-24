@@ -43,6 +43,8 @@ public final class GpuPassProfiler {
 	private static long droppedRows;
 	private static String captureFailure;
 	private static boolean pollingBroken;
+	private static boolean restartRequired;
+	private static long unreleasedQueries;
 
 	private record Pending(int query, long frame, String stage, String pass) {}
 
@@ -76,6 +78,10 @@ public final class GpuPassProfiler {
 	}
 
 	public static String start(Session candidate) {
+		if (restartRequired) {
+			candidate.discard();
+			return "err GPU query cleanup failed; restart the client before another capture";
+		}
 		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || compositeDepth != 0) {
 			candidate.discard();
 			return "err profiler already active or draining";
@@ -119,10 +125,10 @@ public final class GpuPassProfiler {
 		String error = session == null || session.error.get() == null ? "none" : session.error.get().replace(' ', '_');
 		String failure = captureFailure == null ? "none" : captureFailure;
 		return String.format(Locale.ROOT,
-			"ok state=%s submitted=%d received=%d written=%d dropped_queries=%d dropped_rows=%d pending=%d failed_reason=%s writer_error=%s output=%s",
+			"ok state=%s submitted=%d received=%d written=%d dropped_queries=%d dropped_rows=%d pending=%d failed_reason=%s restart_required=%s unreleased_queries=%d writer_error=%s output=%s",
 			state, submitted, received, session == null ? 0 : session.written.get(), droppedQueries,
 			droppedRows + (session == null ? 0 : session.abandonedRows.get()),
-			PENDING.size(), failure, error, session == null ? "none" : session.path);
+			PENDING.size(), failure, restartRequired, unreleasedQueries, error, session == null ? "none" : session.path);
 	}
 
 	public static void pushCompositeGroup(String name) {
@@ -152,6 +158,12 @@ public final class GpuPassProfiler {
 		if (!recording) return 0;
 		if (activeQuery != 0) {
 			fail("overlapping_timer_query");
+			return 0;
+		}
+		int current = currentElapsedQuery("before_begin_query");
+		if (current < 0 || !recording) return 0;
+		if (current != 0) {
+			fail("foreign_timer_query_active");
 			return 0;
 		}
 		int query;
@@ -200,10 +212,19 @@ public final class GpuPassProfiler {
 			fail("timer_token_mismatch");
 			return;
 		}
+		if (currentElapsedQuery("before_end_query") != activeQuery) {
+			fail("timer_query_ownership_lost");
+			deleteQuery(activeQuery);
+			activeQuery = 0;
+			activeToken = 0;
+			activeStage = activePass = null;
+			return;
+		}
 		try { GL15C.glEndQuery(GL33C.GL_TIME_ELAPSED); }
 		catch (RuntimeException e) {
 			fail("end_query_exception");
 			BenchCam.LOG.error("Could not end GPU timer query", e);
+			deleteQuery(activeQuery);
 			activeQuery = 0;
 			activeToken = 0;
 			activeStage = activePass = null;
@@ -233,12 +254,15 @@ public final class GpuPassProfiler {
 
 	private static void abortActiveQuery() {
 		try {
-			GL15C.glEndQuery(GL33C.GL_TIME_ELAPSED);
-			glOkay("abort_end_query");
+			if (currentElapsedQuery("before_abort_query") == activeQuery) {
+				GL15C.glEndQuery(GL33C.GL_TIME_ELAPSED);
+				glOkay("abort_end_query");
+			} else fail("timer_query_ownership_lost");
 			deleteQuery(activeQuery);
 		} catch (RuntimeException e) {
 			BenchCam.LOG.error("Could not end aborted GPU timer query", e);
 			fail("abort_query_exception");
+			deleteQuery(activeQuery);
 		}
 		activeQuery = 0;
 		activeToken = 0;
@@ -265,15 +289,38 @@ public final class GpuPassProfiler {
 		}
 	}
 
+	private static int currentElapsedQuery(String operation) {
+		try {
+			int query = GL15C.glGetQueryi(GL33C.GL_TIME_ELAPSED, GL15C.GL_CURRENT_QUERY);
+			// Keep the ownership value even when a prior GL error invalidates the capture.
+			// A matching query can still be ended safely to restore GL state.
+			glOkay(operation);
+			return query;
+		} catch (RuntimeException e) {
+			fail(operation + "_exception");
+			BenchCam.LOG.error("Could not inspect current GPU timer query", e);
+			return -1;
+		}
+	}
+
 	private static void deleteQuery(int query) {
+		if (restartRequired) {
+			unreleasedQueries++;
+			return;
+		}
+		boolean deleted = false;
 		try {
 			GL15C.glDeleteQueries(query);
-			glOkay("delete_query");
+			deleted = glOkay("delete_query");
 		} catch (RuntimeException e) {
 			fail("delete_query_exception");
 			BenchCam.LOG.error("Could not delete GPU timer query", e);
 		}
-		allocatedQueries--;
+		if (deleted) allocatedQueries--;
+		else {
+			restartRequired = true;
+			unreleasedQueries++;
+		}
 	}
 
 	private static void retireFreeQueries() {
@@ -284,13 +331,31 @@ public final class GpuPassProfiler {
 	public static void poll() {
 		frame++;
 		if (pollingBroken) return;
+		if (captureFailure != null) {
+			cleanupAfterPollFailure();
+			return;
+		}
 		try {
 			pollResults();
+			if (captureFailure != null || restartRequired) cleanupAfterPollFailure();
 		} catch (RuntimeException e) {
 			fail("query_poll_exception");
-			pollingBroken = true;
 			BenchCam.LOG.error("GPU timer query polling failed", e);
+			cleanupAfterPollFailure();
 		}
+	}
+
+	/** Delete ended queries without waiting for their results. Failure requires a new GL context. */
+	private static void cleanupAfterPollFailure() {
+		if (activeQuery != 0) abortActiveQuery();
+		while (!PENDING.isEmpty()) deleteQuery(PENDING.removeFirst().query);
+		retireFreeQueries();
+		compositeDepth = 0;
+		compositeToken = 0;
+		compositeStage = null;
+		if (session != null) session.closeWhenEmpty();
+		// A failed capture has no results left to poll. A later successful start resets this flag.
+		pollingBroken = true;
 	}
 
 	private static void pollResults() {
@@ -300,6 +365,7 @@ public final class GpuPassProfiler {
 			fail("query_left_open_at_frame_end");
 		}
 		while (!PENDING.isEmpty()) {
+			if (captureFailure != null || restartRequired) return;
 			Pending sample = PENDING.peekFirst();
 			if (frame - sample.frame < POLL_AFTER_FRAMES) break;
 			int available = GL15C.glGetQueryObjecti(sample.query, GL15C.GL_QUERY_RESULT_AVAILABLE);
@@ -358,8 +424,11 @@ public final class GpuPassProfiler {
 					}
 				} catch (Exception e) {
 					error.set(e.toString());
-					abandonedRows.addAndGet(rows.size() + (inFlight == null ? 0 : 1));
-					rows.clear();
+					synchronized (this) {
+						closed = true;
+						abandonedRows.addAndGet(rows.size() + (inFlight == null ? 0 : 1));
+						rows.clear();
+					}
 				}
 				finally { closed = true; }
 			}, "BenchCam-GpuProfiler-Writer");
@@ -367,7 +436,7 @@ public final class GpuPassProfiler {
 			writer.start();
 		}
 
-		private boolean offer(String row) { return !closed && rows.offer(row); }
+		private synchronized boolean offer(String row) { return !closed && rows.offer(row); }
 
 		private void closeWhenEmpty() {
 			closing = true;
