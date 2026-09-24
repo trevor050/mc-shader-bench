@@ -320,7 +320,13 @@ void main() {
             float toward = saturate(dot(rd, envLightDir));
             col += envDirect * shadow * albedo * pow(toward, 6.0) * pow(1.0 - saturate(dot(n, -rd)), 3.0) * 0.12;
         }
-        // Packed and blue ice: polished, with a clear sky reflection and a tight sun highlight.
+        // Packed and blue ice: polished, with a clear sky reflection and a tight sun highlight. Light also
+        // travels through ice, so its shaded faces glow a luminous blue instead of dropping to near-black.
+        if (mat == MAT_ICE_SOLID) {
+            vec3 iceAlbedo = mix(vec3(luminance(albedo)), albedo, 0.75);
+            col = mix(col, col * iceAlbedo / max(albedo, vec3(1e-4)), 0.6);
+            col += iceAlbedo * envDirect / PI * 0.22 * (1.0 - 0.7 * luminance(shadow)) * lm.y * ao;
+        }
         if (mat == MAT_ICE_SOLID && !isLod) {
             vec3 rr = reflect(rd, n);
             float F = iceFresnel(dot(-rd, n));

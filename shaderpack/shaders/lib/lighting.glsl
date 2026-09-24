@@ -80,7 +80,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     float NdotL = dot(n, env.lightDir);
     bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
 
-    float skyVis = lm.y * lm.y;
+    // Minecraft sky light only drops one level per block, so a cave seven blocks from an opening still reads
+    // half-open. Real skylight falls with the visible solid angle of the opening, much faster: cube it.
+    float skyVis = lm.y * lm.y * lm.y;
     float diffuse = foliage ? (0.45 + 0.55 * saturate(NdotL)) : saturate(NdotL);
     // Direct light also needs open sky: stops light leaking into sealed caves beyond shadow range.
     float leak = smoothstep(0.0, 0.35, lm.y);

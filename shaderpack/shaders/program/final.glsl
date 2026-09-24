@@ -209,7 +209,8 @@ void main() {
     float lum = luminance(col);
     float scotopic = 1.0 - smoothstep(0.004, 0.06, lum);
     vec3 rodColor = vec3(0.55, 0.72, 1.0) * lum * 1.4;
-    col = mix(col, rodColor, scotopic * 0.75);
+    // Kept subtle: a strong shift painted every dark cave wall blue-grey.
+    col = mix(col, rodColor, scotopic * 0.35);
 
     col = agx(col);
     col = colorGrade(col);
