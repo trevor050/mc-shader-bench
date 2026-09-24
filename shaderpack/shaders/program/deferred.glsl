@@ -293,7 +293,7 @@ void main() {
 #endif
             col += env * fr * darkness * ao * 0.8;
         }
-        if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter);
+        if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter, rd, length(playerPos));
         if (mat == MAT_ENDPORTAL) {
             // End portal: a window into deep space. Star and nebula layers sit at increasing depths behind the
             // surface; each is sampled where the view ray would reach it, so they slide past one another with
