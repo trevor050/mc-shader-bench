@@ -295,7 +295,13 @@ void main() {
         if (darkness > 0.0 && !isHand && mat != MAT_LAVA) {
             vec3 rr = reflect(rd, n);
             float fr = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, n)), 5.0);
+#ifdef DIM_NETHER
+            // Use the lighting library's warm-neutral ash/ember reflection so Nether biome fog cannot tint
+            // obsidian and blackstone blue. This hook is Nether-only; Overworld and End keep the sky model.
+            vec3 env = netherStoneReflection(rr);
+#else
             vec3 env = skyRadiance(normalize(vec3(rr.x, max(rr.y, 0.05), rr.z)), sunDir, 4);
+#endif
 #if !defined DIM_NETHER && !defined DIM_END
             env *= lm.y * lm.y;
 #endif

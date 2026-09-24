@@ -70,8 +70,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     vec3 bounce = env.directLight * vec3(0.30, 0.26, 0.20) * 0.18 * (1.0 - 0.6 * n.y);
     vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
 #if defined DIM_NETHER
-    // Hot, directionless nether glow.
-    ambient = vec3(1.35, 0.54, 0.27) * (0.7 + 0.3 * n.y) * ao;
+    // Lava-lit ambient: upward faces catch more of the warm fill, while undersides stay dark enough to read
+    // against the smoke. The small neutral ash floor is added only for genuinely dark stone below.
+    ambient = vec3(1.8, 0.68, 0.28) * (0.62 + 0.38 * n.y) * ao;
 #elif defined DIM_END
     // Dim violet ambient plus a soft light from the storm overhead, so pillars and islands keep their shape.
     const vec3 endLightDir = vec3(0.37, 0.83, 0.42);
@@ -79,9 +80,22 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
             + vec3(0.9, 0.55, 1.5) * saturate(dot(n, endLightDir) * 0.8 + 0.2) * 0.55 * ao;
 #endif
     vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
+#if defined DIM_NETHER
+    // Keep the Nether's residual fill warm-neutral instead of the cool blue floor used elsewhere.
+    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.95, 0.72, 0.48) * ao;
+#else
     vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao;
+#endif
 
     vec3 col = albedo * (direct / PI + ambient / PI + torch + minLight);
+#if defined DIM_NETHER
+    // Obsidian, blackstone and basalt have near-zero albedo. Give those opaque stone surfaces a restrained
+    // ashen floor so their texture and face-to-face shape survive exposure without lifting foliage or lava.
+    float darkRock = (mat == MAT_NONE || mat == MAT_LOD)
+        ? 1.0 - smoothstep(0.025, 0.16, luminance(albedo))
+        : 0.0;
+    col += vec3(0.035, 0.025, 0.017) * darkRock * ao * (0.72 + 0.28 * n.y);
+#endif
     col += albedo * emissive * 6.0;
     return col;
 }
@@ -105,11 +119,21 @@ vec3 handheldLight(vec3 playerPos, vec3 n, float ao) {
 }
 
 #ifdef DIM_NETHER
+// Volcanic glass reflects the charcoal smoke overhead and a restrained ember band at the horizon. Keeping the
+// reflection independent of biome fog tint avoids the cyan/blue sheen seen in warped and soul-sand biomes.
+vec3 netherStoneReflection(vec3 rayDir) {
+    vec3 r = normalize(vec3(rayDir.x, max(rayDir.y, 0.05), rayDir.z));
+    float horizonEmber = exp(-r.y * 5.5);
+    vec3 ash = vec3(0.022, 0.018, 0.015) * (0.85 + 0.15 * r.y);
+    vec3 ember = vec3(0.13, 0.032, 0.006) * horizonEmber;
+    return ash + ember;
+}
+
 // Heat rising off the lava seas: surfaces low down and facing down (ceilings, overhangs, cliff undersides)
 // catch warm light from below.
 vec3 netherUplight(vec3 wp, vec3 n, float ao) {
-    float nearLava = exp(-max(wp.y - 31.0, 0.0) / 42.0);
+    float nearLava = exp(-max(wp.y - 31.0, 0.0) / 54.0);
     float facing = saturate(0.55 - n.y * 0.45);
-    return vec3(3.2, 0.9, 0.18) * nearLava * facing * mix(ao, 1.0, 0.3);
+    return vec3(3.4, 0.82, 0.12) * nearLava * facing * mix(ao, 1.0, 0.3);
 }
 #endif
