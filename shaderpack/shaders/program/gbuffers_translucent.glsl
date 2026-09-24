@@ -282,7 +282,8 @@ void main() {
         // Suspended sediment and plankton: grey extinction on top of absorption, so the floor fades within a few
         // blocks instead of reading like a swimming pool (Trevor). Rain stirs the water up.
         float turbidity = WATER_TURBIDITY * (1.0 + 0.6 * rainStrength);
-        vec3 transmit = underwater ? vec3(1.0) : exp(-(absorb + turbidity) * waterDepth);
+        // Light scattered in the top layer veils even a shallow floor: treat every path as if it were a little deeper.
+        vec3 transmit = underwater ? vec3(1.0) : exp(-(absorb + turbidity) * (waterDepth + WATER_SURFACE_VEIL));
         // In-scattering from suspended particles gives water a body colour even over deep or dark floors.
         vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5) * 1.15;
         vec3 scatterCol = albedoW * (envAmbient * skyVis / PI + envDirect * shadow * 0.12);

@@ -32,6 +32,7 @@ uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
 uniform sampler2D depthtex0;
+uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex0;
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferProjection;
@@ -249,7 +250,11 @@ void main() {
         // Surfaces that see no sky (caves, deep interiors) fade into the cave's own air. The daylight haze, and
         // the sun's aureole in it, cannot reach them: fogging cave walls with it drew a glowing patch on the rock
         // wherever the sun stood behind it. LOD terrain is always open land.
-        float open = depth < 1.0 ? smoothstep(0.03, 0.5, texture(colortex1, texcoord).w) : 1.0;
+        // colortex1 holds the opaque surface's light, so behind water or glass it describes the floor, not what
+        // the eye sees: water dims sky light with depth, and fogging by it drew the riverbed's contours onto the
+        // surface. Anything seen through a translucent counts as open.
+        bool translucentFront = depth < texture(depthtex1, texcoord).r;
+        float open = depth < 1.0 && !translucentFront ? smoothstep(0.03, 0.5, texture(colortex1, texcoord).w) : 1.0;
         vec3 haze = open > 0.0 ? hazeColor(rd, sunDir) : vec3(0.0);
         if (inSnowy > 0.001 && open > 0.0) {
             // Snow biome whiteout: a bright ice haze, dense enough in snowfall to swallow everything past a few
