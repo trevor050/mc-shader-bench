@@ -47,6 +47,7 @@ uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
 uniform ivec2 eyeBrightnessSmooth;
+uniform vec3 upPosition;
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -95,10 +96,13 @@ vec3 sunStreaks(vec2 uv) {
     float streak = pow(fine, 3.0) * 1.6 + pow(coarse, 5.0) * 0.8;
     // Each streak fades with its own reach; they start just outside the blown-out core.
     // A high sun sits in a darker, clearer sky, where long streaks look artificial; keep them shorter.
-    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0)) * mix(1.0, 0.65, smoothstep(0.2, 0.7, normalize(sunPosition).y));
+    // A low sun (sunrise, sunset) blinds hardest: its long, golden streaks are the look of those moments.
+    float elev = dot(normalize(sunPosition), normalize(upPosition));
+    float lowSun = (1.0 - smoothstep(0.03, 0.32, elev)) * smoothstep(-0.03, 0.01, elev);
+    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0)) * mix(1.0, 0.65, smoothstep(0.2, 0.7, elev)) * (1.0 + 0.7 * lowSun);
     float fade = exp(-d / reach) * smoothstep(0.004, 0.03, d);
     vec3 tint = src / max(luminance(src), 1e-4);
-    return tint * avgLum * streak * fade * vis;
+    return tint * avgLum * streak * fade * vis * (1.0 + 1.6 * lowSun);
 }
 
 in vec2 texcoord;

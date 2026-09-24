@@ -242,7 +242,7 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
-    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.4;
+    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.26;
     vec3 col = day + night + vec3(0.0003, 0.00045, 0.0008) + twilightGlow(rd, sunDir);
     // Overcast: collapse toward a grey dome during rain.
     float overcast = rainStrength * 0.85;
@@ -319,14 +319,33 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
     disc /= 1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0;
     // Near the horizon the air dims the sun enough to look at: it becomes a distinct, slightly enlarged orange
     // ball with a clean edge and a darker limb. Transmittance alone left only a dim red smear inside the glow.
+    //
+    // From a Minecraft mountain the terrain horizon lies a few degrees below eye level, so the sun keeps shining
+    // while it is geometrically "below the horizon": the ball keeps a deep red colour down to about -6 degrees
+    // and is drawn into the below-horizon haze too (deferred), where the land occludes it naturally.
     float low = 1.0 - smoothstep(0.03, 0.32, sunDir.y);
-    float tMax = max(t.r, max(t.g, t.b));
-    if (low > 0.0 && tMax > 1e-6) {
-        float r = 0.0105 * (1.0 + 0.35 * low);
-        float edge = 1.0 - smoothstep(r * 0.9, r, s);
-        float limb = sqrt(max(1.0 - sqr(s / r), 0.0));
-        vec3 hue = t / tMax;
-        disc += hue * edge * mix(0.5, 1.0, limb) * 950.0 * low * (1.0 - rainStrength);
+    float set = smoothstep(-0.105, -0.03, sunDir.y);
+    if (low > 0.0 && set > 0.0) {
+        vec3 tl = sunTransmittance(normalize(vec3(sunDir.x, max(sunDir.y, 0.004), sunDir.z)));
+        // Past the geometric horizon the path gets longer still: redden further.
+        tl *= exp(-vec3(0.0, 3.0, 9.0) * saturate(-sunDir.y / 0.1));
+        float tMax = max(tl.r, max(tl.g, tl.b));
+        if (tMax > 1e-6) {
+            // Refraction flattens the low sun a little.
+            vec3 d = rd - sunDir;
+            d.y *= 1.0 + 0.2 * low;
+            float sd = length(d);
+            float r = SUN_DISC_RADIUS * (1.0 + 0.35 * low);
+            float edge = 1.0 - smoothstep(r * 0.92, r, sd);
+            float limb = sqrt(max(1.0 - sqr(sd / r), 0.0));
+            // Once it clears the horizon the low sun is blinding: a white-hot core with a warm rim. Only the last
+            // moments right at the horizon leave a dimmer red ball.
+            float hot = smoothstep(-0.015, 0.06, sunDir.y);
+            vec3 hue = mix(tl / tMax, vec3(1.0, 0.92, 0.78), hot * 0.75 * smoothstep(0.2, 0.9, limb));
+            disc += hue * edge * mix(0.45, 1.0, limb) * mix(600.0, SUN_LOW_RADIANCE, hot) * low * set * (1.0 - rainStrength);
+            // Its own close glow, which the aureole no longer provides once the sun is below the true horizon.
+            disc += hue * exp(-max(sd - r, 0.0) / (r * 1.6)) * (1.0 - edge) * 18.0 * low * set * (1.0 - rainStrength);
+        }
     }
     return disc;
 }

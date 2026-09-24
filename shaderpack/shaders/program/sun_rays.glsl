@@ -17,6 +17,7 @@ uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform vec3 sunPosition;
+uniform vec3 upPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
 uniform float viewHeight;
@@ -120,7 +121,10 @@ void main() {
     bloomAndGlare(texcoord, bloomColor, glareColor);
     // The original final result is mix(scene + GLARE_STRENGTH * glare + SUN_RAYS_STRENGTH * rays,
     // bloom, BLOOM_STRENGTH). Weight the additive terms here and preserve that order in final.
-    vec3 glareAndRays = glareColor * GLARE_STRENGTH;
+    // A low sun blinds: its wide glare (the veil that matches the bloom) grows strongly near the horizon.
+    float elev = dot(normalize(sunPosition), normalize(upPosition));
+    float lowSun = (1.0 - smoothstep(0.03, 0.35, elev)) * smoothstep(-0.04, 0.01, elev);
+    vec3 glareAndRays = glareColor * GLARE_STRENGTH * (1.0 + LOW_SUN_GLARE * lowSun);
 #if !defined DIM_NETHER && !defined DIM_END
     glareAndRays += sunRays(texcoord) * SUN_RAYS_STRENGTH;
 #endif

@@ -199,7 +199,8 @@ void main() {
     vec3 col;
     if (depth >= 1.0 && !isLod) {
         // Sky. colortex0 holds whatever the sky programs drew (stars, moon) in linear light.
-        col = rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, 12) + sunAureole(rd, sunDir) + sunDisc(rd, sunDir);
+        // The sun is drawn below the eye-level horizon too: from high ground the land's edge is lower still.
+        col = rd.y < 0.0 ? hazeColor(rd, sunDir) + (rd.y > -0.15 ? sunDisc(rd, sunDir) : vec3(0.0)) : skyRadiance(rd, sunDir, 12) + sunAureole(rd, sunDir) + sunDisc(rd, sunDir);
 #ifdef DIM_END
         float night = 1.0;
 #else

@@ -9,6 +9,8 @@
 #define WAVE_STRENGTH 1.0
 
 #define SUN_ILLUMINANCE 16.0
+#define SUN_LOW_RADIANCE 6000.0   // low sun's disc radiance once above the horizon (blinding)
+#define SUN_DISC_RADIUS 0.0125    // angular radius (radians) of the low sun's visible disc
 #define MOON_ILLUMINANCE 0.02
 #define BLOCKLIGHT_COLOR vec3(1.0, 0.62, 0.32)
 #define BLOCKLIGHT_STRENGTH 2.2
@@ -62,8 +64,9 @@
 
 #define BLOOM_STRENGTH 0.13
 #define GLARE_STRENGTH 0.08
+#define LOW_SUN_GLARE 1.5        // extra wide glare for a low (sunrise/sunset) sun
 #define SUN_RAYS_STRENGTH 0.006
-#define SUN_STREAK_STRENGTH 0.0 // eye-style streaks; reference packs use none and they read as fake
+#define SUN_STREAK_STRENGTH 0.0 // starburst streaks: Trevor rejected them twice as tacky; the low sun blinds through glare instead
 #define EXPOSURE_KEY 0.42
 #define EXPOSURE_MIN 0.02
 #define EXPOSURE_MAX 20.0
