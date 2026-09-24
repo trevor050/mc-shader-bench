@@ -9,7 +9,9 @@
 #include "/lib/voxel.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
-const ivec3 workGroups = ivec3(16, 8, 16); // VOXEL_EXTENT/8, VOXEL_EXTENT_Y/8, VOXEL_EXTENT/8
+// Must equal (VOXEL_EXTENT/8, VOXEL_EXTENT_Y/8, VOXEL_EXTENT/8). Keep this line free of trailing comments:
+// Iris parses const directives line by line.
+const ivec3 workGroups = ivec3(16, 8, 16);
 
 uniform usampler3D voxelSampler;
 uniform sampler3D lightFieldSamplerA;
