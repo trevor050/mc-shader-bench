@@ -70,7 +70,8 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Stars must be drawn in screen-space pixels (angular gaussians came out smeared). Don't march cloud empty space with bigger strides (causes horizontal banding).
 - Water is in the shadow map with alpha 0 as a marker; shadows.glsl converts depth diff to blocks for absorption/caustics.
 - Trevor's skin is a rainbow checker; a rainbow hand is not a bug.
-- dhFarPlane is NOT the LOD extent (half of it ~1.6 km). Use LOD_DISTANCE (settings.glsl) = DH lodChunkRenderDistanceRadius*16; keep both in sync (currently 512 chunks / 8192).
+- dhFarPlane is NOT the LOD extent (half of it ~1.6 km). Use LOD_DISTANCE (settings.glsl) = DH lodChunkRenderDistanceRadius*16; keep both in sync. The live DH config was reduced to 64 chunks on 2026-09-24 for stability; do not assume the old 512/8192 setting is active.
+- Host RAM hazard: a 2026-09-24 RAMMap snapshot found 3.52 GiB active Page Table plus 3.51 GiB active Unused, with 106,195 historical process records after extensive shader-build/process churn. Keep broad short-lived compiler/shell matrices paused until memory headroom is restored and process retention is diagnosed; see `docs/windows-memory-pressure-20260924.md`. The AMD iGPU drives monitor 2, so do not disable it as a casual workaround.
 - Horizon review: always inspect full-res crops, never contact sheets (downscaling hid bands and invented cloud rings). Debug by painting categories (sky mask, distance bands) with saturated HDR colors; grayscale debug gets scrambled by AgX.
 - Sun: disc radiance soft-capped (~1800) so bloom doesn't flood when a sliver shows; no TAA hot-pixel bypass (caused flicker). Eye adaptation state lives in colortex5 alpha, fed by capped luminance in colortex6.
 - Others commit to this repo too (commits under Trevor050). Check git log before editing sun/final code.
