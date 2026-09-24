@@ -4,16 +4,20 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
 
-/** Optional, in-memory DH radius trial. No DH API type is resolved until the mod is present. */
+/** Opt-in, in-memory radius override for the DH-equipped ShaderBench harness. */
 public final class DhNetherRadiusTrial {
 	private static final int NETHER_RADIUS = 64;
+	private static final long MAX_CLEAR_RETRY_MS = 10_000;
 	private static final boolean DH_PRESENT = FabricLoader.getInstance().isModLoaded("distanthorizons");
 	private static boolean enabled = DH_PRESENT && Boolean.getBoolean("benchcam.dhNetherRadiusTrial");
 	private static boolean failed;
 	private static boolean owned;
 	private static boolean suspended;
-	private static boolean clearFailureLogged;
+	private static boolean clearPending;
+	private static int clearFailures;
+	private static long nextClearRetryNs;
 	private static String error = "none";
+	private static String clearError = "none";
 
 	private DhNetherRadiusTrial() {}
 
@@ -22,7 +26,7 @@ public final class DhNetherRadiusTrial {
 		if (!DH_PRESENT) return;
 		boolean nether = mc.level != null && Level.NETHER.equals(mc.level.dimension());
 		if (!enabled || failed || suspended || !nether) {
-			if (!clearFailureLogged) clear();
+			if (owned && (!clearPending || System.nanoTime() - nextClearRetryNs >= 0)) clear();
 			return;
 		}
 		if (owned) return;
@@ -42,8 +46,11 @@ public final class DhNetherRadiusTrial {
 			case "status" -> status(mc);
 			case "on" -> {
 				if (!DH_PRESENT) yield "err DH absent";
+				if (clearPending) {
+					clear();
+					if (owned) yield "err DH radius cleanup pending: " + clearError;
+				}
 				failed = false;
-				clearFailureLogged = false;
 				error = "none";
 				enabled = true;
 				update(mc);
@@ -61,7 +68,9 @@ public final class DhNetherRadiusTrial {
 	public static String status(Minecraft mc) {
 		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
 		String prefix = "ok enabled=" + enabled + " dhPresent=" + DH_PRESENT + " dimension=" + dimension
-				+ " owned=" + owned + " suspended=" + suspended + " failed=" + failed + " error=" + error;
+				+ " owned=" + owned + " suspended=" + suspended + " failed=" + failed
+				+ " clearPending=" + clearPending + " clearFailures=" + clearFailures
+				+ " error=" + error + " clearError=" + clearError;
 		if (!DH_PRESENT) return prefix + " active=unavailable true=unavailable api=unavailable";
 		try {
 			if (!DhAccess.ready()) return prefix + " active=initializing true=initializing api=initializing";
@@ -77,21 +86,41 @@ public final class DhNetherRadiusTrial {
 		try {
 			Integer apiValue = DhAccess.apiValue();
 			if (apiValue == null) {
-				owned = false;
+				releaseOwnership();
 				return;
 			}
 			if (apiValue != NETHER_RADIUS) {
-				owned = false;
+				releaseOwnership();
 				BenchCam.LOG.warn("BenchCam did not clear a DH radius override changed by another mod: {}", apiValue);
 				return;
 			}
 			DhAccess.clear();
-			owned = false;
-			clearFailureLogged = false;
+			if (DhAccess.apiValue() != null) throw new IllegalStateException("DH radius override remained after clear");
+			releaseOwnership();
 			BenchCam.LOG.info("BenchCam DH Nether radius override cleared");
 		} catch (Throwable t) {
-			fail(t);
+			recordClearFailure(t);
 		}
+	}
+
+	private static void releaseOwnership() {
+		owned = false;
+		clearPending = false;
+		clearFailures = 0;
+		nextClearRetryNs = 0;
+		clearError = "none";
+	}
+
+	private static void recordClearFailure(Throwable t) {
+		boolean firstFailure = !clearPending;
+		failed = true;
+		enabled = false;
+		clearPending = true;
+		clearFailures++;
+		clearError = t.toString().replace(' ', '_');
+		long delayMs = Math.min(MAX_CLEAR_RETRY_MS, 1000L << Math.min(clearFailures - 1, 4));
+		nextClearRetryNs = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(delayMs);
+		if (firstFailure) BenchCam.LOG.error("BenchCam DH radius clear failed; retrying with backoff", t);
 	}
 
 	public static void disconnect() {
@@ -109,20 +138,10 @@ public final class DhNetherRadiusTrial {
 		enabled = false;
 		error = t.toString().replace(' ', '_');
 		if (firstFailure) BenchCam.LOG.error("BenchCam DH radius trial failed; clearing override", t);
-		if (owned) {
-			try {
-				DhAccess.clear();
-				owned = false;
-				clearFailureLogged = false;
-			} catch (Throwable clearError) {
-				if (!clearFailureLogged) BenchCam.LOG.error("BenchCam DH radius trial could not clear override", clearError);
-				clearFailureLogged = true;
-				error += ";clear_failed=" + clearError.toString().replace(' ', '_');
-			}
-		}
+		clear();
 	}
 
-	/** The JVM loads this class only after Fabric reports that DH is installed. */
+	/** Keep this API link out of the outer class so the new adapter does not resolve it before DH is present. */
 	private static final class DhAccess {
 		private static boolean ready() {
 			return com.seibel.distanthorizons.api.DhApi.Delayed.configs != null;
