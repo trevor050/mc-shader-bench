@@ -132,6 +132,21 @@ public final class BenchCam implements ClientModInitializer {
 				mc.player.connection.sendCommand(arg.startsWith("/") ? arg.substring(1) : arg);
 				return "ok";
 			});
+			case "look" -> onRenderThread(() -> {
+				if (mc.player == null) return "err not in world";
+				String[] angles = arg.split("\\s+");
+				if (angles.length != 2) return "err usage: look <yaw> <pitch>";
+				float yaw = Float.parseFloat(angles[0]);
+				float pitch = Float.parseFloat(angles[1]);
+				if (!Float.isFinite(yaw) || !Float.isFinite(pitch) || pitch < -90.0f || pitch > 90.0f)
+					return "err invalid camera angles";
+				// Rotate the client camera without a server /tp or chunk reload.
+				mc.player.setYRot(yaw);
+				mc.player.setXRot(pitch);
+				mc.player.yRotO = yaw;
+				mc.player.xRotO = pitch;
+				return "ok";
+			});
 			case "hud" -> onRenderThread(() -> {
 				boolean wantHidden = arg.equals("off");
 				if (mc.gui.hud.isHidden() != wantHidden) mc.gui.hud.toggle();

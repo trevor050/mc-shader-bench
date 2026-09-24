@@ -112,15 +112,20 @@ while ((Get-Date) -lt $endsAt) {
     $nvidiaName = $null
     $nvidiaUsed = $null
     $nvidiaTotal = $null
+    $nvidiaGpuUtil = $null
+    $nvidiaMemoryUtil = $null
     if ($nvidiaSmi) {
         try {
-            $gpuLine = @(& $nvidiaSmi --query-gpu=name,memory.used,memory.total --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
+            $gpuLine = @(& $nvidiaSmi --query-gpu=name,memory.used,memory.total,utilization.gpu,utilization.memory --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
             if ($gpuLine.Count -gt 0) {
                 $fields = $gpuLine[0] -split ',\s*'
-                if ($fields.Count -ge 3) {
+                if ($fields.Count -ge 5) {
                     $nvidiaName = $fields[0].Trim()
                     $nvidiaUsed = [int]$fields[1].Trim()
                     $nvidiaTotal = [int]$fields[2].Trim()
+                    $parsed = 0
+                    if ([int]::TryParse($fields[3].Trim(), [ref]$parsed)) { $nvidiaGpuUtil = $parsed }
+                    if ([int]::TryParse($fields[4].Trim(), [ref]$parsed)) { $nvidiaMemoryUtil = $parsed }
                 }
             }
         } catch { if ($sampleError) { $sampleError += '; ' }; $sampleError += "nvidia-smi: $($_.Exception.Message)" }
@@ -145,6 +150,8 @@ while ((Get-Date) -lt $endsAt) {
         NvidiaGpuName = $nvidiaName
         NvidiaVramUsedMiB = $nvidiaUsed
         NvidiaVramTotalMiB = $nvidiaTotal
+        NvidiaGpuUtilPercent = $nvidiaGpuUtil
+        NvidiaMemoryUtilPercent = $nvidiaMemoryUtil
         BenchCamFps = $benchFps
         SampleError = $sampleError
     }

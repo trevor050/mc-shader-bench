@@ -3,6 +3,7 @@
 Usage:
   py bench.py raw "status"                 send one command, print reply
   py bench.py raw "framestats [n]"         render CPU ms (not GPU/present); default n=120
+  py bench.py raw "look <yaw> <pitch>"     rotate client camera without server teleport
   py bench.py shots [scene ...]            capture scenes from scenes.json (all if none given)
   py bench.py reload                       hot-reload the shader pack, report compile errors
   py bench.py launch                       start the game straight into BenchWorld
