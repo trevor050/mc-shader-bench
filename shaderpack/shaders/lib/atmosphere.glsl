@@ -212,7 +212,9 @@ vec3 endSky(vec3 rd) {
     float strands = smoothstep(0.68, 0.86, detail) * smoothstep(0.44, 0.64, broad);
     float filament = exp(-sqr(bend / 0.16)) * smoothstep(0.47, 0.72, detail) * smoothstep(0.38, 0.62, broad);
     // A thin darker belt at the horizon separates sky from void; both hemispheres carry the storm.
-    float highSky = smoothstep(0.02, 0.38, abs(rd.y)) * (below ? 0.55 : 1.0);
+    // Kept restrained: the volumetric storm in front carries the scene, and a busy painted sky behind it made the
+    // real clouds read as part of a backdrop.
+    float highSky = smoothstep(0.02, 0.38, abs(rd.y)) * (below ? 0.35 : 0.5);
 
     vec3 col = vec3(0.0045, 0.0022, 0.012);
     col += vec3(0.095, 0.022, 0.20) * cloud * (0.42 + 0.58 * detail) * highSky;

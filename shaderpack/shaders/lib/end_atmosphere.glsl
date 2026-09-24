@@ -43,6 +43,22 @@ vec2 endStorm(vec3 p, float t) {
     float band = smoothstep(-60.0, 20.0, p.y) * (1.0 - smoothstep(300.0, 420.0, p.y));
     float voidMist = exp(-max(p.y + 10.0, 0.0) / 30.0);
     float sigma = clump * band * eye * (0.026 + 0.085 * wall) + voidMist * 0.007 + 0.0005;
+
+    // The storm reaches into the eye, so it is not only a wall around you (Trevor: from the island it read as a
+    // backdrop). Everything here moves fast enough to show parallax against the wall behind it.
+    float inEye = 1.0 - eye;
+    float theta = atan(rel.z, rel.x);
+    // Spiral feeder arms sweeping in over the island between y 60 and 220.
+    float arms = smoothstep(0.55, 0.9, 0.5 + 0.5 * sin(3.0 * theta - r / 45.0 + rel.y / 70.0 - t * 0.35));
+    float armBand = smoothstep(-40.0, 10.0, rel.y) * (1.0 - smoothstep(90.0, 130.0, rel.y));
+    float armCloud = smoothstep(0.45, 0.7, shape + 0.08) * arms * armBand;
+    // Low scud: small fast wisps just above the pillars, the nearest cloud there is.
+    float scudNoise = cloudTex(vec3(q.x * 0.02 + t * 0.02, q.y * 0.03, q.z * 0.02 - t * 0.015) + 0.71).r;
+    float scud = smoothstep(0.62, 0.8, scudNoise) * exp(-sqr((rel.y - 12.0) / 22.0));
+    // Ground mist creeping over the island (surface around y 60), pooling in low spots and around the pillars.
+    float mistNoise = cloudTex(vec3(p.x * 0.012 + t * 0.006, p.y * 0.05 - t * 0.01, p.z * 0.012 - t * 0.004) + 0.13).g;
+    float mist = smoothstep(0.35, 0.7, mistNoise) * exp(-max(p.y - 58.0, 0.0) / 5.0) * step(50.0, p.y);
+    sigma += inEye * (armCloud * 0.03 + scud * 0.05) + mist * 0.06 * (1.0 - smoothstep(180.0, 260.0, r));
     return vec2(sigma, n.a);
 }
 
