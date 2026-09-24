@@ -112,11 +112,11 @@ vec4 endLightning(float t) {
         float y = 90.0 + 170.0 * fract(code * 7.31);
         return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);
     }
-    float slot = floor(t / 2.6);
+    float slot = floor(t / 5.0);
     float h = hash12(vec2(slot, 7.13));
-    float phase = fract(t / 2.6) * 2.6;
-    // About half the slots strike; each flash lasts ~0.45 s with two or three flickers.
-    float on = step(0.45, h) * exp(-phase * 7.0) * (0.6 + 0.4 * sin(phase * 70.0 + h * 20.0));
+    float phase = fract(t / 5.0) * 5.0;
+    // Occasional single flashes with a soft after-glow (no strobe).
+    float on = step(0.7, h) * (exp(-phase * 8.0) + (phase > 0.2 ? 0.35 * exp(-(phase - 0.2) * 8.0) : 0.0));
     float a = hash12(vec2(slot, 3.7)) * TAU;
     float y = mix(90.0, 260.0, hash12(vec2(slot, 11.9)));
     vec3 pos = END_VORTEX_CENTRE + vec3(cos(a) * END_EYE_RADIUS, y - END_VORTEX_CENTRE.y, sin(a) * END_EYE_RADIUS);
@@ -142,4 +142,47 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float bd = length(p - bolt.xyz);
     vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * (16.0 * exp(-bd / 70.0) + 1.2 * exp(-bd / 400.0));
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
+}
+
+// Debris tearing past the camera, drawn at full resolution in composite so it stays crisp: sparse flecks of dark
+// ash and a few glowing violet embers, each a short motion-blurred streak along the wind. Particles sit still in a
+// frame that moves with the wind (q = p - wind * t), one per occupied 2-block cell, so they sweep past consistently
+// as the camera turns and moves. Only within ~26 blocks, and never behind the scene.
+vec3 endDebris(vec3 col, vec3 rd, float sceneDist, float I, vec4 bolt) {
+    vec3 wind = endWind(cameraPosition, I);
+    float speed = length(wind);
+    vec3 wdir = wind / speed;
+    vec3 origin = cameraPosition - wind * frameTimeCounter;
+    const float CELL = 2.0;
+    float streakLen = speed * 0.045;
+    float density = 0.1 + 0.3 * I;
+    float maxT = min(sceneDist, 26.0);
+    for (int i = 0; i < 24; i++) {
+        float tr = 0.6 + float(i) * 1.05;
+        if (tr > maxT) break;
+        vec3 cell = floor((origin + rd * tr) / CELL);
+        float h = hash12(cell.xz * 0.137 + cell.y * 1.931);
+        if (h > density) continue;
+        vec3 centre = (cell + vec3(hash12(cell.xy + 3.1), hash12(cell.yz + 7.7), hash12(cell.zx + 1.3))) * CELL;
+        // Closest approach between the view ray and the particle's streak segment.
+        vec3 q0 = centre - wdir * streakLen * 0.5;
+        vec3 v = wdir * streakLen;
+        vec3 w0 = origin - q0;
+        float b = dot(rd, v), c = dot(v, v), d = dot(rd, w0), e = dot(v, w0);
+        float den = c - b * b;
+        float sq = den > 1e-6 ? clamp((e - b * d) / den, 0.0, 1.0) : 0.0;
+        vec3 qp = q0 + v * sq;
+        float s = max(dot(qp - origin, rd), 0.0);
+        if (s > maxT) continue;
+        float dist = length(origin + rd * s - qp);
+        bool ember = fract(h * 13.7) < 0.22;
+        float radius = ember ? 0.03 : 0.045;
+        // Never thinner than about a pixel, with coverage scaled down to match, so far flecks do not shimmer.
+        float px = s * 0.0011;
+        float r = max(radius, px);
+        float cov = (1.0 - smoothstep(r * 0.4, r, dist)) * (radius / r) * smoothstep(0.5, 1.5, s);
+        if (ember) col += vec3(0.85, 0.3, 1.0) * cov * (1.5 + 5.0 * bolt.w);
+        else col = mix(col, vec3(0.012, 0.006, 0.02) + vec3(0.5, 0.3, 0.7) * bolt.w * 0.3, cov * 0.85);
+    }
+    return col;
 }

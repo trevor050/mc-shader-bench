@@ -179,18 +179,6 @@ void main() {
         // Only a small pocket right at the camera stays clear.
         float sigma = storm.x * mix(0.3, 1.0, smoothstep(1.5, 14.0, tm));
         vec3 light = endStormLight(wp, frameTimeCounter, storm.y, bolt);
-        // Debris: glowing grit whipping past the camera, streaks stretched along the wind, only within ~30 blocks.
-        if (tm < 32.0) {
-            vec3 wind = endWind(wp, stormI);
-            vec3 wdir = normalize(wind);
-            vec3 s = wp - wind * frameTimeCounter;
-            float along = dot(s, wdir);
-            vec3 across = s - wdir * along;
-            float grit = cloudTex(vec3(across.x * 0.35 + along * 0.012, across.y * 0.35, across.z * 0.35 - along * 0.012) + 0.47).r;
-            float streak = smoothstep(0.72, 0.9, grit) * (1.0 - smoothstep(18.0, 32.0, tm)) * smoothstep(0.8, 3.0, tm);
-            sigma += streak * (0.08 + 0.35 * stormI);
-            light += vec3(0.55, 0.2, 0.8) * streak * (0.6 + 1.6 * stormI);
-        }
         float stepT = exp(-sigma * stepLen);
         // Low albedo: heavy, dark storm; the lightning and the core glow do the lighting.
         scatter += trans * light * 0.6 * (1.0 - stepT);

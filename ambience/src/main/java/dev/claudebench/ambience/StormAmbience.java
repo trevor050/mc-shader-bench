@@ -105,7 +105,7 @@ public final class StormAmbience implements ClientModInitializer {
 	}
 
 	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon) {
-		if (boltAge < 0 && random.nextFloat() < 0.01F + 0.06F * intensity * intensity * (dragon ? 1.5F : 1.0F)) {
+		if (boltAge < 0 && random.nextFloat() < 0.004F + 0.009F * intensity * intensity * (dragon ? 1.3F : 1.0F)) {
 			boltAge = 0;
 			boltCode = random.nextInt(64) / 64.0F;
 			boltSeed = random.nextFloat() * 10.0F;
@@ -118,9 +118,9 @@ public final class StormAmbience implements ClientModInitializer {
 		float flash = 0.0F;
 		if (boltAge >= 0) {
 			float t = boltAge;
-			flash = (float) (Math.exp(-t / 3.0) * (0.55 + 0.45 * Math.sin(t * 2.7 + boltSeed)));
-			flash = Math.max(flash, 0.0F);
-			if (++boltAge > 14) boltAge = -1;
+			// One flash and a single soft after-glow; no strobing (Trevor: the rapid flicker read as epileptic).
+			flash = (float) (Math.exp(-t / 2.5) + (t >= 4.0F ? 0.35 * Math.exp(-(t - 4.0) / 2.5) : 0.0));
+			if (++boltAge > 16) boltAge = -1;
 		}
 		// Encode for the shader: rain = 0.2 + 0.8 * (direction + intensity) / 64 (see endStormIntensity() in the
 		// shaderpack's lib/end_atmosphere.glsl), thunder level = flash.

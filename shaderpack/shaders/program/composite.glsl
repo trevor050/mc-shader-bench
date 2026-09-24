@@ -278,15 +278,16 @@ void main() {
         float gust = 0.5 + 0.5 * sin(frameTimeCounter * 1.7) * sin(frameTimeCounter * 0.63 + 1.1);
         vec2 shake = (vec2(valueNoise(vec2(frameTimeCounter * 23.0, 1.0)), valueNoise(vec2(3.0, frameTimeCounter * 19.0))) - 0.5)
                    * (0.0012 * I * gust + 0.004 * bolt.w);
-        float split = 0.0025 * bolt.w + 0.0008 * I * gust;
+        float split = 0.0012 * bolt.w + 0.0005 * I * gust;
         if (split > 1e-4) {
             vec3 r = texture(colortex0, texcoord + shake + vec2(split, 0.0)).rgb;
             vec3 b = texture(colortex0, texcoord + shake - vec2(split, 0.0)).rgb;
             col = vec3(mix(col.r, r.r, 0.6), col.g, mix(col.b, b.b, 0.6));
         }
-        col += vec3(0.7, 0.35, 1.0) * bolt.w * (0.25 + 0.5 * I);
-        vec2 vc = texcoord - 0.5;
-        col *= 1.0 - saturate(dot(vc, vc) * (0.8 + 1.8 * I));
+        col += vec3(0.7, 0.35, 1.0) * bolt.w * (0.06 + 0.12 * I);
+        vec3 rayView = projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0);
+        vec3 ray = normalize(mat3(gbufferModelViewInverse) * rayView);
+        col = endDebris(col, ray, sky ? 1e6 : dist, I, bolt);
     }
 #endif
 
