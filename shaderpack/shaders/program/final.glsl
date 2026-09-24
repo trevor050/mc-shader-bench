@@ -226,63 +226,79 @@ vec3 colorGrade(vec3 c) {
 #ifdef DIM_END
 uniform mat4 gbufferModelView;
 uniform vec3 cameraPosition;
+uniform float thunderStrength;
 
-// Being inside the End storm, as pure camera effects (Trevor preferred these to any geometry in front of the
-// lens): the image is smeared sideways along the wind as gusts hit, and buffeted by a fast, low wobble. Strength
-// follows the storm intensity the ClaudeBench Ambience mod packs into the End's rain level (see end_atmosphere.glsl).
+// Being inside the End storm, as camera effects only (Trevor: no geometry in front of the lens). Everything is
+// driven by the gust envelope the ClaudeBench Ambience mod sends through the End's thunder level (see
+// end_atmosphere.glsl), so the image is hit at the same moment the wind is heard. Layers, in order:
+//  1. Roll and zoom surge: the view rolls with smooth noise and pushes in slightly as a gust hits (trauma model:
+//     strength is trauma squared, Eiserloh, GDC 2016). The mod sways yaw and pitch; roll can only happen here.
+//  2. Air flow: the image refracts through streaky noise racing along the wind, so the air visibly tears past.
+//  3. Gust smear: a directional blur along the wind that swells only with gusts.
+//  4. Dust fronts: soft, large blotches of dusty haze stream across the view during gusts, lowering contrast.
+//  5. Edge fringe: a slight radial colour split toward the edges while a gust is on.
 vec3 endStormCamera(vec2 uv) {
     float I = rainStrength < 0.1 ? 0.55 : clamp(fract((rainStrength - 0.2) / 0.8 * 64.0) * 1.01, 0.0, 1.0);
+    float raw = rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3);
     float t = frameTimeCounter;
-    float gust = 0.5 + 0.5 * sin(t * 1.3) * sin(t * 0.47 + 1.7);
-    gust = gust * gust;
-    // The gale circles the vortex at the world origin; project its direction onto the screen.
+    float gust = rainStrength < 0.1 ? 0.5 + 0.5 * sin(t * 0.9) * sin(t * 0.37 + 2.0) : (raw < 0.5 ? clamp(raw / 0.499, 0.0, 1.0) : 1.0);
+    float aspect = viewWidth / viewHeight;
+    float trauma = min(1.0, I * (0.25 + 0.75 * gust));
+    float shake = trauma * trauma;
+
+    // Wind direction on screen: the gale circles the vortex at the world origin.
     vec3 rel = cameraPosition - vec3(0.0, 100.0, 0.0);
     vec3 windWorld = normalize(vec3(-rel.z, 0.0, rel.x) + vec3(1e-3, 0.0, 0.0));
     vec3 windView = mat3(gbufferModelView) * windWorld;
-    vec2 dir = length(windView.xy) > 0.05 ? normalize(windView.xy) : vec2(1.0, 0.0);
-    dir.x *= viewHeight / viewWidth;
-    // Buffeting: a fast, low-frequency wobble of the whole image.
-    vec2 wob = vec2(valueNoise(vec2(t * 7.0, 0.3)), valueNoise(vec2(1.7, t * 6.0))) - 0.5;
-    uv += wob * (0.0015 + 0.004 * gust) * I;
-    // Wind smear: only during gusts (a constant blur read as bad focus, not wind).
-    float len = 0.016 * gust * gust * I * I;
+    vec2 d = length(windView.xy) > 0.05 ? normalize(windView.xy) : vec2(1.0, 0.0);
+    vec2 nrm = vec2(-d.y, d.x);
+
+    // 1. Roll and zoom surge.
+    float roll = (sin(t * 1.9 + 1.3) * 0.5 + sin(t * 3.7 + 0.4) * 0.3 + sin(t * 7.1) * 0.2) * radians(1.6) * shake;
+    float zoom = 1.0 - 0.014 * gust * gust * I;
+    vec2 c = (uv - 0.5) * vec2(aspect, 1.0);
+    c = mat2(cos(roll), -sin(roll), sin(roll), cos(roll)) * c * zoom;
+    uv = c / vec2(aspect, 1.0) + 0.5;
+
+    // 2. Air flow refraction: streaky noise stretched along the wind, racing with it.
+    vec2 p = uv * vec2(aspect, 1.0);
+    float along = dot(p, d), across = dot(p, nrm);
+    float speed = 1.5 + 3.5 * I;
+    float n1 = valueNoise(vec2(along * 2.5 - t * speed, across * 16.0));
+    float n2 = valueNoise(vec2(along * 5.0 - t * speed * 1.6 + 5.0, across * 29.0 + 3.0));
+    float flow = (n1 - 0.5) * 0.7 + (n2 - 0.5) * 0.3;
+    vec2 refr = (nrm * flow * 0.006 + d * (n1 - 0.5) * 0.003) * (0.25 + 0.75 * gust) * I;
+    refr.x /= aspect;
+    uv += refr;
+
+    // 3. Gust smear: 9 taps along the wind.
+    vec2 dirUV = d / vec2(aspect, 1.0);
+    float len = 0.018 * gust * gust * I * I;
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
     for (int k = -4; k <= 4; k++) {
         float w = 1.0 - abs(float(k)) / 5.0;
-        acc += texture(colortex0, uv + dir * len * float(k) / 4.0).rgb * w;
+        acc += texture(colortex0, uv + dirUV * len * float(k) / 4.0).rgb * w;
         wsum += w;
     }
     vec3 col = acc / wsum;
 
-    // Grit hitting the lens: soot and dust tearing across the view along the wind, in three depth layers. The
-    // nearest layer is large, soft and out of focus (dust right at your face), the far ones fine and fast. How
-    // much hits you follows the gusts and the storm.
-    float aspect = viewWidth / viewHeight;
-    vec2 p0 = vec2(uv.x * aspect, uv.y);
-    vec2 d = normalize(vec2(dir.x * aspect, dir.y));
-    vec2 n = vec2(-d.y, d.x);
-    vec2 q = vec2(dot(p0, d), dot(p0, n));
-    float amount = I * (0.35 + 0.65 * gust);
-    for (int layer = 0; layer < 3; layer++) {
-        float fl = float(layer);
-        float cells = mix(5.0, 16.0, fl / 2.0);
-        float speed = mix(3.2, 1.6, fl / 2.0);
-        vec2 g = q * cells - vec2(speed * cells * t, fl * 17.3);
-        vec2 cell = floor(g);
-        vec2 f = fract(g);
-        float h = hash12(cell + fl * 31.7);
-        if (h > 0.12 + 0.3 * amount) continue;
-        vec2 c = vec2(0.5, 0.2 + 0.6 * hash12(cell + 7.1 + fl));
-        // A short streak along the wind: long axis ~70% of the cell, thin across, soft ends.
-        vec2 r = f - c;
-        float along = 1.0 - smoothstep(0.1, 0.35, abs(r.x));
-        float thick = mix(0.09, 0.025, fl / 2.0);
-        float across = 1.0 - smoothstep(thick * 0.3, thick, abs(r.y));
-        float a = along * across * mix(0.35, 0.6, fl / 2.0) * amount;
-        // Dust catches the storm's light: brighter than the air behind it, faintly violet.
-        col = mix(col, col * 2.6 + vec3(0.012, 0.007, 0.018), a);
+    // 5. Edge fringe during gusts (red outward, blue inward), strongest at the corners.
+    vec2 fromCentre = uv - 0.5;
+    float fringe = 0.004 * gust * I * dot(fromCentre, fromCentre) * 4.0;
+    if (fringe > 1e-4) {
+        col.r = mix(col.r, texture(colortex0, uv + fromCentre * fringe * 2.0).r, 0.7);
+        col.b = mix(col.b, texture(colortex0, uv - fromCentre * fringe * 2.0).b, 0.7);
     }
+
+    // 4. Dust fronts: large soft blotches of dusty haze streaming across with the wind.
+    float dust = valueNoise(vec2(along * 1.1 - t * speed * 0.55, across * 2.2 + 11.0)) * 0.6
+               + valueNoise(vec2(along * 2.3 - t * speed * 0.8 + 3.0, across * 4.5)) * 0.4;
+    float haze = smoothstep(0.45, 0.85, dust) * gust * I;
+    vec3 dustCol = vec3(luminance(col)) * 1.35 + vec3(0.006, 0.0035, 0.009);
+    col = mix(col, dustCol, haze * 0.45);
+    // Dust in the air flattens colour a little during gusts.
+    col = mix(col, vec3(luminance(col)), 0.18 * gust * I);
     return col;
 }
 #endif

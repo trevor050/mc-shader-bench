@@ -43,6 +43,13 @@ public final class StormAmbience implements ClientModInitializer {
 	private float boltSeed;
 	private float howlAngle;
 	private long ticks;
+	// Gusts: discrete events with a sharp attack and a longer decay, over a turbulent base.
+	private float gustLevel;
+	private float gustPeak;
+	private int gustAge = -1;
+	private int gustAttack, gustDecay, nextGust = 40;
+	// Camera sway (trauma model): the last offset applied, so only the change is added each tick.
+	private float swayYaw, swayPitch;
 
 	private record PendingThunder(long dueTick, Vec3 pos, double distance) {}
 
@@ -77,34 +84,73 @@ public final class StormAmbience implements ClientModInitializer {
 		target = Math.min(target, 1.0F);
 		intensity += (target - intensity) * 0.02F;
 
-		// Gusts: slow random swells on top of the intensity.
-		float gust = (float) (0.5 + 0.5 * Math.sin(ticks * 0.021) * Math.sin(ticks * 0.0077 + 1.3));
+		float gust = updateGust(dragon);
 		howlAngle += 0.012F + 0.02F * intensity;
 		for (Loop l : loops) {
 			if (!mc.getSoundManager().isActive(l)) mc.getSoundManager().play(l);
 			l.update(intensity, gust, howlAngle);
 		}
 
-		updateLightning(mc, level, player, dragon);
+		updateLightning(mc, level, player, dragon, gust);
 		buffet(player, gust);
+	}
+
+	/**
+	 * Gust envelope, 0..1. Events arrive every 2-7 s (more often in the fight): a 0.3-0.6 s attack to a random
+	 * peak, then a 1.5-3.5 s decay, on top of a light turbulent flutter. The same value drives the sound, the
+	 * shove and (via the thunder channel) the shader's camera effects, so what you hear and see hits together.
+	 */
+	private float updateGust(boolean dragon) {
+		if (gustAge < 0 && --nextGust <= 0) {
+			gustAge = 0;
+			gustAttack = 6 + random.nextInt(7);
+			gustDecay = 30 + random.nextInt(40);
+			gustPeak = 0.55F + 0.45F * random.nextFloat();
+			nextGust = (dragon ? 30 : 50) + random.nextInt(dragon ? 60 : 90);
+		}
+		float env = 0.0F;
+		if (gustAge >= 0) {
+			if (gustAge < gustAttack) env = (float) gustAge / gustAttack;
+			else env = (float) Math.exp(-(gustAge - gustAttack) / (gustDecay * 0.45));
+			env *= gustPeak;
+			if (++gustAge > gustAttack + gustDecay * 2) gustAge = -1;
+		}
+		float flutter = (float) (0.12 * (Math.sin(ticks * 0.37) * Math.sin(ticks * 0.23 + 2.1) + 1.0));
+		float target = Math.min(1.0F, env + flutter * 0.5F);
+		gustLevel += (target - gustLevel) * 0.35F;
+		return gustLevel;
 	}
 
 	/** The gale shoves you: gusts push along the vortex's spin and jolt your view, harder while the dragon lives. */
 	private void buffet(Player player, float gust) {
-		if (player.isSpectator()) return;
 		Vec3 rel = player.position().subtract(VORTEX);
 		Vec3 tangent = new Vec3(-rel.z, 0.0, rel.x);
 		if (tangent.lengthSqr() < 1e-6) tangent = new Vec3(1.0, 0.0, 0.0);
 		tangent = tangent.normalize();
-		float strength = intensity * intensity * (0.35F + 0.65F * gust);
-		double push = 0.012 * strength;
-		player.setDeltaMovement(player.getDeltaMovement().add(tangent.x * push, (random.nextFloat() - 0.45F) * push * 0.6, tangent.z * push));
-		float jolt = 0.9F * strength * (random.nextFloat() < 0.08F + 0.2F * gust ? 1.0F : 0.15F);
-		player.setYRot(player.getYRot() + (random.nextFloat() - 0.5F) * jolt);
-		player.setXRot(Math.max(-90.0F, Math.min(90.0F, player.getXRot() + (random.nextFloat() - 0.5F) * jolt * 0.6F)));
+		if (!player.isSpectator()) {
+			double push = 0.014 * intensity * intensity * gust;
+			player.setDeltaMovement(player.getDeltaMovement().add(tangent.x * push, 0.0, tangent.z * push));
+		}
+		// Trauma-model sway (Eiserloh, "Juicing Your Cameras With Math", GDC 2016): shake = trauma^2 times smooth
+		// noise, rotational rather than positional. Only the change in offset is applied each tick, so the aim
+		// sways and settles back instead of drifting.
+		float trauma = Math.min(1.0F, intensity * (0.25F + 0.75F * gust));
+		float shake = trauma * trauma;
+		double tt = ticks / 20.0;
+		float yaw = (float) (smooth(tt * 1.3, 1.7) * 2.2 * shake);
+		float pitch = (float) (smooth(tt * 1.1, 5.3) * 1.3 * shake);
+		player.setYRot(player.getYRot() + (yaw - swayYaw));
+		player.setXRot(Math.max(-90.0F, Math.min(90.0F, player.getXRot() + (pitch - swayPitch))));
+		swayYaw = yaw;
+		swayPitch = pitch;
 	}
 
-	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon) {
+	/** Smooth zero-mean noise in [-1, 1]: a few incommensurate sines. */
+	private static double smooth(double t, double seed) {
+		return (Math.sin(t * 1.0 + seed) * 0.5 + Math.sin(t * 2.31 + seed * 3.1) * 0.3 + Math.sin(t * 4.73 + seed * 7.7) * 0.2);
+	}
+
+	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon, float gust) {
 		if (boltAge < 0 && random.nextFloat() < 0.004F + 0.009F * intensity * intensity * (dragon ? 1.3F : 1.0F)) {
 			boltAge = 0;
 			boltCode = random.nextInt(64) / 64.0F;
@@ -126,7 +172,9 @@ public final class StormAmbience implements ClientModInitializer {
 		// shaderpack's lib/end_atmosphere.glsl), thunder level = flash.
 		float packed = (boltCode * 64.0F + Math.min(intensity, 0.999F)) / 64.0F;
 		level.setRainLevel(0.2F + 0.8F * packed);
-		level.setThunderLevel(flash);
+		// Thunder carries the flash when there is one (0.5..1.0), otherwise the gust (0..0.5). Minecraft reports
+		// thunder multiplied by rain; the shader divides it back out.
+		level.setThunderLevel(flash > 0.02F ? 0.5F + 0.5F * Math.min(flash, 1.0F) : 0.499F * gust);
 
 		pending.removeIf(p -> {
 			if (ticks < p.dueTick()) return false;

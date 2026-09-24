@@ -19,6 +19,10 @@ in vec4 glcolor;
 /* RENDERTARGETS: 0 */
 layout(location = 0) out vec4 outColor;
 void main() {
+#ifdef DIM_END
+    // The End has no weather; its rain level only carries storm data from the ClaudeBench Ambience mod.
+    discard;
+#endif
     vec4 c = texture(gtexture, texcoord) * glcolor;
     if (c.a < 0.05) discard;
     bool rain = c.b > c.r * 1.25;

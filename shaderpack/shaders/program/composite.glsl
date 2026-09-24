@@ -275,10 +275,9 @@ void main() {
         // gusts shudder the image, and the edges of vision close in as the storm rages.
         float I = endStormIntensity();
         vec4 bolt = endLightning(frameTimeCounter);
-        float gust = 0.5 + 0.5 * sin(frameTimeCounter * 1.7) * sin(frameTimeCounter * 0.63 + 1.1);
         vec2 shake = (vec2(valueNoise(vec2(frameTimeCounter * 23.0, 1.0)), valueNoise(vec2(3.0, frameTimeCounter * 19.0))) - 0.5)
-                   * (0.0012 * I * gust + 0.004 * bolt.w);
-        float split = 0.0012 * bolt.w + 0.0005 * I * gust;
+                   * 0.003 * bolt.w;
+        float split = 0.001 * bolt.w;
         if (split > 1e-4) {
             vec3 r = texture(colortex0, texcoord + shake + vec2(split, 0.0)).rgb;
             vec3 b = texture(colortex0, texcoord + shake - vec2(split, 0.0)).rgb;

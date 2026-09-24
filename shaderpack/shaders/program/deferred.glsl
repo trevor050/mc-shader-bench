@@ -301,7 +301,7 @@ void main() {
                       + endStorm(wp + toCore * 70.0, frameTimeCounter).x * 60.0
                       + endStorm(wp + toCore * 150.0, frameTimeCounter).x * 100.0;
             // The core's heartbeat reaches the ground too.
-            shadow = vec3(exp(-occ * 1.2)) * (0.8 + 0.45 * endPulse(frameTimeCounter));
+            shadow = vec3(exp(-occ * 1.2)) * (0.92 + 0.15 * endPulse(frameTimeCounter));
         }
 #endif
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.

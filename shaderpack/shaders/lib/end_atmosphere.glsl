@@ -26,6 +26,14 @@ float endStormIntensity() {
     if (rainStrength < 0.1) return 0.55;
     return saturate(fract((rainStrength - 0.2) / 0.8 * 64.0) * 1.01);
 }
+// Thunder channel from the mod: 0.5..1.0 = lightning flash, 0..0.5 = gust strength (Minecraft reports thunder
+// multiplied by rain, so divide it back out).
+float endThunderRaw() { return rainStrength < 0.1 ? 0.0 : thunderStrength / max(rainStrength, 1e-3); }
+float endGust() {
+    if (rainStrength < 0.1) return 0.5 + 0.5 * sin(frameTimeCounter * 0.9) * sin(frameTimeCounter * 0.37 + 2.0);
+    float v = endThunderRaw();
+    return v < 0.5 ? saturate(v / 0.499) : 1.0;
+}
 float endBoltCode() {
     return floor((rainStrength - 0.2) / 0.8 * 64.0 + 1e-3) / 64.0;
 }
@@ -107,7 +115,7 @@ vec4 endLightning(float t) {
     // thunder (which Minecraft reports multiplied by rain) = flash brightness. Mirrors StormAmbience.boltPosition.
     if (rainStrength > 0.1) {
         float code = endBoltCode();
-        float flash = thunderStrength / max(rainStrength, 1e-3);
+        float flash = saturate((endThunderRaw() - 0.5) * 2.0);
         float ang = code * TAU;
         float y = 90.0 + 170.0 * fract(code * 7.31);
         return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);
@@ -133,15 +141,16 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float pulse = endPulse(t);
     // A baleful magenta-violet core (no white: it washed the storm out to grey), swelling with the heartbeat.
     // Strong and far-reaching, so the storm's sunlit side (toward the core) is bright against dark gaps.
-    vec3 core = vec3(0.85, 0.24, 1.0) * (1.5 + 0.8 * pulse) * exp(-d / 280.0) * exp(-occ * 2.2);
+    vec3 core = vec3(0.85, 0.24, 1.0) * (1.5 + 0.35 * pulse) * exp(-d / 280.0) * exp(-occ * 2.2);
     // Bruised, dark cloud bodies: deep violet and wine, with rare teal.
     vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
     ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
-    vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.7 + 0.8 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
-    // Flashes light the storm around the bolt only: a storm-wide term washed the whole view flat purple for a
-    // moment (it lingered through the temporal accumulation).
+    vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.8 + 0.3 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
+    // Flashes light only the storm right around the bolt. The storm's own light is dim, so a wide falloff (this
+    // was 16 * exp(-d / 70)) still outshone it dozens of times over 200 blocks away and flooded the whole view
+    // lavender on every strike: Trevor's "random pink frame".
     float bd = length(p - bolt.xyz);
-    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * 16.0 * exp(-bd / 70.0);
+    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * 10.0 * exp(-bd / 28.0);
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
 
