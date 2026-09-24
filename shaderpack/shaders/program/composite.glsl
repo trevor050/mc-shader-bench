@@ -283,7 +283,8 @@ void main() {
             vec3 b = texture(colortex0, texcoord + shake - vec2(split, 0.0)).rgb;
             col = vec3(mix(col.r, r.r, 0.6), col.g, mix(col.b, b.b, 0.6));
         }
-        col += vec3(0.7, 0.35, 1.0) * bolt.w * 0.02;
+        // (No full-screen flare: the End's scene values are ~0.02-0.05, so even a +0.02 flare nearly doubled every
+        // pixel on each strike and washed the view purple. The strike lights the clouds near the bolt instead.)
     }
 #endif
 

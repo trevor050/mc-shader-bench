@@ -148,7 +148,8 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     // was 16 * exp(-d / 70)) still outshone it dozens of times over 200 blocks away and flooded the whole view
     // lavender on every strike: Trevor's "random pink frame".
     float bd = length(p - bolt.xyz);
-    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * 10.0 * exp(-bd / 28.0);
+    // Measured: at 10 * exp(-d / 28) one strike backlit the whole view pink through the fog (+70% frame brightness).
+    vec3 flash = vec3(0.85, 0.65, 1.0) * bolt.w * 6.0 * exp(-bd / 24.0);
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
 
