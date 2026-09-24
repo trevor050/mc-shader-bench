@@ -41,6 +41,10 @@ public final class GpuPassProfiler {
 	private static int renderLevelStartQuery;
 	private static long renderLevelCpuStartNs;
 	private static long renderLevelFrame;
+	private static int dhStartQuery;
+	private static long dhCpuStartNs;
+	private static long dhFrame;
+	private static String dhPass;
 	private static Session session;
 	private static boolean recording;
 	private static long submitted;
@@ -90,7 +94,7 @@ public final class GpuPassProfiler {
 			candidate.discard();
 			return "err GPU query cleanup failed; restart the client before another capture";
 		}
-		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || renderLevelStartQuery != 0 || compositeDepth != 0) {
+		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || renderLevelStartQuery != 0 || dhStartQuery != 0 || compositeDepth != 0) {
 			candidate.discard();
 			return "err profiler already active or draining";
 		}
@@ -121,7 +125,7 @@ public final class GpuPassProfiler {
 	public static String stop() {
 		if (!recording) return "err profiler not recording";
 		recording = false;
-		if (PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0) {
+		if (PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}
@@ -253,6 +257,77 @@ public final class GpuPassProfiler {
 		deleteQuery(renderLevelStartQuery);
 		renderLevelStartQuery = 0;
 		fail("render_level_exception");
+	}
+
+	public static boolean isRecording() { return recording; }
+
+	/** Only called inside a main-framegraph terrain callback, never from shadow rendering. */
+	public static void beginDh(String pass) {
+		if (!recording) return;
+		if (dhStartQuery != 0) {
+			fail("overlapping_dh_span");
+			return;
+		}
+		int query = acquireQuery(true);
+		if (query == 0) return;
+		try { GL33C.glQueryCounter(query, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(query);
+			fail("dh_start_exception");
+			return;
+		}
+		if (!glOkay("dh_start")) {
+			deleteQuery(query);
+			return;
+		}
+		dhStartQuery = query;
+		dhCpuStartNs = System.nanoTime();
+		dhFrame = frame;
+		dhPass = pass;
+	}
+
+	public static void endDh() {
+		int start = dhStartQuery;
+		if (start == 0) return;
+		dhStartQuery = 0;
+		if (captureFailure != null) {
+			deleteQuery(start);
+			dhPass = null;
+			return;
+		}
+		int end = acquireQuery(true);
+		if (end == 0) {
+			deleteQuery(start);
+			dhPass = null;
+			return;
+		}
+		try { GL33C.glQueryCounter(end, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(start);
+			deleteQuery(end);
+			fail("dh_end_exception");
+			dhPass = null;
+			return;
+		}
+		if (!glOkay("dh_end")) {
+			deleteQuery(start);
+			deleteQuery(end);
+			dhPass = null;
+			return;
+		}
+		PENDING.addLast(new Pending(start, end, dhFrame, "world", dhPass,
+			System.nanoTime() - dhCpuStartNs, -1));
+		submitted++;
+		dhPass = null;
+	}
+
+	public static void abortDh() {
+		if (dhStartQuery != 0) {
+			deleteQuery(dhStartQuery);
+			dhStartQuery = 0;
+			dhPass = null;
+		}
+		if (session != null && !session.closed) fail("dh_render_exception");
 	}
 
 	private static int acquireQuery(boolean timestamp) {
@@ -441,6 +516,11 @@ public final class GpuPassProfiler {
 			deleteQuery(renderLevelStartQuery);
 			renderLevelStartQuery = 0;
 		}
+		if (dhStartQuery != 0) {
+			deleteQuery(dhStartQuery);
+			dhStartQuery = 0;
+			dhPass = null;
+		}
 		while (!PENDING.isEmpty()) {
 			Pending pending = PENDING.removeFirst();
 			deleteQuery(pending.query);
@@ -503,7 +583,7 @@ public final class GpuPassProfiler {
 			received++;
 			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs + "," + (sample.featureNodes < 0 ? "" : sample.featureNodes))) droppedRows++;
 		}
-		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0) {
+		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}
