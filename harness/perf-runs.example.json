@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "comparison_id": "overworld-vista-example",
+  "baseline_variant": "A",
+  "warmup_seconds": 2,
+  "runs": [
+    {
+      "id": "A1",
+      "variant": "A",
+      "pack": "ClaudeBench",
+      "pack_revision": "<commit-or-settings-fingerprint>",
+      "csv": "perf-captures/A1.csv",
+      "scene": {
+        "id": "overworld-vista",
+        "x": 2486.5,
+        "y": 175,
+        "z": 5.5,
+        "yaw": -135,
+        "pitch": 12,
+        "time": 6500,
+        "weather": "clear"
+      },
+      "resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "environment": {
+        "game_version": "MC 26.2",
+        "gpu": "NVIDIA GeForce RTX 4070",
+        "driver_version": "<driver-version>",
+        "render_distance": 32,
+        "dh_radius_chunks": 512,
+        "vsync": false,
+        "fps_limit": "unlimited"
+      }
+    },
+    {
+      "id": "B1",
+      "variant": "B",
+      "pack": "ClaudeBench",
+      "pack_revision": "<candidate-commit-or-settings-fingerprint>",
+      "csv": "perf-captures/B1.csv",
+      "scene": {
+        "id": "overworld-vista",
+        "x": 2486.5,
+        "y": 175,
+        "z": 5.5,
+        "yaw": -135,
+        "pitch": 12,
+        "time": 6500,
+        "weather": "clear"
+      },
+      "resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "environment": {
+        "game_version": "MC 26.2",
+        "gpu": "NVIDIA GeForce RTX 4070",
+        "driver_version": "<driver-version>",
+        "render_distance": 32,
+        "dh_radius_chunks": 512,
+        "vsync": false,
+        "fps_limit": "unlimited"
+      }
+    },
+    {
+      "id": "A2",
+      "variant": "A",
+      "pack": "ClaudeBench",
+      "pack_revision": "<commit-or-settings-fingerprint>",
+      "csv": "perf-captures/A2.csv",
+      "scene": {
+        "id": "overworld-vista",
+        "x": 2486.5,
+        "y": 175,
+        "z": 5.5,
+        "yaw": -135,
+        "pitch": 12,
+        "time": 6500,
+        "weather": "clear"
+      },
+      "resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "environment": {
+        "game_version": "MC 26.2",
+        "gpu": "NVIDIA GeForce RTX 4070",
+        "driver_version": "<driver-version>",
+        "render_distance": 32,
+        "dh_radius_chunks": 512,
+        "vsync": false,
+        "fps_limit": "unlimited"
+      }
+    }
+  ]
+}
