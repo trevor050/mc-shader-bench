@@ -38,6 +38,13 @@ uniform vec3 previousCameraPosition;
 layout(location = 0) out vec4 outHistory;
 
 void main() {
+#if defined DIM_NETHER || defined DIM_END
+    // Keep the persistent half-resolution history invalid while the passes that produce these effects are off.
+    // This prevents a stale Overworld frame from being blended after a dimension transition.
+    outHistory = vec4(-1.0);
+    return;
+#else
+
     ivec2 bufferSize = textureSize(CUR_TEX, 0);
     vec2 bufferRes = vec2(bufferSize);
     ivec2 texel = ivec2(gl_FragCoord.xy);
@@ -81,5 +88,6 @@ void main() {
     float motion = length((prevUV - uv) * bufferRes);
     float blend = valid ? mix(0.93, 0.7, saturate(motion / 12.0)) : 0.0;
     outHistory = mix(current, history, blend);
+#endif
 }
 #endif

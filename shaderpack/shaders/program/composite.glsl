@@ -56,6 +56,7 @@ layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
 
+#if !defined DIM_NETHER && !defined DIM_END
 uniform sampler2D colortex11;
 uniform sampler2D colortex12;
 uniform float viewWidth;
@@ -82,6 +83,7 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
     }
     return acc / max(wsum, 1e-5);
 }
+#endif
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
@@ -162,9 +164,11 @@ void main() {
     }
 
 #ifdef VOLUMETRIC_LIGHT
+#if !defined DIM_NETHER && !defined DIM_END
     // Light shafts and ground mist from the half-resolution march (vl_march + temporal accumulation).
     vec4 vl = upsampleVL(texcoord, sky ? 1e6 : dist);
     col = col * vl.a + vl.rgb;
+#endif
 #endif
 
     outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));}

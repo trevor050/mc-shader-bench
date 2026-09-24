@@ -235,7 +235,10 @@ void main() {
 #endif
         vec3 refracted = texture(colortex4, refrUV).rgb;
 
-        vec3 shadow = sampleShadow(playerPos, vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
+        vec3 shadow = vec3(1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+        shadow = sampleShadow(playerPos, vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
+#endif
         float skyVis = lmcoord.y * lmcoord.y;
         // Absorption: red goes first, then green; the biome tint shifts which colour survives in depth.
         vec3 absorb = mix(vec3(0.40, 0.085, 0.055), (1.0 - tint) * 0.35 + 0.03, 0.35);
@@ -312,7 +315,10 @@ void main() {
     // The hand has its own projection; approximate its shadowing from sky light instead of the shadow map.
     vec3 shadow = vec3(smoothstep(0.6, 0.95, lmcoord.y));
 #else
-    vec3 shadow = sampleShadow(playerPos, n, saturate(dot(n, envLightDir)), dither);
+    vec3 shadow = vec3(1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+    shadow = sampleShadow(playerPos, n, saturate(dot(n, envLightDir)), dither);
+#endif
 #endif
     vec3 col = shadeSurface(env, toLinear(albedo.rgb), n, -rd, lmcoord, 1.0, mat, shadow, 0.0);
 #ifndef PROG_HAND
