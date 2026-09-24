@@ -33,6 +33,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Iris resets frameTimeCounter on reload: captures at the same delay after a reload show identical clouds (not a bug).
 - RDP session => no NVIDIA OpenGL. Game must run on the console session.
 - MC grabs + ClipCursor()s the mouse; BenchCam mixin blocks it unless `mouse grab`. Stale clip after a kill: user32 ClipCursor(NULL).
+- Only the lead controls the live BenchCam/game. Parallel shader reloads once coincided with a prolonged partial input lock while DH generated; cause unproven. After captures send `mouse free`, and keep agents on offline worktrees.
 - Iris fallback programs render pure fog on 26.2: every geometry type needs a program (see gen_stubs table).
 - gbuffers_line must not touch gl_Vertex (link error with iris_Position); PROG_BASIC uses ftransform only.
 - Iris auto-declares dhMaterialId in DH programs. dhRenderDistance is int (unclear units): use dhFarPlane.
