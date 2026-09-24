@@ -25,12 +25,25 @@ The folder fingerprint hashes sorted relative paths and file contents; ZIP finge
 
 Each scenario needs its own existing perf_analysis manifest. The campaign manifest points to that manifest, three passive CSVs, and three screenshots. Paths are relative to the campaign JSON except for paths inside the performance manifest, which remain relative to that performance manifest.
 
-The current combined performance gate only returns PASS when GPU Busy median improves by at least 5% (and CPU Busy/present interval do not regress). Treat this as acceptance for GPU-oriented shader candidates. CPU/DH-bound work may be a real improvement and still be INCONCLUSIVE here; report its CPU Busy change separately or use a gate designed for CPU-bound candidates. Do not read campaign PASS as a universal architecture verdict.
+The combined performance gate requires a repeatable improvement in the
+scenario's selected primary metric while guarding the other two metrics.
+Choose the primary before measuring, based on an observed bottleneck or the
+specific cost being reduced. Do not read campaign PASS as a universal
+architecture verdict or call a CPU Busy-only gain an FPS increase.
 
 Visual tolerances are explicit per scene. max_control_mae is the allowed A1/A2 RGB mean absolute difference; candidate MAE, 95th percentile channel difference, and fraction above 8/255 are checked against both A controls. An optional [x, y, width, height] ROI is useful for stable terrain or a specific architectural effect when animated sky/water makes full-frame control drift too large. Do not use a contact sheet as visual evidence.
 
 stall_gate.max_extra_gaps_by_band compares B1 with the worse A control for each band: 1–2, 2–4, 4–8, 8–12, and at least 12 seconds. Set all five bands to make the check a gate. memory_gate supports hard bounds for candidate VRAM used, Java private bytes, and minimum available physical bytes. Choose bounds from the current machine's measured capacity, not this example's values. These are sampled observations; 1-second telemetry can miss short pressure spikes.
 
 Campaign PASS requires the existing steady-state perf gate, the per-scene visual gate, all configured stall bands, and at least one measurable memory limit. A capture with missing/ambiguous pack evidence fails closed as INCONCLUSIVE. App-only PresentMon mode can count CPU frame-start gaps, but those are not present-event intervals and do not establish GPU Busy. The report keeps that distinction and does not attribute stalls to shaders, DH, the driver, or a memory leak.
+
+`performance_primary` optionally selects `gpu-busy` (default), `cpu-busy`, or
+`present-interval` for a scenario. Use `cpu-busy` for an already established
+CPU-bound DH/render-submission scene; a CPU Busy win is a CPU-footprint result,
+not an FPS claim if present intervals do not improve. Use `present-interval`
+when displayed frame cadence itself must improve. All three metrics still
+need stable A/B/A controls and must avoid a greater than 3% median or p95
+regression. The chosen primary needs at least a 5% median improvement and
+twice its observed control drift.
 
 This workflow deliberately adds no GL query profiler or per-frame logging to the measured path. Passive capture adds a bounded PresentMon session and 1-second telemetry sampling; use standard display/GPU tracking when available, and label --app-only runs accordingly.

@@ -68,7 +68,35 @@ class PerfGateTests(unittest.TestCase):
         self.write_manifest(*self.standard_runs())
         result = evaluate(self.manifest_path)
         self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["primary_metric"], "gpu-busy")
         self.assertLess(result["candidate_change_percent"]["gpu-busy"]["median_percent"], -5)
+
+    def test_cpu_primary_passes_without_gpu_improvement(self) -> None:
+        self.write_manifest(*self.standard_runs(b_gpu=8.0, b_cpu=2.7))
+        self.assertEqual(evaluate(self.manifest_path)["status"], "INCONCLUSIVE")
+        result = evaluate(self.manifest_path, primary_metric="cpu-busy")
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["primary_metric"], "cpu-busy")
+
+    def test_present_primary_passes_only_for_real_cadence_gain(self) -> None:
+        a1 = self.write_run("A1", "A", 8.0, present=10.0)
+        b = self.write_run("B1", "B", 8.0, present=9.0)
+        a2 = self.write_run("A2", "A", 8.0, present=10.0)
+        self.write_manifest(a1, b, a2)
+        result = evaluate(self.manifest_path, primary_metric="present-interval")
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["primary_metric"], "present-interval")
+
+    def test_cpu_primary_still_rejects_gpu_regression(self) -> None:
+        self.write_manifest(*self.standard_runs(b_gpu=8.5, b_cpu=2.7))
+        result = evaluate(self.manifest_path, primary_metric="cpu-busy")
+        self.assertEqual(result["status"], "REGRESSION")
+        self.assertIn("gpu-busy", result["regressions"])
+
+    def test_unknown_primary_metric_is_rejected(self) -> None:
+        self.write_manifest(*self.standard_runs())
+        with self.assertRaisesRegex(AnalysisError, "primary_metric"):
+            evaluate(self.manifest_path, primary_metric="fps")
 
     def test_unstable_baseline_is_inconclusive(self) -> None:
         self.write_manifest(*self.standard_runs(a2_gpu=9.0))

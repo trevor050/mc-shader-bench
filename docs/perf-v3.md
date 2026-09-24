@@ -67,15 +67,19 @@ inconclusive.
 
 ```powershell
 py harness\perf_gate.py harness\out\perf-YYYYMMDD\perf-runs.json --json-out harness\out\perf-YYYYMMDD\gate.json
+# For a confirmed CPU-bound scene, add: --primary-metric cpu-busy
+# To require a displayed-cadence gain, add: --primary-metric present-interval
 ```
 
 The gate requires exactly A/B/A, matching scene/pose, resolution, environment,
 process, swapchain, runtime, frame type, and at least 1,000 usable frames per
 run for each metric after warm-up. It analyzes GPU Busy, CPU Busy, and Present
 Interval together. A result passes only when A1-to-A2 median drift is at most
-3% for every metric, B reduces GPU Busy median by at least 5% and at least
-twice the observed GPU Busy bracket drift, and neither CPU Busy nor Present
-Interval median or p95 regresses by more than 3%. Excess baseline drift or a
+3% for every metric, B reduces the selected primary median by at least 5% and
+at least twice that metric's observed bracket drift, and no metric's median or
+p95 regresses by more than 3%. GPU Busy is the default primary; CPU Busy can
+establish a CPU-footprint win without proving an FPS gain, while Present
+Interval directly measures displayed cadence. Excess baseline drift or a
 smaller-than-threshold improvement is inconclusive. A >3% regression in any
 metric's median or p95 is reported as a regression. These are a conservative
 local acceptance policy, not a universal statistical significance test.

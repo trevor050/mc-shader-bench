@@ -301,7 +301,8 @@ def review(manifest_path: Path, min_frames: int = 1000) -> dict[str, Any]:
         perf_path = _resolve(base, scenario.get("perf_manifest"), f"{scenario_id}.perf_manifest")
         perf_manifest = _read_json(perf_path)
         attestation = _pack_attestation(scenario, perf_path.parent, base, perf_manifest)
-        perf = evaluate_perf_gate(perf_path, min_frames)
+        perf = evaluate_perf_gate(perf_path, min_frames,
+                                  scenario.get("performance_primary", "gpu-busy"))
         first_run = next(run for run in perf_manifest["runs"] if run.get("id") == "A1")
         visual = _visual_review(scenario, base, first_run.get("resolution"))
         stalls = _stall_review(scenario, base)

@@ -6,6 +6,7 @@
       "id": "overworld-alpine",
       "dimension": "overworld",
       "scene_id": "overworld-alpine",
+      "performance_primary": "cpu-busy",
       "perf_manifest": "captures/overworld/perf-aba.json",
       "passive_csvs": {
         "A1": "captures/overworld/A1.csv",

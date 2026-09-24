@@ -1,7 +1,9 @@
 """Offline acceptance gate for one matched PresentMon A/B/A comparison.
 
 Reads existing CSV and manifest files only. It never launches the game or a
-profiler. See docs/perf-v3.md for the thresholds and DH state attestation.
+profiler. GPU Busy is the default primary metric; CPU Busy or Present Interval
+can be selected for a known bottleneck. See docs/perf-v3.md for thresholds and
+DH state attestation.
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from perf_analysis import AnalysisError, analyze
 MIN_FRAMES = 1000
 MAX_BASELINE_DRIFT_PERCENT = 3.0
 MAX_SUPPORT_REGRESSION_PERCENT = 3.0
-MIN_GPU_BUSY_IMPROVEMENT_PERCENT = 5.0
+MIN_PRIMARY_IMPROVEMENT_PERCENT = 5.0
+PRIMARY_METRICS = ("gpu-busy", "cpu-busy", "present-interval")
 
 
 def _load_manifest(path: Path) -> dict[str, Any]:
@@ -39,8 +42,11 @@ def _pct_change(candidate: float, baseline: float) -> float:
     return 100.0 * (candidate - baseline) / baseline
 
 
-def evaluate(manifest_path: Path, min_frames: int = MIN_FRAMES) -> dict[str, Any]:
+def evaluate(manifest_path: Path, min_frames: int = MIN_FRAMES,
+             primary_metric: str = "gpu-busy") -> dict[str, Any]:
     """Evaluate exactly three matched runs: baseline, candidate, baseline."""
+    if primary_metric not in PRIMARY_METRICS:
+        raise AnalysisError(f"primary_metric must be one of {', '.join(PRIMARY_METRICS)}")
     manifest = _load_manifest(manifest_path)
     runs = manifest.get("runs")
     baseline_variant = manifest.get("baseline_variant")
@@ -68,12 +74,14 @@ def evaluate(manifest_path: Path, min_frames: int = MIN_FRAMES) -> dict[str, Any
         return {
             "status": "INCONCLUSIVE",
             "reason": "DH state is unknown for at least one run; chunks=true does not attest DH queue state",
+            "primary_metric": primary_metric,
             "dh_state_by_run": dict(zip((run.get("id", f"run{i+1}") for i, run in enumerate(runs)), dh_states)),
         }
     if len(set(normalized_dh)) != 1:
         return {
             "status": "INCONCLUSIVE",
             "reason": "DH state differs across A/B/A; captures are not matched",
+            "primary_metric": primary_metric,
             "dh_state_by_run": dict(zip((run.get("id", f"run{i+1}") for i, run in enumerate(runs)), dh_states)),
         }
 
@@ -96,6 +104,7 @@ def evaluate(manifest_path: Path, min_frames: int = MIN_FRAMES) -> dict[str, Any
         return {
             "status": "INCONCLUSIVE",
             "reason": f"A1/A2 median drift exceeds {MAX_BASELINE_DRIFT_PERCENT:.1f}% for at least one metric",
+            "primary_metric": primary_metric,
             "dh_state": dh_states[0], "baseline_drift_percent": drift,
             "candidate_change_percent": changes, "usable_samples": samples,
         }
@@ -110,42 +119,39 @@ def evaluate(manifest_path: Path, min_frames: int = MIN_FRAMES) -> dict[str, Any
         return {
             "status": "REGRESSION",
             "reason": f"candidate worsens median or p95 by more than {MAX_SUPPORT_REGRESSION_PERCENT:.1f}%",
+            "primary_metric": primary_metric,
             "dh_state": dh_states[0], "baseline_drift_percent": drift,
             "candidate_change_percent": changes, "regressions": regressions,
             "usable_samples": samples,
         }
 
-    gpu_change = changes["gpu-busy"]["median_percent"]
+    primary_change = changes[primary_metric]["median_percent"]
     minimum_improvement = max(
-        MIN_GPU_BUSY_IMPROVEMENT_PERCENT,
-        2 * drift["gpu-busy"],
+        MIN_PRIMARY_IMPROVEMENT_PERCENT,
+        2 * drift[primary_metric],
     )
-    if gpu_change > MAX_SUPPORT_REGRESSION_PERCENT:
-        return {
-            "status": "REGRESSION",
-            "reason": "candidate increases GPU Busy median by more than 3.0%",
-            "dh_state": dh_states[0], "baseline_drift_percent": drift,
-            "candidate_change_percent": changes, "usable_samples": samples,
-        }
-    if gpu_change > -minimum_improvement:
+    if primary_change > -minimum_improvement:
         return {
             "status": "INCONCLUSIVE",
-            "reason": f"GPU Busy median improvement is below the required {minimum_improvement:.1f}%",
+            "reason": f"{primary_metric} median improvement is below the required {minimum_improvement:.1f}%",
+            "primary_metric": primary_metric,
             "dh_state": dh_states[0], "baseline_drift_percent": drift,
             "candidate_change_percent": changes, "usable_samples": samples,
         }
 
+    other_metrics = ", ".join(metric for metric in PRIMARY_METRICS if metric != primary_metric)
     return {
         "status": "PASS",
-        "reason": f"GPU Busy median improves by at least {minimum_improvement:.1f}%; CPU Busy and Present Interval show no >3.0% median/p95 regression",
+        "reason": f"{primary_metric} median improves by at least {minimum_improvement:.1f}%; {other_metrics} show no >3.0% median/p95 regression",
+        "primary_metric": primary_metric,
         "dh_state": dh_states[0], "baseline_drift_percent": drift,
         "candidate_change_percent": changes, "usable_samples": samples,
         "thresholds": {
             "minimum_frames_per_metric_per_run": min_frames,
             "maximum_baseline_median_drift_percent": MAX_BASELINE_DRIFT_PERCENT,
-            "minimum_gpu_busy_improvement_percent": MIN_GPU_BUSY_IMPROVEMENT_PERCENT,
-            "minimum_improvement_vs_observed_gpu_drift_multiplier": 2,
-            "maximum_cpu_busy_or_present_interval_regression_percent_median_or_p95": MAX_SUPPORT_REGRESSION_PERCENT,
+            "minimum_primary_improvement_percent": MIN_PRIMARY_IMPROVEMENT_PERCENT,
+            "minimum_improvement_vs_observed_primary_drift_multiplier": 2,
+            "maximum_metric_regression_percent_median_or_p95": MAX_SUPPORT_REGRESSION_PERCENT,
         },
     }
 
@@ -155,12 +161,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("manifest", type=Path, help="metadata-complete A/B/A manifest")
     parser.add_argument("--min-frames", type=int, default=MIN_FRAMES,
                         help=f"minimum usable samples per run and metric (default: {MIN_FRAMES})")
+    parser.add_argument("--primary-metric", choices=PRIMARY_METRICS, default="gpu-busy",
+                        help="which cost or cadence must improve; default gpu-busy")
     parser.add_argument("--json-out", type=Path, help="also write the gate result as JSON")
     args = parser.parse_args(argv)
     if args.min_frames < 2:
         parser.error("--min-frames must be at least 2")
     try:
-        result = evaluate(args.manifest, args.min_frames)
+        result = evaluate(args.manifest, args.min_frames, args.primary_metric)
     except (AnalysisError, OSError, KeyError, TypeError) as exc:
         result = {"status": "INCONCLUSIVE", "reason": str(exc)}
     print(f"{result['status']}: {result['reason']}")
