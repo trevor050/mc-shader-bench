@@ -33,6 +33,7 @@ flat out int mat;
 #ifdef PROG_TERRAIN
 flat out vec2 lavaSpriteMid;
 flat out vec2 lavaSpriteHalfExtent;
+flat out float lavaFlowing;
 #endif
 
 void main() {
@@ -61,6 +62,8 @@ void main() {
 #if defined PROG_TERRAIN
     mat = int(mc_Entity.x + 0.5) - 10000;
     if (mat < 0 || mat > 100) mat = MAT_NONE;
+    lavaFlowing = mat == MAT_LAVA_FLOWING ? 1.0 : 0.0;
+    if (mat == MAT_LAVA_FLOWING) mat = MAT_LAVA;
     vec3 playerPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz;
     vec3 worldPos = waveVertex(playerPos + cameraPosition, mat, at_midBlock.y);
     gl_Position = gl_ProjectionMatrix * (gbufferModelView * vec4(worldPos - cameraPosition, 1.0));
@@ -120,6 +123,7 @@ flat in int mat;
 #ifdef PROG_TERRAIN
 flat in vec2 lavaSpriteMid;
 flat in vec2 lavaSpriteHalfExtent;
+flat in float lavaFlowing;
 #endif
 #if defined PROG_TERRAIN || defined PROG_DH
 #include "/lib/lava.glsl"
@@ -174,7 +178,7 @@ void main() {
         vec3 lavaN = normalize(worldNormal);
         vec3 lavaWp = relPos + cameraPosition;
         vec4 lava;
-        if (abs(lavaN.y) > 0.5) {
+        if (abs(lavaN.y) > 0.5 && lavaFlowing < 0.5) {
             // Pool UVs are world anchored; falls keep their native flowing sprite and UVs.
             float shore = 0.0;
 #ifdef LIGHT_FIELD

@@ -42,6 +42,7 @@ void main() {
     mat = dhMaterialId == DH_BLOCK_WATER ? MAT_WATER : MAT_TRANSLUCENT;
 #else
     mat = int(mc_Entity.x + 0.5) - 10000;
+    if (mat == MAT_LAVA_FLOWING) mat = MAT_LAVA;
 #endif
     vec3 viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     playerPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz;

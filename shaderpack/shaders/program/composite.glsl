@@ -34,6 +34,9 @@ uniform sampler2D colortex2;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform mat4 gbufferProjectionInverse;
+uniform mat4 gbufferProjection;
+uniform mat4 gbufferModelView;
+uniform int frameCounter;
 uniform mat4 dhProjectionInverse;
 uniform vec3 cameraPosition;
 uniform int isEyeInWater;
@@ -44,6 +47,7 @@ uniform float dhFarPlane;
 #if defined DIM_NETHER
 #include "/lib/nether_atmosphere.glsl"
 #endif
+#include "/lib/reflections.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -121,6 +125,43 @@ void main() {
             : projectAndDivide(dhProjectionInverse, vec3(texcoord, dhDepth) * 2.0 - 1.0);
         playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
         dist = length(playerPos);
+    }
+    // Glossy blocks reflect the lit scene (lib/reflections.glsl). Before fog, so the reflection and the surface
+    // are hazed together.
+    if (!sky && depth < 1.0 && isEyeInWater == 0) {
+        vec4 gm = texture(colortex2, texcoord);
+        if (gm.a > 0.01) {
+            vec4 gnl = texture(colortex1, texcoord);
+            vec3 n = decodeNormal(gnl.xy);
+            int gmat = int(gm.r * 255.0 + 0.5);
+            vec3 rd = normalize(playerPos);
+            float rough = sqr(1.0 - gm.a);
+            float d1 = ignTemporal(gl_FragCoord.xy, frameCounter);
+            float d2 = ignTemporal(gl_FragCoord.xy + vec2(37.0, 11.0), frameCounter);
+            vec3 jit = vec3(d1, d2, fract(d1 + d2 * 1.618)) * 2.0 - 1.0;
+            vec3 hn = normalize(n + jit * rough * 0.6);
+            vec3 r = reflect(rd, hn);
+            if (dot(r, n) < 0.02) r = reflect(rd, n);
+            float NdotV = saturate(dot(n, -rd));
+            bool metal = gmat == MAT_METAL;
+            float f0 = metal ? 0.6 : 0.04;
+            float F = (f0 + (1.0 - f0) * pow(1.0 - NdotV, 5.0)) * mix(0.55, 1.0, gm.a);
+            // Misses: the sky where the surface sees it, otherwise what the surroundings would reflect.
+#if defined DIM_NETHER
+            vec3 fallback = netherSmogAmbient(netherBiomeAir()) * 2.5 + netherSeaGlow(playerPos + cameraPosition, frameTimeCounter) * 0.05;
+#elif defined DIM_END
+            vec3 fallback = vec3(0.012, 0.007, 0.02);
+#else
+            float skyVis = gnl.w * gnl.w;
+            vec3 fallback = (skyRadiance(normalize(vec3(r.x, max(r.y, 0.02), r.z)), sunDir, 6) + sunAureole(r, sunDir)) * skyVis * skyVis
+                          * smoothstep(-0.3, 0.1, r.y) + col * 0.15;
+#endif
+            vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
+            vec4 ssr = traceReflection(viewPos, normalize(mat3(gbufferModelView) * r), d1);
+            vec3 refl = mix(fallback, ssr.rgb, ssr.a);
+            if (metal) refl *= mix(vec3(1.0), col / max(max(col.r, max(col.g, col.b)), 1e-4), 0.7);
+            col = mix(col, refl, F);
+        }
     }
 #if defined DIM_NETHER
     // Heat haze. The lava never moves: what wavers is whatever is seen *through* the hot air layer over the lava

@@ -20,6 +20,7 @@
 #define MAT_POLISHED 13     // polished/smooth stone, quartz, glazed terracotta, amethyst (screen-space reflections)
 #define MAT_METAL 14        // metal and gem blocks (tinted reflections)
 #define MAT_GLASSY 15       // obsidian: volcanic glass
+#define MAT_LAVA_FLOWING 16 // block id only: flowing lava, remapped to MAT_LAVA plus a flag in vertex shaders
 #define MAT_ENTITY 20
 #define MAT_HAND 21
 #define MAT_LOD 30

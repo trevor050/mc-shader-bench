@@ -112,6 +112,7 @@ void main() {
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
     mat = int(mc_Entity.x + 0.5) - 10000;
+    if (mat == MAT_LAVA_FLOWING) mat = MAT_LAVA;
 
     vec3 shadowViewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     vec3 playerPos = (shadowModelViewInverse * vec4(shadowViewPos, 1.0)).xyz;

@@ -335,8 +335,6 @@ void main() {
         if (mat == MAT_ICE_SOLID && !isLod) {
             vec3 rr = reflect(rd, n);
             float F = iceFresnel(dot(-rd, n));
-            vec3 env = rr.y > 0.0 ? (skyRadiance(rr, sunDir, 4) + sunAureole(rr, sunDir)) * lm.y * lm.y : col * 0.5;
-            col = mix(col, env, F);
             vec3 hv = normalize(envLightDir - rd);
             float nh = saturate(dot(n, hv));
             const float a2 = 0.004;
@@ -347,7 +345,7 @@ void main() {
         // Glassy dark stone (obsidian, blackstone, basalt): very dark albedos get a glossy sky reflection,
         // so they read as polished volcanic glass instead of a black hole.
         float darkness = 1.0 - smoothstep(0.02, 0.07, luminance(gAlbedo.rgb));
-        if (darkness > 0.0 && !isHand && mat != MAT_LAVA) {
+        if (darkness > 0.0 && !isHand && mat != MAT_LAVA && mat != MAT_GLASSY && mat != MAT_POLISHED) {
             vec3 rr = reflect(rd, n);
             float fr = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, n)), 5.0);
 #ifdef DIM_NETHER
