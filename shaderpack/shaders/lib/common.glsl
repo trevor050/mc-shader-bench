@@ -13,6 +13,7 @@
 #define MAT_TALL_UPPER 6   // upper half of double plants
 #define MAT_LAVA 7
 #define MAT_PORTAL 8       // nether portal
+#define MAT_SNOW 9
 #define MAT_ENTITY 20
 #define MAT_HAND 21
 #define MAT_LOD 30

@@ -230,6 +230,21 @@ void main() {
 #ifdef DIM_NETHER
         if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao) / PI;
 #endif
+#if !defined DIM_NETHER && !defined DIM_END
+        // Snow glitter: tiny ice crystals, each tilted its own way, flash when one happens to mirror the sun
+        // toward the eye. One crystal per 1/16-block texel; they twinkle as the view moves and vanish in shade.
+        if (mat == MAT_SNOW && !isLod) {
+            vec3 wp = playerPos + cameraPosition;
+            vec3 cell = floor(wp * 16.0 + n * 0.5);
+            float seed = hash12(cell.xz + vec2(cell.y * 17.13, cell.y * 3.71));
+            float h = hash12(vec2(seed * 91.7, 3.3));
+            vec3 tilt = normalize(n + (vec3(hash12(vec2(seed * 57.1, 1.1)), hash12(vec2(seed * 33.9, 7.7)),
+                                            hash12(vec2(seed * 71.3, 4.9))) - 0.5) * 0.5);
+            vec3 hv = normalize(envLightDir - rd);
+            float flash = pow(saturate(dot(tilt, hv)), 140.0) * step(0.35, h);
+            col += envDirect * shadow * flash * 40.0 * saturate(dot(n, envLightDir) * 4.0);
+        }
+#endif
         // Glassy dark stone (obsidian, blackstone, basalt): very dark albedos get a glossy sky reflection,
         // so they read as polished volcanic glass instead of a black hole.
         float darkness = 1.0 - smoothstep(0.02, 0.07, luminance(gAlbedo.rgb));
