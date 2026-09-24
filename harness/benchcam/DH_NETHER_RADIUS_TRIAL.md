@@ -1,10 +1,23 @@
 # Optional DH Nether radius trial
 
-This BenchCam-only trial applies a Distant Horizons 3.3.2 public API override of 64 LOD chunks while the client level is the Nether. It leaves the underlying DH configuration value alone. The trial is off by default and does not change shaders, Prism files, or the game installation.
+This BenchCam-only trial applies a Distant Horizons 3.3.2 public API override while the client level is the Nether. Its requested radius defaults to 64 LOD chunks; it leaves the underlying DH configuration value alone. The trial is off by default and does not change shaders, Prism files, or the game installation.
 
 Build from `harness/benchcam` with `./gradlew build` (PowerShell: `.\gradlew.bat build`). The build needs the pinned Iris 1.11.4 and DH 3.3.2 jars as compile-only dependencies. Set `BENCHCAM_IRIS_JAR` and `BENCHCAM_DH_JAR` if they are not at the ShaderBench Prism paths in `build.gradle`. The output is `build/libs/benchcam-0.1.0.jar`; building does not install it.
 
-For a future guarded game trial, install that candidate jar deliberately and either add `-Dbenchcam.dhNetherRadiusTrial=true` to Minecraft's JVM arguments before launch or use `py bench.py raw "dhtrial on"` after launch. The property enables the trial initially; `dhtrial on` is an explicit runtime opt-in. `py bench.py raw "dhtrial off"` clears the override without restarting. `py bench.py raw "dhstatus"` is read-only and reports `dimension`, `enabled`, `owned`, `suspended`, `failed`, `clearPending`, `clearFailures`, `active` (DH `getValue()`), `true` (DH `getTrueValue()`), and `api` (DH `getApiValue()`). A normal 512-chunk baseline should report `active=512 true=512 api=null`; in the Nether with the trial active it should report `active=64 true=512 api=64`. Treat the observed `true` value as the baseline; the code does not assume it is 512.
+For a future guarded game trial, install that candidate jar deliberately and either add `-Dbenchcam.dhNetherRadiusTrial=true` to Minecraft's JVM arguments before launch or use `py bench.py raw "dhtrial on"` after launch. The property enables the trial initially; `dhtrial on` is an explicit runtime opt-in. `py bench.py raw "dhtrial off"` clears the override without restarting. `py bench.py raw "dhstatus"` is read-only and reports `dimension`, `enabled`, `requested`, `owned`, `suspended`, `failed`, `clearPending`, `clearFailures`, `active` (DH `getValue()`), `true` (DH `getTrueValue()`), and `api` (DH `getApiValue()`). A normal 512-chunk baseline should report `active=512 true=512 api=null`; in the Nether with the default trial active it should report `requested=64 active=64 true=512 api=64`. Treat the observed `true` value as the baseline; the code does not assume it is 512.
+
+To switch the requested radius during a guarded Nether test, send each command separately through BenchCam. The radius command runs on the render thread. It clears and verifies BenchCam's current API override before applying the replacement, then replies with status:
+
+```powershell
+py bench.py raw "dhtrial on"
+py bench.py raw "dhtrial radius 64"
+py bench.py raw "dhtrial radius 48"
+py bench.py raw "dhstatus"
+py bench.py raw "dhtrial radius 64"
+py bench.py raw "dhstatus"
+```
+
+The expected active sequence is 64 → 48 → 64, while `true` stays at the saved value (for example 512). `requested` reports the selected target even when the trial is off or the player is outside the Nether. Values below 32 or above DH's current saved `true` radius are rejected. A pending cleanup or a radius override owned by another mod blocks the switch.
 
 Suggested A/B/A check: record `dhstatus` in the Nether with the trial off, send `dhtrial on`, record status and frames, send `dhtrial off`, record status and frames. Also check Nether -> Overworld -> End -> Nether with status after each dimension settles. The override clears on leaving the Nether, disconnect, client stop, or trial failure. A disconnect suspends it until a new connection joins; an enabled JVM-property trial can therefore resume in a later world. `dhtrial off` remains off until `dhtrial on` or the next process start with the property.
 
