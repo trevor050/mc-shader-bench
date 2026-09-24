@@ -24,7 +24,7 @@ LightEnv makeLightEnv(vec3 sunDir) {
     // Keep the original per-branch radiance scaling while avoiding four unused optical-depth samples.
     vec3 directT = day
         ? sunTransmittance(sunDir) * SUN_ILLUMINANCE
-        : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 1.0 * vec3(0.55, 0.75, 1.25);
+        : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 1.45 * vec3(0.55, 0.75, 1.25);
     // Fade across the horizon swap so the shadow direction change is not a pop.
     float fade = smoothstep(0.0, 0.08, abs(sunDir.y + 0.02));
     e.directLight = directT * fade * (1.0 - rainStrength * 0.9);
