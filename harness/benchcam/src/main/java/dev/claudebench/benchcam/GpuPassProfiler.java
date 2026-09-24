@@ -24,6 +24,7 @@ public final class GpuPassProfiler {
 	private static final int POLL_AFTER_FRAMES = 4;
 	private static final String OUTPUT_DIR = "BenchCamGpuProfiles";
 	private static final ArrayDeque<Integer> FREE = new ArrayDeque<>();
+	private static final ArrayDeque<Integer> FREE_TIMESTAMPS = new ArrayDeque<>();
 	private static final ArrayDeque<Pending> PENDING = new ArrayDeque<>();
 	private static int allocatedQueries;
 	private static long frame;
@@ -37,6 +38,9 @@ public final class GpuPassProfiler {
 	private static String activePass;
 	private static long activeCpuStartNs;
 	private static int activeFeatureNodes;
+	private static int renderLevelStartQuery;
+	private static long renderLevelCpuStartNs;
+	private static long renderLevelFrame;
 	private static Session session;
 	private static boolean recording;
 	private static long submitted;
@@ -48,7 +52,9 @@ public final class GpuPassProfiler {
 	private static boolean restartRequired;
 	private static long unreleasedQueries;
 
-	private record Pending(int query, long frame, String stage, String pass, long cpuWallNs, int featureNodes) {}
+	/** endQuery is nonzero only for a pair of GL_TIMESTAMP markers. */
+	private record Pending(int query, int endQuery, long frame, String stage, String pass,
+		long cpuWallNs, int featureNodes) {}
 
 	private GpuPassProfiler() {}
 
@@ -84,7 +90,7 @@ public final class GpuPassProfiler {
 			candidate.discard();
 			return "err GPU query cleanup failed; restart the client before another capture";
 		}
-		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || compositeDepth != 0) {
+		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || renderLevelStartQuery != 0 || compositeDepth != 0) {
 			candidate.discard();
 			return "err profiler already active or draining";
 		}
@@ -115,7 +121,7 @@ public final class GpuPassProfiler {
 	public static String stop() {
 		if (!recording) return "err profiler not recording";
 		recording = false;
-		if (PENDING.isEmpty() && activeQuery == 0) {
+		if (PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}
@@ -168,8 +174,91 @@ public final class GpuPassProfiler {
 			fail("foreign_timer_query_active");
 			return 0;
 		}
+		int query = acquireQuery(false);
+		if (query == 0) return 0;
+		try {
+			GL15C.glBeginQuery(GL33C.GL_TIME_ELAPSED, query);
+		} catch (RuntimeException e) {
+			deleteQuery(query);
+			fail("begin_query_exception");
+			return 0;
+		}
+		activeQuery = query;
+		activeToken = ++nextToken;
+		activeStage = stage;
+		activePass = pass;
+		activeCpuStartNs = System.nanoTime();
+		activeFeatureNodes = -1;
+		return activeToken;
+	}
+
+	/** Timestamp markers may bracket elapsed queries without owning their target. */
+	public static void beginRenderLevel() {
+		if (!recording) return;
+		if (renderLevelStartQuery != 0) {
+			fail("unbalanced_render_level_start");
+			deleteQuery(renderLevelStartQuery);
+			renderLevelStartQuery = 0;
+			return;
+		}
+		int query = acquireQuery(true);
+		if (query == 0) return;
+		try { GL33C.glQueryCounter(query, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(query);
+			fail("render_level_start_exception");
+			return;
+		}
+		if (!glOkay("render_level_start")) {
+			deleteQuery(query);
+			return;
+		}
+		renderLevelStartQuery = query;
+		renderLevelCpuStartNs = System.nanoTime();
+		renderLevelFrame = frame;
+	}
+
+	public static void endRenderLevel() {
+		int start = renderLevelStartQuery;
+		if (start == 0) return;
+		renderLevelStartQuery = 0;
+		if (captureFailure != null) {
+			deleteQuery(start);
+			return;
+		}
+		int end = acquireQuery(true);
+		if (end == 0) {
+			deleteQuery(start);
+			return;
+		}
+		try { GL33C.glQueryCounter(end, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(start);
+			deleteQuery(end);
+			fail("render_level_end_exception");
+			return;
+		}
+		if (!glOkay("render_level_end")) {
+			deleteQuery(start);
+			deleteQuery(end);
+			return;
+		}
+		PENDING.addLast(new Pending(start, end, renderLevelFrame, "frame", "renderLevel_command_span",
+			System.nanoTime() - renderLevelCpuStartNs, -1));
+		submitted++;
+	}
+
+	public static void abortRenderLevel() {
+		if (renderLevelStartQuery == 0) return;
+		deleteQuery(renderLevelStartQuery);
+		renderLevelStartQuery = 0;
+		fail("render_level_exception");
+	}
+
+	private static int acquireQuery(boolean timestamp) {
+		ArrayDeque<Integer> pool = timestamp ? FREE_TIMESTAMPS : FREE;
 		int query;
-		if (!FREE.isEmpty()) query = FREE.removeFirst();
+		if (!pool.isEmpty()) query = pool.removeFirst();
 		else if (allocatedQueries < MAX_QUERIES) {
 			try { query = GL15C.glGenQueries(); }
 			catch (RuntimeException e) {
@@ -190,24 +279,11 @@ public final class GpuPassProfiler {
 			droppedQueries++;
 			return 0;
 		}
-		if (!glOkay("before_begin_query")) {
+		if (!glOkay("before_query")) {
 			deleteQuery(query);
 			return 0;
 		}
-		try {
-			GL15C.glBeginQuery(GL33C.GL_TIME_ELAPSED, query);
-		} catch (RuntimeException e) {
-			deleteQuery(query);
-			fail("begin_query_exception");
-			return 0;
-		}
-		activeQuery = query;
-		activeToken = ++nextToken;
-		activeStage = stage;
-		activePass = pass;
-		activeCpuStartNs = System.nanoTime();
-		activeFeatureNodes = -1;
-		return activeToken;
+		return query;
 	}
 
 	/** Number of submitted node references executed in the current shadow feature phase. */
@@ -249,7 +325,8 @@ public final class GpuPassProfiler {
 			return;
 		}
 		long cpuWallNs = System.nanoTime() - activeCpuStartNs;
-		PENDING.addLast(new Pending(activeQuery, frame, activeStage, activePass, cpuWallNs, activeFeatureNodes));
+		PENDING.addLast(new Pending(activeQuery, 0, frame, activeStage, activePass,
+			cpuWallNs, activeFeatureNodes));
 		submitted++;
 		activeQuery = 0;
 		activeToken = 0;
@@ -336,6 +413,7 @@ public final class GpuPassProfiler {
 
 	private static void retireFreeQueries() {
 		while (!FREE.isEmpty()) deleteQuery(FREE.removeFirst());
+		while (!FREE_TIMESTAMPS.isEmpty()) deleteQuery(FREE_TIMESTAMPS.removeFirst());
 	}
 
 	/** Polls only old, available results; never calls GL_QUERY_RESULT on an unavailable query. */
@@ -359,7 +437,15 @@ public final class GpuPassProfiler {
 	/** Delete ended queries without waiting for their results. Failure requires a new GL context. */
 	private static void cleanupAfterPollFailure() {
 		if (activeQuery != 0) abortActiveQuery();
-		while (!PENDING.isEmpty()) deleteQuery(PENDING.removeFirst().query);
+		if (renderLevelStartQuery != 0) {
+			deleteQuery(renderLevelStartQuery);
+			renderLevelStartQuery = 0;
+		}
+		while (!PENDING.isEmpty()) {
+			Pending pending = PENDING.removeFirst();
+			deleteQuery(pending.query);
+			if (pending.endQuery != 0) deleteQuery(pending.endQuery);
+		}
 		retireFreeQueries();
 		compositeDepth = 0;
 		compositeToken = 0;
@@ -383,20 +469,41 @@ public final class GpuPassProfiler {
 			if (!glOkay("query_available")) {
 				PENDING.removeFirst();
 				deleteQuery(sample.query);
+				if (sample.endQuery != 0) deleteQuery(sample.endQuery);
 				continue;
 			}
 			if (available == 0) break;
+			if (sample.endQuery != 0) {
+				available = GL15C.glGetQueryObjecti(sample.endQuery, GL15C.GL_QUERY_RESULT_AVAILABLE);
+				if (!glOkay("end_query_available")) {
+					PENDING.removeFirst();
+					deleteQuery(sample.query);
+					deleteQuery(sample.endQuery);
+					continue;
+				}
+				if (available == 0) break;
+			}
 			long nanos = GL33C.glGetQueryObjecti64(sample.query, GL15C.GL_QUERY_RESULT);
+			if (sample.endQuery != 0) nanos = GL33C.glGetQueryObjecti64(sample.endQuery, GL15C.GL_QUERY_RESULT) - nanos;
 			PENDING.removeFirst();
 			if (!glOkay("query_result")) {
 				deleteQuery(sample.query);
+				if (sample.endQuery != 0) deleteQuery(sample.endQuery);
 				continue;
 			}
-			FREE.addLast(sample.query);
+			if (sample.endQuery == 0) FREE.addLast(sample.query);
+			else {
+				FREE_TIMESTAMPS.addLast(sample.query);
+				FREE_TIMESTAMPS.addLast(sample.endQuery);
+			}
+			if (nanos < 0) {
+				fail("negative_timestamp_span");
+				continue;
+			}
 			received++;
 			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs + "," + (sample.featureNodes < 0 ? "" : sample.featureNodes))) droppedRows++;
 		}
-		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0) {
+		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}
