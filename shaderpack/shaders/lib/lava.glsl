@@ -124,7 +124,15 @@ vec4 lavaSurface(vec3 worldPos, vec3 posDx, vec3 posDy, vec3 normal,
     vec2 raw = p + warp;
     vec2 local = fract(raw);
     vec2 uv = clamp(spriteMid + (local * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
-    vec3 sprite = textureGrad(gtexture, uv, (pDx + warpDx) * (2.0 * halfExtent), (pDy + warpDy) * (2.0 * halfExtent)).rgb;
+    vec2 gx = (pDx + warpDx) * (2.0 * halfExtent), gy = (pDy + warpDy) * (2.0 * halfExtent);
+    vec3 sprite = textureGrad(gtexture, uv, gx, gy).rgb;
+    // Pixel-space stochastic tiling: a second read of the same sprite at an unrelated offset, chosen per texel by
+    // a slow noise mask. Every pixel is still a genuine vanilla lava pixel, but the one-block period that makes
+    // a lake look like wallpaper is broken up.
+    vec2 raw2 = raw * vec2(1.0, -1.0) + vec2(0.43, 0.71) + warp.yx * 0.8;
+    vec2 uv2 = clamp(spriteMid + (fract(raw2) * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
+    float pick = valueNoise(floor(raw * 16.0) / 16.0 * 0.45 + 17.3);
+    if (pick > 0.5) sprite = textureGrad(gtexture, uv2, gx, gy).rgb;
 
     // Evaluate heat once per sprite texel (the same warped 16x16 grid the sprite uses) so edges stay pixel
     // crisp. When a texel is smaller than a screen pixel, quantizing only aliases, so fade it out.
