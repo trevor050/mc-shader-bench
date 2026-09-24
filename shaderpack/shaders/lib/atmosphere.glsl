@@ -135,34 +135,78 @@ vec3 netherHaze(vec3 rd, float y) {
 //    sun sinks (light scattered twice, through the high stratosphere),
 //  - belt of Venus: a pink band above the opposite horizon, lit by the last reddened sunlight,
 //  - Earth's shadow: the darker blue band under it, rising as the sun sets.
+// ---------------------------------------------------------------------------------------------------------------
+// Sunset palette. Single scattering alone gives a muted, dusty sunset; the one Trevor asked for is the vivid one
+// seen on a clear evening: a golden-orange sun, a deep red band under the sky at the horizon, pinks and magenta
+// streaking across most of the sky, violet overhead, and clouds painted cotton-candy colours that keep glowing
+// after the sun has gone. Shared by the sky, the clouds and the ground light so they all agree.
+// e is the sine of the sun's elevation.
+// ---------------------------------------------------------------------------------------------------------------
+
+// 0 outside the sunset/sunrise window, 1 through its heart (from well before sunset to the end of afterglow).
+float sunsetWindow(float e) {
+    return smoothstep(-0.20, -0.04, e) * (1.0 - smoothstep(0.10, 0.34, e));
+}
+
+// Colour of the sunlight reaching clouds and the land as the sun sinks: gold, then orange, coral pink,
+// magenta, and a last crimson-violet glow on the highest clouds.
+vec3 sunsetLightTint(float e) {
+    const vec3 gold    = vec3(1.00, 0.66, 0.30);
+    const vec3 orange  = vec3(1.00, 0.44, 0.15);
+    const vec3 coral   = vec3(1.00, 0.33, 0.30);
+    const vec3 magenta = vec3(0.92, 0.22, 0.48);
+    const vec3 crimson = vec3(0.60, 0.10, 0.30);
+    vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.07, e));
+    c = mix(c, coral, smoothstep(-0.07, -0.015, e));
+    c = mix(c, orange, smoothstep(-0.015, 0.05, e));
+    c = mix(c, gold, smoothstep(0.05, 0.18, e));
+    return c;
+}
+
+// Sunlight on clouds: they sit hundreds of blocks up and keep catching the sun for a while after it has set
+// for the ground. Intensity follows the transmittance of a just-above-horizon path, fading out as the sun sinks
+// far enough that even the highest clouds are in Earth's shadow.
+vec3 cloudSunsetLight(vec3 sunDir) {
+    float e = sunDir.y;
+    vec3 tPhys = sunTransmittance(normalize(vec3(sunDir.x, max(e, 0.015), sunDir.z)));
+    float lum = max(luminance(tPhys), 0.02);
+    float lit = smoothstep(-0.16, -0.02, e);
+    return sunsetLightTint(e) * lum * 2.2 * lit * SUN_ILLUMINANCE;
+}
+
 vec3 twilightGlow(vec3 rd, vec3 sunDir) {
-    float e = sunDir.y;                               // sine of sun elevation
-    if (e > 0.12 || e < -0.25) return vec3(0.0);
+    float e = sunDir.y;
+    float w = sunsetWindow(e);
+    if (w <= 0.0) return vec3(0.0);
     vec3 flatV = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
     vec3 flatS = normalize(vec3(sunDir.x, 0.0, sunDir.z) + vec3(1e-5));
     float az = dot(flatV, flatS);                     // 1 toward the sun, -1 away
     float up = max(rd.y, 0.0);
+    float toward = max(az * 0.5 + 0.5, 0.0);
+    float away = 1.0 - toward;
+    // How far past sunset: 0 while the sun is up, 1 in late afterglow.
+    float dusk = smoothstep(0.03, -0.12, e);
     vec3 col = vec3(0.0);
 
-    // The afterglow peaks as the sun reaches the horizon, then lingers while the last direct light
-    // travels through the upper atmosphere. Separate angular layers make the progression legible:
-    // amber at the horizon, rose above it, then a cool violet shoulder.
-    float glowT = smoothstep(-0.22, -0.02, e) * (1.0 - smoothstep(0.03, 0.15, e));
-    float toward = pow(max(az * 0.5 + 0.5, 0.0), 1.8);
-    float gold = exp(-sqr((up - 0.018) / 0.047));
-    float rose = exp(-sqr((up - 0.105) / 0.095));
-    float violet = exp(-sqr((up - 0.24) / 0.19));
-    col += vec3(1.00, 0.30, 0.075) * gold * toward * glowT * 0.55;
-    col += vec3(0.96, 0.20, 0.34) * rose * toward * glowT * 0.36;
-    col += vec3(0.34, 0.24, 0.68) * violet * toward * glowT * 0.095;
-
-    // Belt of Venus over the anti-solar horizon, above Earth's shadow.
-    float beltT = smoothstep(0.08, 0.0, e) * smoothstep(-0.14, -0.02, e);
-    float away = pow(-az * 0.5 + 0.5, 2.0);
-    float shadowTop = mix(0.0, 0.14, smoothstep(0.02, -0.12, e));
-    float belt = exp(-sqr((up - shadowTop - 0.07) / 0.06));
-    col += vec3(1.0, 0.48, 0.62) * belt * away * beltT * 0.018;
-    return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
+    // Deep red band hugging the horizon under the sunset point, widening as the sun sets.
+    float band = exp(-up / mix(0.035, 0.06, dusk)) * pow(toward, 1.3);
+    col += vec3(1.0, 0.16, 0.05) * band * 0.55;
+    // Golden-orange glow around the sun while it is up and just after.
+    float nearSun = exp(-acos(clamp(dot(rd, sunDir), -1.0, 1.0)) / 0.32) * (1.0 - dusk * 0.6);
+    col += vec3(1.0, 0.52, 0.16) * nearSun * 0.45;
+    // Pink streaks: a broad rose layer across most of the sky (strongest toward the sun, still present
+    // opposite it), broken into long bands by a slow noise so it reads as light through high haze.
+    float streak = 0.65 + 0.35 * valueNoise(vec2(flatV.x * 2.4 + up * 5.0, flatV.z * 2.4 + up * 11.0 + 3.1));
+    float rose = exp(-sqr((up - mix(0.10, 0.16, dusk)) / 0.16)) * (0.35 + 0.65 * pow(toward, 0.8));
+    col += vec3(1.0, 0.30, 0.52) * rose * streak * mix(0.42, 0.46, dusk);
+    // Magenta and violet higher up as the sun sinks.
+    float mag = exp(-sqr((up - 0.33) / 0.24)) * (0.3 + 0.7 * toward);
+    col += vec3(0.72, 0.22, 0.72) * mag * mix(0.06, 0.16, dusk);
+    // Belt of Venus: pink over the opposite horizon, above the rising blue of Earth's shadow.
+    float shadowTop = mix(0.0, 0.14, dusk);
+    float belt = exp(-sqr((up - shadowTop - 0.07) / 0.07)) * pow(away, 1.5);
+    col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * smoothstep(0.1, 0.0, e);
+    return col * w * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0 * SUNSET_VIVIDNESS;
 }
 
 float endFbm(vec2 p) {

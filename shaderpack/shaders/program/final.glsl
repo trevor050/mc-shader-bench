@@ -19,6 +19,7 @@ uniform float frameTimeCounter;
 #ifdef VERTEX
 out vec2 texcoord;
 flat out vec3 whiteBalance;
+flat out float sunsetGrade;
 uniform vec3 sunPosition;
 void main() {
     gl_Position = ftransform();
@@ -28,7 +29,9 @@ void main() {
     vec3 sd = normalize(mat3(gbufferModelViewInverse) * sunPosition);
     vec3 sunCol = sunTransmittance(sd);
     sunCol /= max(luminance(sunCol), 1e-4);
-    float strength = 0.85 * smoothstep(0.08, 0.45, sd.y);
+    // (Starting at 0.08 neutralized most of golden hour's gold.)
+    float strength = 0.85 * smoothstep(0.25, 0.6, sd.y);
+    sunsetGrade = sunsetWindow(sd.y);
     whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
     whiteBalance /= luminance(whiteBalance);
 }
@@ -107,6 +110,7 @@ vec3 sunStreaks(vec2 uv) {
 
 in vec2 texcoord;
 flat in vec3 whiteBalance;
+flat in float sunsetGrade;
 layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -214,7 +218,9 @@ vec3 colorGrade(vec3 c) {
     hsv.y *= 1.0 + green * 0.08 + blue * 0.12 + warm * 0.04;
     hsv.z *= 1.0 - blue * 0.04 * hsv.y;
     // Vibrance.
-    hsv.y = saturate(hsv.y * (1.0 + GRADE_VIBRANCE * (1.0 - hsv.y)));
+    // Sunset and sunrise: colours run richer (the warm/pink palette should read vivid, not dusty).
+    float vib = GRADE_VIBRANCE * (1.0 + 1.2 * sunsetGrade);
+    hsv.y = saturate(hsv.y * (1.0 + vib * (1.0 - hsv.y)) * (1.0 + 0.12 * sunsetGrade));
     c = hsv2rgb(hsv);
 
     float l = luminance(c);

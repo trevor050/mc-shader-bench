@@ -204,7 +204,8 @@ void main() {
     float mu = dot(rd, envLightDir);
     // Air: thin haze whose shafts are strongest along the long, golden light path of a low sun.
     float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
-    float airSigma = 2.6e-4 * (0.35 + 0.6 * lowSun + rainStrength);
+    // (A stronger low-sun boost veiled golden hour in milky haze.)
+    float airSigma = 2.6e-4 * (0.35 + 0.22 * lowSun + rainStrength);
     float airPhase = phaseMie(mu, 0.6) * 0.5 + 0.08;
     // Mist: water droplets, strongly forward scattering but with a broad isotropic share.
     float mistPhase = mix(hgPhase(mu, 0.55), 1.0 / (4.0 * PI), 0.45);

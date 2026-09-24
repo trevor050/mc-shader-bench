@@ -133,7 +133,11 @@ void cuLightAndAmbient(CuTime t, LightEnv env, out vec3 lightColor, out vec3 amb
     vec3 noonClearLightColor = vec3(0.65, 0.55, 0.375) * 2.05;
     vec3 noonClearAmbientColor = pow(skyColor, vec3(0.75)) * 0.85;
     vec3 sunsetClearLightColor = pow(vec3(0.64, 0.45, 0.3), vec3(1.5 + t.invNoonFactor)) * 5.0;
-    vec3 sunsetClearAmbientColor = noonClearAmbientColor * vec3(1.21, 0.92, 0.76) * 0.95;
+    // Golden hour: the shared sunset palette (gold -> orange as the sun sinks), a little brighter than
+    // Complementary's, so everything it touches glows. Shade stays cool violet from the sky: the warm/cool
+    // contrast is what makes golden hour look like golden hour.
+    sunsetClearLightColor = sunsetLightTint(env.sunDir.y) * cuLuminance(sunsetClearLightColor) * 1.3;
+    vec3 sunsetClearAmbientColor = noonClearAmbientColor * vec3(1.02, 0.86, 1.12);
     vec3 nightClearLightColor = 0.9 * vec3(0.15, 0.14, 0.20) * (0.4 + t.vsBrightness * 0.4);
     vec3 nightClearAmbientColor = 0.9 * vec3(0.09, 0.12, 0.17) * (1.55 + t.vsBrightness * 0.77);
     vec3 dayRainLightColor = vec3(0.21, 0.16, 0.13) * 0.85 + t.noonFactor * vec3(0.0, 0.02, 0.06);
@@ -144,7 +148,7 @@ void cuLightAndAmbient(CuTime t, LightEnv env, out vec3 lightColor, out vec3 amb
     vec3 dayLightColor = mix(sunsetClearLightColor, noonClearLightColor, t.noonFactor);
     // Our physical sky's transmittance colour, carried into the day palette as a hue (luminance kept).
     vec3 skyHue = env.directLight / max(cuLuminance(env.directLight), 1e-5);
-    dayLightColor = mix(dayLightColor, skyHue * cuLuminance(dayLightColor), 0.35);
+    dayLightColor = mix(dayLightColor, skyHue * cuLuminance(dayLightColor), mix(0.35, 0.1, sunsetWindow(env.sunDir.y)));
     vec3 dayAmbientColor = mix(sunsetClearAmbientColor, noonClearAmbientColor, t.noonFactor);
     vec3 clearLightColor = mix(nightClearLightColor, dayLightColor, t.sunVisibility2);
     vec3 clearAmbientColor = mix(nightClearAmbientColor, dayAmbientColor, t.sunVisibility2);

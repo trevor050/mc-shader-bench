@@ -9,6 +9,7 @@
 #define WAVE_STRENGTH 1.0
 
 #define SUN_ILLUMINANCE 16.0
+#define SUNSET_VIVIDNESS 1.4     // strength of the sunset sky palette (red band, gold, pinks, magenta)
 #define SUN_LOW_RADIANCE 6000.0   // low sun's disc radiance once above the horizon (blinding)
 #define SUN_DISC_RADIUS 0.0125    // angular radius (radians) of the low sun's visible disc
 #define MOON_ILLUMINANCE 0.02
