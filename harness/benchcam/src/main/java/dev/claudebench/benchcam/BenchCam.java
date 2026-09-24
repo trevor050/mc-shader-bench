@@ -70,9 +70,15 @@ public final class BenchCam implements ClientModInitializer {
 				}
 			}
 		});
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> DhNetherRadiusTrial.disconnect());
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
+			DhNetherRadiusTrial.disconnect();
+			VanillaRenderDistanceTrial.disconnect(mc);
+		});
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> DhNetherRadiusTrial.join());
-		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> DhNetherRadiusTrial.clear());
+		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
+			DhNetherRadiusTrial.clear();
+			VanillaRenderDistanceTrial.clientStopping(mc);
+		});
 
 		int port = Integer.getInteger("benchcam.port", DEFAULT_PORT);
 		Thread server = new Thread(() -> serve(port), "BenchCam-Server");
@@ -124,6 +130,7 @@ public final class BenchCam implements ClientModInitializer {
 
 		return switch (verb) {
 			case "ping" -> CompletableFuture.completedFuture("ok pong");
+			case "rdtrial" -> onRenderThread(() -> VanillaRenderDistanceTrial.command(arg, mc));
 			case "dhstatus" -> onRenderThread(() -> DhNetherRadiusTrial.status(mc));
 			case "dhtrial" -> onRenderThread(() -> DhNetherRadiusTrial.command(arg, mc));
 			case "dhend" -> onRenderThread(() -> DhNetherRadiusTrial.endCommand(arg, mc));
