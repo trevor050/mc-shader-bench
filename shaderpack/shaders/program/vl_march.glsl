@@ -179,7 +179,8 @@ void main() {
         float sigma = storm.x * mix(0.08, 1.0, smoothstep(6.0, 60.0, tm));
         vec3 light = endStormLight(wp, frameTimeCounter, storm.y, bolt);
         float stepT = exp(-sigma * stepLen);
-        scatter += trans * light * 0.8 * (1.0 - stepT);
+        // Low albedo: heavy, dark storm; the lightning and the core glow do the lighting.
+        scatter += trans * light * 0.6 * (1.0 - stepT);
         trans *= stepT;
     }
     outScatter = vec4(scatter, trans);

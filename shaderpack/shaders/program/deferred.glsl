@@ -300,7 +300,8 @@ void main() {
             float occ = endStorm(wp + toCore * 25.0, frameTimeCounter).x * 30.0
                       + endStorm(wp + toCore * 70.0, frameTimeCounter).x * 60.0
                       + endStorm(wp + toCore * 150.0, frameTimeCounter).x * 100.0;
-            shadow = vec3(exp(-occ * 1.2));
+            // The core's heartbeat reaches the ground too.
+            shadow = vec3(exp(-occ * 1.2)) * (0.8 + 0.45 * endPulse(frameTimeCounter));
         }
 #endif
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.

@@ -42,8 +42,15 @@ vec2 endStorm(vec3 p, float t) {
     // Vertical extent: from the void up far past the pillars.
     float band = smoothstep(-60.0, 20.0, p.y) * (1.0 - smoothstep(300.0, 420.0, p.y));
     float voidMist = exp(-max(p.y + 10.0, 0.0) / 30.0);
-    float sigma = clump * band * eye * (0.02 + 0.07 * wall) + voidMist * 0.006 + 0.0004;
+    float sigma = clump * band * eye * (0.026 + 0.085 * wall) + voidMist * 0.007 + 0.0005;
     return vec2(sigma, n.a);
+}
+
+// Heartbeat: a slow double thump every ~4.8 s. The vortex core and the abyss below pulse with it, as if
+// something alive were down there (Trevor: "fantastical... almost horrifying").
+float endPulse(float t) {
+    float x = fract(t / 4.8);
+    return exp(-sqr((x - 0.10) / 0.035)) + 0.65 * exp(-sqr((x - 0.24) / 0.035));
 }
 
 // Lightning in the eye wall: returns (world position of the current bolt, brightness). A new strike every few
@@ -67,10 +74,13 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float d = length(toCore);
     vec3 l = toCore / max(d, 1e-3);
     float occ = endStorm(p + l * 14.0, t).x * 14.0 + endStorm(p + l * 40.0, t).x * 26.0;
-    vec3 core = vec3(0.7, 0.8, 1.0) * 1.0 * exp(-d / 180.0) * exp(-occ * 1.6);
-    vec3 ambient = mix(vec3(0.24, 0.07, 0.40), vec3(0.36, 0.06, 0.30), smoothstep(0.3, 0.7, variation));
-    ambient = mix(ambient, vec3(0.06, 0.20, 0.26), smoothstep(0.82, 0.95, variation) * 0.6);
-    vec3 voidGlow = vec3(0.5, 0.06, 0.4) * exp(-max(p.y + 20.0, 0.0) / 45.0);
-    vec3 flash = vec3(0.8, 0.55, 1.0) * 14.0 * bolt.w * exp(-length(p - bolt.xyz) / 70.0);
-    return core + ambient * 0.17 + voidGlow * 0.35 + flash;
+    float pulse = endPulse(t);
+    // A baleful magenta-violet core (no white: it washed the storm out to grey), swelling with the heartbeat.
+    vec3 core = vec3(0.8, 0.22, 1.0) * (0.8 + 0.6 * pulse) * exp(-d / 170.0) * exp(-occ * 1.8);
+    // Bruised, dark cloud bodies: deep violet and wine, with rare teal.
+    vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
+    ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
+    vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.7 + 0.8 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
+    vec3 flash = vec3(0.9, 0.5, 1.0) * 16.0 * bolt.w * exp(-length(p - bolt.xyz) / 70.0);
+    return core + ambient * 0.12 + voidGlow * 0.4 + flash;
 }
