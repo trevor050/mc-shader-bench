@@ -71,6 +71,12 @@ vec3 sunRays(vec2 uv) {
 }
 
 void main() {
+#if defined DIM_NETHER || defined DIM_END
+    // These dimensions have no solar disc or atmospheric scattering. Keep the target explicitly zero so final
+    // can use its common additive composite without sampling stale rays.
+    outRays = vec4(0.0);
+#else
     outRays = vec4(sunRays(texcoord), 1.0);
+#endif
 }
 #endif
