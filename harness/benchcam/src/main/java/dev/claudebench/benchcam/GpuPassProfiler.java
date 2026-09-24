@@ -18,7 +18,7 @@ import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL33C;
 
-/** Render-thread-only GL timer queries for Iris composite passes; disk output is off-thread. */
+/** Render-thread-only GL timer queries for Iris passes; disk output is off-thread. */
 public final class GpuPassProfiler {
 	private static final int MAX_QUERIES = 512;
 	private static final int POLL_AFTER_FRAMES = 4;
