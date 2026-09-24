@@ -190,7 +190,7 @@ void main() {
         // Reconstructing the direction from the far-plane depth loses precision; stars need an exact ray.
         vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
-#ifndef DIM_END
+#if !defined DIM_END && !defined DIM_NETHER
         col += moonSky(starDir, -sunDir);
 #endif
 #if !defined DIM_NETHER && !defined DIM_END
@@ -212,10 +212,13 @@ void main() {
             }
         }
 #endif
+#ifndef DIM_NETHER
+        // The Nether has no sky: no stars or Milky Way (found by Codex's perf audit).
         if (night > 0.0 && rainStrength < 1.0 && starDir.y > -0.02) {
             col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
                             vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
         }
+#endif
 #if defined DIM_NETHER || defined DIM_END
         col += gAlbedo.rgb;
 #endif

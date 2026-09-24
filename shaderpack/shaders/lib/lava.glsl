@@ -80,16 +80,22 @@ vec3 lavaPoolTint(float heat) {
 
 // Pool heat at a (texel-quantized) position. shore: 0 far from rock, 1 touching it.
 float lavaPoolHeat(vec2 q, float broadHeat, float spriteDetail, float shore, float time) {
-    // Warp the cell domain so cells are irregular blobs, not a honeycomb.
-    vec2 w = vec2(valueNoise(q * 0.19 + 3.7), valueNoise(q * 0.19 + 9.1)) - 0.5;
-    vec3 c = lavaCells((q + w * 5.0) / 9.0, time);
-    // Only a few cells well up (about a quarter), and they pulse slowly.
+    // Flow frame: a slowly turning current direction. Everything is stretched along it, so hot upwellings drag
+    // out into streaks and cooler skin into drifting bands: it reads as moving liquid, not a floor with spots.
+    float angle = (valueNoise(q * 0.018 + 5.3) - 0.5) * 3.2;
+    vec2 dir = vec2(cos(angle), sin(angle));
+    vec2 qs = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+    qs.y *= 2.4;
+    qs.x -= time * 0.35;
+    vec2 w = vec2(valueNoise(qs * 0.17 + 3.7), valueNoise(qs * 0.17 + 9.1)) - 0.5;
+    vec3 c = lavaCells((qs + w * 5.0) / 9.0, time);
+    // A quarter of the cells well up, pulsing slowly; smaller, hotter cores with a soft molten halo.
     float pulse = 0.55 + 0.45 * sin(time * (0.35 + 0.4 * c.z) + c.z * TAU);
-    float upwell = exp(-c.x * c.x * 7.0) * pulse * smoothstep(0.7, 0.8, c.z);
-    // Cooling seams only appear in patches (a slow mask), as thin dark-red lines: the body stays molten.
-    float seamMask = smoothstep(0.58, 0.8, valueNoise(q * 0.045 + time * 0.004));
-    float seam = (1.0 - smoothstep(0.0, 0.045, c.y - c.x)) * seamMask;
-    float h = 0.42 + (broadHeat - 0.5) * 0.5 + upwell * 0.55 - seam * 0.2 + spriteDetail;
+    float core = exp(-c.x * c.x * 14.0) * 0.55 + exp(-c.x * c.x * 4.0) * 0.25;
+    float upwell = core * pulse * smoothstep(0.7, 0.8, c.z);
+    // Cooler skin: streaky drifting bands of deeper red (no cracks, which read as dried mud).
+    float skin = smoothstep(0.55, 0.85, valueNoise(qs * vec2(0.05, 0.22) + vec2(time * 0.02, 0.0)));
+    float h = 0.44 + (broadHeat - 0.5) * 0.45 + upwell - skin * 0.2 + spriteDetail;
     // Where lava meets rock: a thin white-hot contact line with a slightly cooler band just behind it.
     h += shore * shore * 0.55 - smoothstep(0.25, 0.7, shore) * (1.0 - shore) * 0.25;
     return h;
