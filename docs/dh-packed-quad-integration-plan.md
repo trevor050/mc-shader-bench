@@ -1,8 +1,9 @@
 # Lossless DH terrain quad storage trial
 
 Status: source plan only. No patched DH or Iris jar has been built or installed. The isolated
-CPU codec at `C:\Users\Trevor\codeprojects\mc-shader-bench-dh-quad-codec-poc` has written but
-unrun tests. Its descriptor models a 64-byte expanded quad as 24 bytes; the possible 62.5%
+CPU codec at `C:\Users\Trevor\codeprojects\mc-shader-bench-dh-quad-codec-poc` passed six
+deterministic tests after correcting the light nibble order against DH source. Its descriptor
+models a 64-byte expanded quad as 24 bytes; the possible 62.5%
 saving applies to **terrain vertex storage only**, not total DH storage or resident VRAM.
 
 ## First attribution gate
@@ -16,7 +17,7 @@ geometry or unused capacity. Measure pending delete bytes and age across dimensi
 before changing DH cleanup behavior.
 
 Proceed with packed terrain integration only if vertex storage is a material part of the
-footprint. Run the CPU codec tests and compare decoded bytes against real legacy DH output
+footprint. Compare decoded bytes against real legacy DH output
 before claiming losslessness.
 
 ## Coordinated patch seams
