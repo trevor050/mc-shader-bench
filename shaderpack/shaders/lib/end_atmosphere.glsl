@@ -138,9 +138,10 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
     ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
     vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.7 + 0.8 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
-    // Flashes light the storm near the bolt hard, and everything else a little (the whole storm lights up).
+    // Flashes light the storm around the bolt only: a storm-wide term washed the whole view flat purple for a
+    // moment (it lingered through the temporal accumulation).
     float bd = length(p - bolt.xyz);
-    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * (16.0 * exp(-bd / 70.0) + 1.2 * exp(-bd / 400.0));
+    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * 16.0 * exp(-bd / 70.0);
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
 

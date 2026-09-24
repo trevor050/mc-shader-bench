@@ -244,8 +244,8 @@ vec3 endStormCamera(vec2 uv) {
     // Buffeting: a fast, low-frequency wobble of the whole image.
     vec2 wob = vec2(valueNoise(vec2(t * 7.0, 0.3)), valueNoise(vec2(1.7, t * 6.0))) - 0.5;
     uv += wob * (0.0015 + 0.004 * gust) * I;
-    // Wind smear: 9 taps along the wind, weighted toward the centre, swelling with gusts.
-    float len = (0.002 + 0.016 * gust) * I * I;
+    // Wind smear: only during gusts (a constant blur read as bad focus, not wind).
+    float len = 0.016 * gust * gust * I * I;
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
     for (int k = -4; k <= 4; k++) {
@@ -253,7 +253,36 @@ vec3 endStormCamera(vec2 uv) {
         acc += texture(colortex0, uv + dir * len * float(k) / 4.0).rgb * w;
         wsum += w;
     }
-    return acc / wsum;
+    vec3 col = acc / wsum;
+
+    // Grit hitting the lens: soot and dust tearing across the view along the wind, in three depth layers. The
+    // nearest layer is large, soft and out of focus (dust right at your face), the far ones fine and fast. How
+    // much hits you follows the gusts and the storm.
+    float aspect = viewWidth / viewHeight;
+    vec2 p0 = vec2(uv.x * aspect, uv.y);
+    vec2 d = normalize(vec2(dir.x * aspect, dir.y));
+    vec2 n = vec2(-d.y, d.x);
+    vec2 q = vec2(dot(p0, d), dot(p0, n));
+    float amount = I * (0.35 + 0.65 * gust);
+    for (int layer = 0; layer < 3; layer++) {
+        float fl = float(layer);
+        float cells = mix(5.0, 16.0, fl / 2.0);
+        float speed = mix(3.2, 1.6, fl / 2.0);
+        vec2 g = q * cells - vec2(speed * cells * t, fl * 17.3);
+        vec2 cell = floor(g);
+        vec2 f = fract(g);
+        float h = hash12(cell + fl * 31.7);
+        if (h > 0.12 + 0.3 * amount) continue;
+        vec2 c = vec2(0.5, 0.2 + 0.6 * hash12(cell + 7.1 + fl));
+        // A short streak along the wind: long axis ~70% of the cell, thin across, soft ends.
+        vec2 r = f - c;
+        float along = 1.0 - smoothstep(0.1, 0.35, abs(r.x));
+        float thick = mix(0.09, 0.025, fl / 2.0);
+        float across = 1.0 - smoothstep(thick * 0.3, thick, abs(r.y));
+        float a = along * across * mix(0.35, 0.6, fl / 2.0) * amount;
+        col = mix(col, vec3(0.018, 0.01, 0.028), a);
+    }
+    return col;
 }
 #endif
 
