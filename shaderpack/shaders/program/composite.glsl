@@ -271,18 +271,6 @@ void main() {
     {
         vec4 storm = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * storm.a + storm.rgb;
-        // Being inside it: lightning blinds for an instant (the whole view flares violet with a colour split),
-        // gusts shudder the image, and the edges of vision close in as the storm rages.
-        float I = endStormIntensity();
-        vec4 bolt = endLightning(frameTimeCounter);
-        vec2 shake = (vec2(valueNoise(vec2(frameTimeCounter * 23.0, 1.0)), valueNoise(vec2(3.0, frameTimeCounter * 19.0))) - 0.5)
-                   * 0.003 * bolt.w;
-        float split = 0.001 * bolt.w;
-        if (split > 1e-4) {
-            vec3 r = texture(colortex0, texcoord + shake + vec2(split, 0.0)).rgb;
-            vec3 b = texture(colortex0, texcoord + shake - vec2(split, 0.0)).rgb;
-            col = vec3(mix(col.r, r.r, 0.6), col.g, mix(col.b, b.b, 0.6));
-        }
         // (No full-screen flare: the End's scene values are ~0.02-0.05, so even a +0.02 flare nearly doubled every
         // pixel on each strike and washed the view purple. The strike lights the clouds near the bolt instead.)
     }

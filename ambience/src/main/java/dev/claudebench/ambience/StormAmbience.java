@@ -22,6 +22,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 /**
+ * The scary End. With this mod installed, the ClaudeBench shaderpack turns its serene, mystical End into a
+ * terrifying storm (the shader reads the storm state this mod sends; without the mod the End stays calm).
  * The End's storm, as sound. Layered loops (wind drone, sweeping howls, sub rumble, an alien choir, and AmbientSounds'
  * recorded heavy wind and storm when that mod is installed) whose volume follows a storm intensity that rises during
  * the dragon fight, with altitude and with speed. Lightning is decided here and handed to the shaderpack through the
@@ -48,8 +50,6 @@ public final class StormAmbience implements ClientModInitializer {
 	private float gustPeak;
 	private int gustAge = -1;
 	private int gustAttack, gustDecay, nextGust = 40;
-	// Camera sway (trauma model): the last offset applied, so only the change is added each tick.
-	private float swayYaw, swayPitch;
 
 	private record PendingThunder(long dueTick, Vec3 pos, double distance) {}
 
@@ -121,7 +121,7 @@ public final class StormAmbience implements ClientModInitializer {
 		return gustLevel;
 	}
 
-	/** The gale shoves you: gusts push along the vortex's spin and jolt your view, harder while the dragon lives. */
+	/** The gale shoves you along the vortex's spin in gusts, harder while the dragon lives. */
 	private void buffet(Player player, float gust) {
 		Vec3 rel = player.position().subtract(VORTEX);
 		Vec3 tangent = new Vec3(-rel.z, 0.0, rel.x);
@@ -131,23 +131,6 @@ public final class StormAmbience implements ClientModInitializer {
 			double push = 0.014 * intensity * intensity * gust;
 			player.setDeltaMovement(player.getDeltaMovement().add(tangent.x * push, 0.0, tangent.z * push));
 		}
-		// Trauma-model sway (Eiserloh, "Juicing Your Cameras With Math", GDC 2016): shake = trauma^2 times smooth
-		// noise, rotational rather than positional. Only the change in offset is applied each tick, so the aim
-		// sways and settles back instead of drifting.
-		float trauma = Math.min(1.0F, intensity * (0.25F + 0.75F * gust));
-		float shake = trauma * trauma;
-		double tt = ticks / 20.0;
-		float yaw = (float) (smooth(tt * 1.3, 1.7) * 2.2 * shake);
-		float pitch = (float) (smooth(tt * 1.1, 5.3) * 1.3 * shake);
-		player.setYRot(player.getYRot() + (yaw - swayYaw));
-		player.setXRot(Math.max(-90.0F, Math.min(90.0F, player.getXRot() + (pitch - swayPitch))));
-		swayYaw = yaw;
-		swayPitch = pitch;
-	}
-
-	/** Smooth zero-mean noise in [-1, 1]: a few incommensurate sines. */
-	private static double smooth(double t, double seed) {
-		return (Math.sin(t * 1.0 + seed) * 0.5 + Math.sin(t * 2.31 + seed * 3.1) * 0.3 + Math.sin(t * 4.73 + seed * 7.7) * 0.2);
 	}
 
 	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon, float gust) {

@@ -3,7 +3,7 @@
 	"id": "claudebench_ambience",
 	"version": "${version}",
 	"name": "ClaudeBench Ambience",
-	"description": "Storm sound design for the ClaudeBench shaderpack's End: wind, thunder synced with the shader's lightning, an alien drone. Layers AmbientSounds' recordings when that mod is installed.",
+	"description": "The scary End for the ClaudeBench shaderpack. Without it the shaderpack's End is serene and mystical; with it the End becomes a violent alien storm: the eye of a vortex, lightning with thunder, a raging gale you can hear and feel, louder than ever during the dragon fight. Layers AmbientSounds' recordings when that mod is installed.",
 	"license": "MIT",
 	"environment": "client",
 	"entrypoints": {

@@ -19,10 +19,13 @@ const vec3 END_VORTEX_CENTRE = vec3(0.0, 100.0, 0.0);
 const vec3 END_CORE_LIGHT = vec3(0.0, 260.0, 0.0);
 const float END_EYE_RADIUS = 250.0;
 
-// Storm state from the ClaudeBench Ambience mod, carried by the End's unused weather (see StormAmbience):
-// rain = 0.2 + 0.8 * intensity (0.5 at rest, 1.0 during the dragon fight). Without the mod: a moderate storm.
+// Two Ends. Without the ClaudeBench Ambience mod the End is serene and mystical: the open eye, a slowly turning
+// cloud wall, spiral arms and mist in soft lavender and teal light, a gently breathing core, no lightning. The mod
+// is the opt-in scary version: it raises the storm (maelstrom, lightning, heartbeat, darker bruised light) and
+// sends its state through the End's unused weather (rain = 0.2 + 0.8 * intensity, see StormAmbience).
+bool endStormMode() { return rainStrength >= 0.1; }
 float endStormIntensity() {
-    if (rainStrength < 0.1) return 0.55;
+    if (!endStormMode()) return 0.0;
     return saturate((rainStrength - 0.2) / 0.8 * 1.001);
 }
 // Thunder channel from the mod: thunder = (direction * 32 + gust level + flash) / 256 (see StormAmbience);
@@ -66,7 +69,9 @@ vec2 endStorm(vec3 p, float t) {
     // Vertical extent: from the void up far past the pillars.
     float band = smoothstep(-60.0, 20.0, p.y) * (1.0 - smoothstep(300.0, 420.0, p.y));
     float voidMist = exp(-max(p.y + 10.0, 0.0) / 30.0);
-    float sigma = clump * band * eye * (0.026 + 0.085 * wall) + voidMist * 0.007 + 0.0005;
+    // Serene: an open, airy wall. Storm: a dense, looming one.
+    float wallDensity = endStormMode() ? 0.026 + 0.085 * wall : 0.012 + 0.035 * wall;
+    float sigma = clump * band * eye * wallDensity + voidMist * 0.007 + 0.0005;
 
     // Maelstrom: fast, turbulent storm filling everything, the eye included, thicker the harder the storm rages.
     // At full intensity visibility drops to a few dozen blocks.
@@ -76,7 +81,7 @@ vec2 endStorm(vec3 p, float t) {
     float churn = cloudTex(vec3(m.x * 0.011, m.y * 0.017, m.z * 0.011) + 0.23).r * 0.65
                 + cloudTex(vec3(m.z * 0.034, m.y * 0.05, -m.x * 0.034) + 0.61).g * 0.35;
     float maelstrom = smoothstep(0.3, 0.75, churn) * smoothstep(-20.0, 40.0, p.y) * (1.0 - smoothstep(260.0, 380.0, p.y));
-    sigma += maelstrom * (0.004 + 0.05 * I * I) + (0.002 + 0.012 * I * I);
+    if (endStormMode()) sigma += maelstrom * (0.004 + 0.05 * I * I) + (0.002 + 0.012 * I * I);
 
     // The storm reaches into the eye, so it is not only a wall around you (Trevor: from the island it read as a
     // backdrop). Everything here moves fast enough to show parallax against the wall behind it.
@@ -99,6 +104,8 @@ vec2 endStorm(vec3 p, float t) {
 // Heartbeat: a slow double thump every ~4.8 s. The vortex core and the abyss below pulse with it, as if
 // something alive were down there (Trevor: "fantastical... almost horrifying").
 float endPulse(float t) {
+    // Serene: a slow, gentle breath instead of a heartbeat.
+    if (!endStormMode()) return 0.5 + 0.5 * sin(t * TAU / 9.0);
     float x = fract(t / 4.8);
     return exp(-sqr((x - 0.10) / 0.035)) + 0.65 * exp(-sqr((x - 0.24) / 0.035));
 }
@@ -118,6 +125,8 @@ vec4 endLightning(float t) {
         float y = 90.0 + 170.0 * fract(code * 7.31);
         return vec4(END_VORTEX_CENTRE.x + cos(ang) * END_EYE_RADIUS, y, END_VORTEX_CENTRE.z + sin(ang) * END_EYE_RADIUS, flash);
     }
+    // Serene End (no mod): no lightning.
+    return vec4(0.0);
     float slot = floor(t / 5.0);
     float h = hash12(vec2(slot, 7.13));
     float phase = fract(t / 5.0) * 5.0;
@@ -139,7 +148,10 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float pulse = endPulse(t);
     // A baleful magenta-violet core (no white: it washed the storm out to grey), swelling with the heartbeat.
     // Strong and far-reaching, so the storm's sunlit side (toward the core) is bright against dark gaps.
-    vec3 core = vec3(0.85, 0.24, 1.0) * (1.5 + 0.35 * pulse) * exp(-d / 280.0) * exp(-occ * 2.2);
+    bool storm = endStormMode();
+    // Storm: a baleful magenta core. Serene: a soft, luminous violet-blue glow that breathes.
+    vec3 core = storm ? vec3(0.85, 0.24, 1.0) * (1.5 + 0.35 * pulse) * exp(-d / 280.0) * exp(-occ * 2.2)
+                      : vec3(0.62, 0.52, 1.0) * (1.3 + 0.25 * pulse) * exp(-d / 320.0) * exp(-occ * 1.6);
     // Bruised, dark cloud bodies: deep violet and wine, with rare teal.
     vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
     ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
@@ -150,6 +162,12 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float bd = length(p - bolt.xyz);
     // Measured: at 10 * exp(-d / 28) one strike backlit the whole view pink through the fog (+70% frame brightness).
     vec3 flash = vec3(0.85, 0.65, 1.0) * bolt.w * 6.0 * exp(-bd / 24.0);
+    if (!storm) {
+        // Serene: luminous lavender and teal clouds, lighter and cleaner than the storm's bruised tones.
+        vec3 calm = mix(vec3(0.34, 0.24, 0.62), vec3(0.16, 0.38, 0.52), smoothstep(0.35, 0.8, variation));
+        vec3 calmVoid = vec3(0.35, 0.12, 0.55) * exp(-max(p.y + 20.0, 0.0) / 60.0);
+        return core + calm * 0.14 + calmVoid * 0.35;
+    }
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
 
