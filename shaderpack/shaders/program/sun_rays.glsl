@@ -28,11 +28,10 @@ const bool colortex0MipmapEnabled = true;
 
 in vec2 texcoord;
 
-/* RENDERTARGETS: 3,10 */
+/* RENDERTARGETS: 3,7 */
 layout(location = 0) out vec4 outGlareAndRays;
 layout(location = 1) out vec4 outBloom;
-// colortex10 is written by composite and consumed by composite1. composite2/3 do not read it, so this late
-// composite4 write is safe; default Iris buffer flipping exposes the new value to final.
+// The former cloud/VL scratch buffer is dead by composite4, so its slot holds bloom for final.
 
 // Sum of progressively blurrier copies of the frame. Keeping this in the half-resolution pass removes
 // 81 explicit LOD samples per final pixel; the final pass linearly reconstructs the smooth HDR result.
