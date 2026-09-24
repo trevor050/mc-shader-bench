@@ -280,7 +280,8 @@ vec3 endStormCamera(vec2 uv) {
         float thick = mix(0.09, 0.025, fl / 2.0);
         float across = 1.0 - smoothstep(thick * 0.3, thick, abs(r.y));
         float a = along * across * mix(0.35, 0.6, fl / 2.0) * amount;
-        col = mix(col, vec3(0.018, 0.01, 0.028), a);
+        // Dust catches the storm's light: brighter than the air behind it, faintly violet.
+        col = mix(col, col * 2.6 + vec3(0.012, 0.007, 0.018), a);
     }
     return col;
 }
