@@ -28,18 +28,22 @@ uniform sampler2D gtexture;
 #ifdef LIGHT_FIELD
 layout(r32ui) uniform writeonly uimage3D voxelImg;
 
-// The colour a light block casts: a brightness-weighted average over its sprite, so a torch contributes its
-// flame rather than its stick and glowstone its bright crystals rather than the dark grout between them.
+// The colour a light block casts: an average over its sprite weighted hard toward the brightest, most
+// saturated texels, so a torch contributes its flame rather than its stick, glowstone its crystals rather than
+// the grout, and glow berries their fruit rather than the (far more numerous) leaves.
 vec3 emitterColor(vec2 uv, vec2 mid) {
     vec2 halfExtent = abs(uv - mid);
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
-    for (int y = 0; y < 4; y++) {
-        for (int x = 0; x < 4; x++) {
-            vec2 o = (vec2(x, y) - 1.5) / 1.5 * 0.85;
+    for (int y = 0; y < 6; y++) {
+        for (int x = 0; x < 6; x++) {
+            vec2 o = (vec2(x, y) - 2.5) / 2.5 * 0.9;
             vec4 t = textureLod(gtexture, mid + o * halfExtent, 0.0);
             float l = luminance(t.rgb);
-            float w = t.a * l * l * l + 1e-5;
+            float mx = max(t.r, max(t.g, t.b));
+            float sat = (mx - min(t.r, min(t.g, t.b))) / max(mx, 1e-3);
+            float l2 = l * l, l4 = l2 * l2;
+            float w = t.a * l4 * l4 * (0.3 + sat) + 1e-6;
             acc += t.rgb * w;
             wsum += w;
         }
@@ -70,7 +74,14 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
     uint data;
     if (emission > 0.5) {
         vec2 mid = (gl_TextureMatrix[0] * vec4(mc_midTexCoord, 0.0, 1.0)).xy;
-        data = packVoxel(VOXEL_EMITTER, uint(emission + 0.5), emitterColor((gl_TextureMatrix[0] * gl_MultiTexCoord0).xy, mid));
+        vec3 c = emitterColor((gl_TextureMatrix[0] * gl_MultiTexCoord0).xy, mid);
+        uint extra = 0u;
+        // Lava and portals throw extra light beyond Minecraft's range (lava seas light whole caverns); their
+        // colours are fixed so the lava's yellow blobs cannot wash its light out to amber.
+        if (mat == MAT_LAVA) { c = vec3(1.0, 0.3, 0.06); extra = 3u; }
+        else if (mat == MAT_PORTAL) { c = vec3(0.72, 0.22, 1.0); extra = 2u; }
+        else if (c.r > 0.9 && c.b < 0.35) extra = 1u;
+        data = packVoxel(VOXEL_EMITTER, uint(emission + 0.5), c, extra);
     } else if (mat == MAT_WATER) {
         data = packVoxel(VOXEL_TINT, 0u, vec3(0.55, 0.80, 0.85));
     } else if (mat == MAT_LEAVES) {

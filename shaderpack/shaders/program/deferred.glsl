@@ -295,7 +295,7 @@ void main() {
 #endif
         float fieldWeight = 0.0;
 #ifdef FIELD_SHADING
-        surfaceField = FieldLight(vec3(0.0), vec3(0.0), 0.0, 0.0);
+        surfaceField = FieldLight(vec3(0.0), BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR), 0.0, vec3(0.0), 0.0, 0.0);
         if (!isHand && !isLod) surfaceField = sampleLightField(playerPos, n);
         fieldWeight = surfaceField.weight;
 #endif

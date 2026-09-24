@@ -23,7 +23,8 @@
 #define LIGHT_FIELD_KEEP 0.992    // per-step energy kept while diffusing; lower = shorter reach
 //#define LIGHT_FIELD_SELFTEST   // with LIGHT_FIELD_DEBUG: constant green field and unfiltered voxel writes
 //#define LIGHT_FIELD_DEBUG      // paint the raw field and voxel occupancy instead of shading
-#define LIGHT_FIELD_GAIN 0.45     // surface response; 0.45 matches vanilla torch brightness at 1..8 blocks
+#define LIGHT_FIELD_GAIN 0.9      // field amplitude -> radiance for glints and smoke
+#define LIGHT_FIELD_EXTRA_GAIN 2.2 // extra-light channel -> light level (lava seas, portals)
 
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0

@@ -8,7 +8,7 @@
 //    quarter turns and whole-texel offsets map the 16x16 pixel grid onto itself, so every pixel is a genuine,
 //    crisp lava pixel; neighbouring patches just disagree about which one, which reads as separate currents.
 //  - Large, slow heat zones (tens of blocks) push the palette a little toward deep red or toward yellow-white
-//    and scale the emission, and rare upwellings glow white-hot. The sprite still carries all fine detail.
+//    and scale the emission. The sprite still carries all fine detail.
 //  - The shoreline burns where lava meets rock.
 // Falls keep the vanilla flowing sprite and UVs.
 
@@ -61,7 +61,7 @@ vec2 lavaOrient(vec2 v, int k) {
 vec3 lavaGrade(vec3 s, float heat, float hot) {
     float l = luminance(s);
     // Cooler zones: the darker pixels sink toward deep red, bright blobs stay orange.
-    vec3 cool = s * mix(vec3(0.78, 0.46, 0.34), vec3(0.95, 0.8, 0.7), smoothstep(0.45, 0.8, l));
+    vec3 cool = s * mix(vec3(0.8, 0.42, 0.3), vec3(0.95, 0.78, 0.66), smoothstep(0.45, 0.8, l));
     // Hotter zones: bright blobs run toward yellow-white.
     vec3 warm = mix(s, vec3(1.0, 0.86, 0.52), smoothstep(0.5, 0.85, l) * 0.55);
     vec3 c = heat < 0.5 ? mix(cool, s, smoothstep(0.1, 0.5, heat)) : mix(s, warm, smoothstep(0.5, 0.9, heat));
@@ -72,7 +72,9 @@ vec3 lavaGrade(vec3 s, float heat, float hot) {
 // Emission (0..1, lighting squares it). Bright pixels and hot zones blaze; the body glows strongly anyway.
 float lavaEmission(vec3 graded, float heat, float hot) {
     float l = luminance(graded);
-    return saturate(mix(0.62, 0.9, smoothstep(0.3, 0.85, l)) * mix(0.82, 1.1, heat) + hot * 0.25);
+    // Wide spread between the body and the blobs: lighting squares this, so 0.42 vs 0.95 is ~5x, which keeps
+    // the body a deep saturated orange under the tonemapper while the bright blobs blaze.
+    return saturate(mix(0.42, 0.95, smoothstep(0.35, 0.85, l)) * mix(0.85, 1.08, heat) + hot * 0.15);
 }
 
 #ifdef PROG_TERRAIN
@@ -104,11 +106,9 @@ vec4 lavaSurface(vec3 worldPos, vec3 posDx, vec3 posDy, vec3 normal,
     vec3 sprite = textureGrad(gtexture, uv, gx, gy).rgb;
 
     float heat = lavaBroadHeat(q, worldPos.y, time);
-    // Rare upwellings: a small hot core in about one patch in eight, breathing slowly.
-    float well = step(0.87, fract(pch.y * 7.31 + pch.z * 3.17));
-    float core = smoothstep(0.25, 0.75, pch.w);
-    float hot = well * core * (0.55 + 0.45 * sin(time * 0.6 + pch.x * TAU));
-    heat = saturate(heat + hot * 0.3);
+    // No painted hot spots (Trevor: they read as accidents); the life comes from the glow, the light the lava
+    // throws on its surroundings and the smoke above it.
+    const float hot = 0.0;
 
     vec3 c = lavaGrade(sprite, heat, hot);
     float e = lavaEmission(c, heat, hot);

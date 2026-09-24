@@ -47,11 +47,14 @@ LightEnv makeLightEnv(vec3 sunDir) {
     return e;
 }
 
-vec3 blockLight(float lmBlock) {
-    // Inverse-square-ish falloff mapped onto Minecraft's linear light levels.
+// Inverse-square-ish falloff mapped onto Minecraft's linear light levels.
+float blockLightLevel(float lmBlock) {
     float l = lmBlock * lmBlock;
-    float falloff = l / (1.0 + (1.0 - lmBlock) * 22.0);
-    return BLOCKLIGHT_COLOR * BLOCKLIGHT_STRENGTH * falloff;
+    return BLOCKLIGHT_STRENGTH * l / (1.0 + (1.0 - lmBlock) * 22.0);
+}
+
+vec3 blockLight(float lmBlock) {
+    return BLOCKLIGHT_COLOR * blockLightLevel(lmBlock);
 }
 
 #ifdef FIELD_SHADING
@@ -59,19 +62,15 @@ vec3 blockLight(float lmBlock) {
 // not read the voxel field.
 FieldLight surfaceField;
 
-// Block light from the voxel field. The field was read in the open cell in front of the surface, so faces
-// turned away from a source are already darker; the gradient adds a wrap-lit directional term on top.
-// Vanilla's lightmap guards against light the grid cannot see (sources outside it, stale frames).
+// Block light with the voxel field. Brightness follows Minecraft's own light level, which is always right and
+// never lags behind the camera, so nothing turns black where the field has not spread yet. The field adds what
+// vanilla cannot: the light's colour (a lava-lit wall glows orange, a portal-lit one purple, glow berries warm),
+// its direction (faces toward the source are brighter) and extra reach for lava seas and portals.
 vec3 fieldBlockLight(FieldLight f, vec3 n, float lmBlock, float ao) {
+    float level = blockLightLevel(max(lmBlock, f.extra)) * luminance(BLOCKLIGHT_COLOR);
     float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;
-    float directional = mix(1.0, saturate(facing * 0.65 + 0.55) * 1.35, f.focus);
-#ifdef DIM_NETHER
-    // Lava seas outshine Minecraft's 15-block light range; trust the field alone here.
-    float guard = 1.0;
-#else
-    float guard = smoothstep(0.0, 0.12, lmBlock);
-#endif
-    return f.radiance * directional * guard * mix(ao, 1.0, 0.35);
+    float directional = mix(1.0, saturate(facing * 0.5 + 0.6) * 1.25, f.focus * 0.7);
+    return f.hue * level * directional * mix(ao, 1.0, 0.35);
 }
 #endif
 
@@ -127,10 +126,13 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #else
     // The floor only exists near open sky (moonless night, deep overhangs). Sealed caves get almost none, so an
     // unlit cave is dark and only its light sources reveal it.
-    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao * mix(0.06, 1.0, smoothstep(0.0, 0.5, lm.y));
+    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao * mix(0.4, 1.0, smoothstep(0.0, 0.5, lm.y));
 #endif
 
     vec3 col = albedo * (direct / PI + ambient / PI + torch + minLight);
+    // Coloured light soaks into dark surfaces too: blackstone, netherrack and deepslate next to lava pick up an
+    // orange cast instead of staying a neutral dark (after Complementary's AddSpecialLightDetail).
+    col += torch * 0.045 * (1.0 - smoothstep(0.0, 0.3, luminance(albedo))) * ao;
 #if defined DIM_NETHER
     // Obsidian, blackstone and basalt have near-zero albedo. Give those opaque stone surfaces a restrained
     // ashen floor so their texture and face-to-face shape survive exposure without lifting foliage or lava.

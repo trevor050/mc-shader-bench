@@ -23,15 +23,18 @@ uniform ivec3 previousCameraPositionInt;
 uniform int frameCounter;
 uniform float frameTimeCounter;
 
-vec3 previousLight(ivec3 p, bool readA) {
-    if (!voxelInside(p)) return vec3(0.0);
-    return readA ? texelFetch(lightFieldSamplerA, p, 0).rgb : texelFetch(lightFieldSamplerB, p, 0).rgb;
+vec4 previousLight(ivec3 p, bool readA) {
+    if (!voxelInside(p)) return vec4(0.0);
+    return readA ? texelFetch(lightFieldSamplerA, p, 0) : texelFetch(lightFieldSamplerB, p, 0);
 }
 
-vec3 previousLightInterior(ivec3 p, bool readA) {
+vec4 previousLightInterior(ivec3 p, bool readA) {
     // Caller guarantees p and all six axial neighbours are inside the volume.
-    return readA ? texelFetch(lightFieldSamplerA, p, 0).rgb : texelFetch(lightFieldSamplerB, p, 0).rgb;
+    return readA ? texelFetch(lightFieldSamplerA, p, 0) : texelFetch(lightFieldSamplerB, p, 0);
 }
+
+// Extra-light energy per class: 1 = fire-like, 2 = nether portal, 3 = lava.
+const float EXTRA_ENERGY[4] = float[4](0.0, 0.05, 0.3, 1.0);
 
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -42,7 +45,7 @@ void main() {
 
     uint data = texelFetch(voxelSampler, pos, 0).r;
     uint type = voxelType(data);
-    vec3 light = vec3(0.0);
+    vec4 light = vec4(0.0);
 
     if (type == VOXEL_EMITTER) {
         float level = float(voxelLevel(data)) / 15.0;
@@ -51,9 +54,10 @@ void main() {
         float warm = saturate((c.r - c.b) * 1.5);
         float phase = hash12(vec2(pos.xz + cameraPositionInt.xz) + float(pos.y + cameraPositionInt.y) * 7.13);
         float flicker = 1.0 + warm * 0.12 * (valueNoise(vec2(frameTimeCounter * 6.0 + phase * 40.0, phase * 13.0)) - 0.5);
-        light = c * pow(level, 2.2) * LIGHT_FIELD_SOURCE * flicker;
+        // Stored squared (energy): strong saturated sources dominate the colour where lights overlap.
+        light = vec4(c * c * pow(level, 2.2) * LIGHT_FIELD_SOURCE, EXTRA_ENERGY[voxelExtra(data)]) * flicker;
     } else if (type != VOXEL_SOLID) {
-        vec3 sum;
+        vec4 sum;
         if (all(greaterThanEqual(prev, ivec3(1))) && all(lessThan(prev, VOXEL_SIZE - 1))) {
             // Interior voxels need no per-neighbour volume bounds checks: all six fetches are in range.
             sum = previousLightInterior(prev + ivec3(1, 0, 0), readA) + previousLightInterior(prev - ivec3(1, 0, 0), readA)
@@ -66,13 +70,16 @@ void main() {
                 + previousLight(prev + ivec3(0, 0, 1), readA) + previousLight(prev - ivec3(0, 0, 1), readA);
         }
         light = sum * (LIGHT_FIELD_KEEP / 6.0);
-        if (type == VOXEL_TINT) light *= voxelColor(data);
+        if (type == VOXEL_TINT) {
+            vec3 tint = voxelColor(data);
+            light *= vec4(tint * tint, dot(tint, vec3(1.0 / 3.0)));
+        }
     }
 
-    light = clamp(light, vec3(0.0), vec3(4000.0)); // one bad value must not flood the volume
+    light = clamp(light, vec4(0.0), vec4(4000.0)); // one bad value must not flood the volume
 #ifdef LIGHT_FIELD_SELFTEST
-    light = vec3(0.0, 6.0, 0.0); // proves this pass runs and later passes read the field
+    light = vec4(0.0, 6.0, 0.0, 0.0); // proves this pass runs and later passes read the field
 #endif
-    if (readA) imageStore(lightFieldB, pos, vec4(light, 1.0));
-    else imageStore(lightFieldA, pos, vec4(light, 1.0));
+    if (readA) imageStore(lightFieldB, pos, light);
+    else imageStore(lightFieldA, pos, light);
 }

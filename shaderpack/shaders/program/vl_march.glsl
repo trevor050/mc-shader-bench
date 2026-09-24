@@ -133,7 +133,7 @@ void main() {
         float fw = voxelEdgeFade(uvw);
         // Local sources light the smoke around them. Near the lava the field replaces most of the analytic
         // sea glow, which only knows about altitude.
-        if (fw > 0.0) light = mix(light, light * 0.35 + lightFieldTap(uvw) * LIGHT_FIELD_GAIN * 0.3 + ambient, fw);
+        if (fw > 0.0) light = mix(light, light * 0.35 + lightFieldTap(uvw) * 0.3 + ambient, fw);
 #endif
         float stepT = exp(-sigma * stepLen);
         // Smoke is dark soot: a low single-scattering albedo keeps it heavy and brown rather than milky.
