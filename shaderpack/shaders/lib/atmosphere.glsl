@@ -98,25 +98,30 @@ uniform vec3 fogColor;
 float netherPlume(vec3 rd, float y) {
     rd = normalize(rd);
     vec2 p = vec2(rd.x * 2.1 + rd.z * 0.72, rd.y * 3.35 + rd.z * 0.28);
-    p.y -= frameTimeCounter * 0.0065;
+    p.y -= frameTimeCounter * 0.018;
     vec2 warp = vec2(valueNoise(p * 0.58 + vec2(4.1, 1.7)),
                      valueNoise(p * 0.58 + vec2(9.2, 6.4))) - 0.5;
     float broad = valueNoise(p * 0.9 + warp * 1.55);
     float wisps = valueNoise(p * 1.9 - warp * 0.65 + vec2(3.7, 11.2));
-    float billow = smoothstep(0.44, 0.72, broad * 0.72 + wisps * 0.28);
+    // Keep the banks sparse enough to read as separate clouds instead of filling the whole sky.
+    float billow = smoothstep(0.66, 0.86, broad * 0.72 + wisps * 0.28);
     float height = smoothstep(27.0, 46.0, y) * (1.0 - smoothstep(118.0, 165.0, y));
     return billow * height;
 }
 
 vec3 netherHaze(vec3 rd, float y, float plume) {
     vec3 tint = toLinear(fogColor);
-    tint = mix(vec3(luminance(tint)), tint, 0.3) / max(luminance(tint), 0.02);
-    vec3 smoke = vec3(0.11, 0.028, 0.008) * mix(vec3(1.0), tint, 0.35);
+    tint = mix(vec3(luminance(tint)), tint, 0.18) / max(luminance(tint), 0.02);
+    vec3 smoke = vec3(0.014, 0.011, 0.010) * mix(vec3(1.0), tint, 0.18);
+    vec3 soot = vec3(0.007, 0.009, 0.010);
     float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
-    // Restore the stronger lava-sea ember lift. Smoke stays warm across biomes rather than going blue.
-    float look = saturate(0.35 - rd.y * 0.65);
+    // Overhead smoke stays ashen; the lava lift concentrates along the horizon and below it.
+    float look = max(1.0 - smoothstep(-0.65, -0.05, rd.y), exp(-abs(rd.y) * 9.0) * 0.12);
     vec3 ember = vec3(1.0, 0.30, 0.045) * (0.12 + 0.55 * nearLava) * look;
-    vec3 litSmoke = vec3(0.55, 0.105, 0.012) * plume;
+    float loft = exp(-max(y - 31.0, 0.0) / 78.0);
+    // Plumes carry soot overhead and catch lava light lower down, with turbulent warm edges.
+    smoke = mix(smoke, soot, plume * (1.0 - loft * 0.60));
+    vec3 litSmoke = vec3(0.62, 0.095, 0.010) * plume * loft * (0.035 + 0.965 * look);
     return smoke + ember * mix(vec3(1.0), tint, 0.08) + litSmoke;
 }
 
