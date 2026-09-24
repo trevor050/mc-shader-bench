@@ -97,13 +97,18 @@ struct CloudColumn {
 
 CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
     CloudColumn c;
-    // One fetch drives the whole column: R = low-deck regions, G = base wobble, B = storm cells.
+    // One fetch drives the regional structure: R = height regions, G = base wobble, B = storm cells.
     vec4 m = cloudTex(vec3(xz / 14000.0, 0.21));
+    // Per-cloud offset at roughly the scale of single clouds, so neighbours never line up into a shelf.
+    float own = cloudTex(vec3(xz / 2300.0, 0.93)).r;
     float region = saturate((m.r - 0.42) / 0.3);
-    c.low = smoothstep(1.0 - w.low - 0.15, 1.0 - w.low + 0.15, region);
-    c.base = mix(300.0, 188.0, c.low) + 90.0 * (m.g - 0.5);
-    // Low decks are flatter (stratocumulus); higher regions build normal cumulus.
-    c.thick = mix(300.0, 150.0, c.low);
+    // Continuous height field: w.low pushes the whole distribution down (low-deck days) or up.
+    float lowness = saturate(smoothstep(0.0, 1.0, 1.0 - region) * (0.4 + w.low));
+    c.low = smoothstep(0.55, 0.95, lowness);
+    c.base = mix(430.0, 185.0, lowness) + 70.0 * (m.g - 0.5) + 110.0 * (own - 0.55);
+    c.base = max(c.base, 180.0);
+    // Low clouds are flatter layers; higher ones build taller cumulus.
+    c.thick = mix(330.0, 140.0, lowness);
     float storm = saturate((m.b - 0.55) / 0.15);
     c.cb = smoothstep(0.55, 0.95, storm) * w.cb * (1.0 - c.low);
     c.thick += c.cb * 520.0;
