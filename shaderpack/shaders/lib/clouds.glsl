@@ -18,6 +18,7 @@
 uniform sampler3D cloudNoise;
 uniform int worldDay;
 uniform int worldTime;
+uniform float thunderStrength;
 
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
@@ -45,6 +46,9 @@ struct CloudWeather {
     float tower;   // how tall cumulus grow
     float cov1;    // altocumulus coverage
     float cirrus;  // cirrus amount
+    float low;     // share of the map under the low deck
+    float lowCov;  // extra coverage in low-deck regions
+    float cb;      // thunderstorm tower strength
 };
 
 CloudWeather cloudWeather() {
@@ -58,40 +62,78 @@ CloudWeather cloudWeather() {
     w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
     w.cov1 = mix(0.05, 0.62, b);
     w.cirrus = mix(0.15, 1.0, c);
+    // Regimes: some days bring a low grey deck over the valleys, some build afternoon thunderstorms.
+    w.low = mix(0.05, 0.75, smoothstep(0.3, 0.8, noise1(t * 0.8 + 131.0)));
+    w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
+    float afternoon = smoothstep(0.1, 0.35, float(worldTime) / 24000.0) * (1.0 - smoothstep(0.45, 0.55, float(worldTime) / 24000.0));
+    w.cb = smoothstep(0.45, 0.85, noise1(t * 0.6 + 97.0)) * mix(0.55, 1.0, afternoon);
     // Rain: thick, low, flat-bottomed overcast.
     w.cov0 = mix(w.cov0, 0.9, rainStrength);
     w.tower = mix(w.tower, 0.8, rainStrength);
     w.cov1 = mix(w.cov1, 0.85, rainStrength);
     w.cirrus *= 1.0 - rainStrength;
+    w.low = mix(w.low, 0.9, rainStrength);
+    w.cb = max(w.cb, thunderStrength);
 #ifdef CLOUD_DEBUG_WEATHER
-    w.cov0 = 0.45; w.tower = 0.8; w.cov1 = 0.0; w.cirrus = 0.0;
+    w.cov0 = 0.42; w.tower = 0.8; w.cov1 = 0.3; w.cirrus = 0.4; w.low = 0.45; w.lowCov = 0.1; w.cb = 1.0;
 #endif
     return w;
 }
 
 vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1.3); }
 
-// Cloud base varies gently across the map so the underside is not one flat sheet.
-float l0Base(vec2 xz) {
-    return L0_BASE + 45.0 * cloudTex(vec3(xz / 9000.0, 0.81)).g;
+// The cumulus volume spans a tall slab; inside it every region picks its own cloud base and depth, so one
+// march covers low decks that hug mountain tops, ordinary fair-weather cumulus higher up, and the occasional
+// thunderstorm tower whose flat anvil spreads out near the top of the slab.
+#define L0_SLAB_BOTTOM 175.0
+#define L0_SLAB_TOP 1080.0
+
+struct CloudColumn {
+    float base;   // cloud base altitude here
+    float thick;  // depth from base to the tallest possible top here
+    float cb;     // 0..1 thunderstorm-cell strength (towers and anvils)
+    float low;    // 0..1 how much this region belongs to the low deck
+};
+
+CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
+    CloudColumn c;
+    // One fetch drives the whole column: R = low-deck regions, G = base wobble, B = storm cells.
+    vec4 m = cloudTex(vec3(xz / 14000.0, 0.21));
+    float region = saturate((m.r - 0.42) / 0.3);
+    c.low = smoothstep(1.0 - w.low - 0.15, 1.0 - w.low + 0.15, region);
+    c.base = mix(300.0, 188.0, c.low) + 90.0 * (m.g - 0.5);
+    // Low decks are flatter (stratocumulus); higher regions build normal cumulus.
+    c.thick = mix(300.0, 150.0, c.low);
+    float storm = saturate((m.b - 0.55) / 0.15);
+    c.cb = smoothstep(0.55, 0.95, storm) * w.cb * (1.0 - c.low);
+    c.thick += c.cb * 520.0;
+    return c;
 }
 
-// Cumulus density. lod 0 = full detail, 1 = no close detail, 2 = shape only (light marches, shadows).
+// Cumulus density. lod -1 = extra close detail, 0 = full detail, 1 = no close detail, 2 = shape only.
 float l0Density(vec3 p, CloudWeather w, int lod) {
+    if (p.y <= L0_SLAB_BOTTOM || p.y >= L0_SLAB_TOP) return 0.0;
     vec3 wind = cloudWind();
-    vec2 cq = (p.xz + wind.xz) / 3000.0;
-    float base = l0Base(p.xz);
-    float h = (p.y - base) / L0_THICK;
+    vec2 xzw = p.xz + wind.xz;
+    CloudColumn col = cloudColumn(xzw, w);
+    float h = (p.y - col.base) / col.thick;
     if (h <= 0.0 || h >= 1.0) return 0.0;
 
     // Coverage map: where cloud cells exist, and a convection field that decides how tall each grows.
+    vec2 cq = xzw / 3000.0;
     vec4 cm = cloudTex(vec3(cq, 0.37));
-    // The raw field spans roughly 0.42..0.69; stretch it to 0..1 so coverage maps to area fraction.
     float field = saturate(((cm.r * 0.7 + cm.g * 0.3) - 0.42) / 0.27);
-    float local = saturate(remap(field, 1.0 - w.cov0 - 0.15, 1.0 - w.cov0 + 0.22, 0.0, 1.0));
+    // Low decks spread wider (more coverage); storm cells merge into one massive body.
+    float cov = w.cov0 + col.low * w.lowCov + col.cb * 0.35;
+    float local = saturate(remap(field, 1.0 - cov - 0.15, 1.0 - cov + 0.22, 0.0, 1.0));
+    // Anvil: near the top of a storm cell the cloud spreads sideways into a flat shelf.
+    float anvil = col.cb * smoothstep(0.72, 0.86, h) * (1.0 - smoothstep(0.96, 1.0, h));
+    local = max(local, anvil * saturate(field * 1.6 + 0.2));
     if (local <= 0.0) return 0.0;
     float convect = saturate((cloudTex(vec3(cq * 0.6 + 0.3, 0.63)).r - 0.45) / 0.28);
     float top = mix(0.38, 1.0, convect * w.tower) * mix(0.6, 1.0, local);
+    // Storm cells reach the full depth.
+    top = mix(top, 1.0, col.cb);
     if (h >= top) return 0.0;
     float hn = h / top;
 
@@ -99,13 +141,13 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
     vec4 n = cloudTex(q * vec3(1.0, 2.6, 1.0));
     float fbm = n.g * 0.625 + n.b * 0.25 + n.a * 0.125;
     float shape = remap(n.r, fbm - 1.0, 1.0, 0.0, 1.0);
-
     // Turrets: in the upper half, a coarse puff field pushes up rounded domes so tops are lumpy rather than
     // one smooth pillow.
     float dome = cloudTex(q * 1.7 + 0.37).g;
-    shape = mix(shape, shape * (0.55 + 0.9 * dome), smoothstep(0.25, 0.75, hn));
-    // Flat base, rounded cauliflower top.
-    float profile = smoothstep(0.0, 0.07, hn) * (1.0 - smoothstep(0.45, 1.0, hn));
+    shape = mix(shape, shape * (0.55 + 0.9 * dome), smoothstep(0.25, 0.75, hn) * (1.0 - anvil));
+    // Flat base; rounded cauliflower top for cumulus, a flat shelf for anvils.
+    float roundTop = 1.0 - smoothstep(0.45, 1.0, hn);
+    float profile = smoothstep(0.0, 0.07, hn) * mix(roundTop, 1.0 - smoothstep(0.9, 1.0, hn), max(anvil, col.low * 0.6));
     float d = saturate(remap(shape * profile, 1.0 - local, 1.0, 0.0, 1.0));
     if (d <= 0.0 || lod >= 2) return sqrt(d) * 1.6;
 
@@ -165,7 +207,7 @@ vec3 cloudScatter(float lightOD, float skyOD, float groundOD, float mu, float po
 vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec3 directLight,
              vec3 skyLight, vec3 groundLight, float dither, out float dist) {
     dist = 1e6;
-    const float bottom = L0_BASE, topAlt = L0_BASE + 45.0 + L0_THICK;
+    const float bottom = L0_SLAB_BOTTOM, topAlt = L0_SLAB_TOP;
     float tb = (bottom - ro.y) / rd.y, tt = (topAlt - ro.y) / rd.y;
     float t0, t1;
     if (ro.y > bottom && ro.y < topAlt) {
@@ -339,22 +381,21 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
     return c;
 }
 
-// Transmittance of direct light through the cumulus layer above a world position.
+// Transmittance of direct light through the cumulus volume above a world position. Taps are spread over the
+// heights where cloud bodies live (low deck to storm towers).
 float cloudShadow(vec3 worldPos, vec3 lightDir) {
     if (lightDir.y < 0.05) return 1.0;
-    // The highest of the four shadow taps is at 87.5% of the sampled 60% slab.
-    // Above it, every tap is skipped and the result is exactly unshadowed.
-    float highestSampleY = L0_BASE + 30.0 + L0_THICK * 0.6 * (3.0 + 0.5) / 4.0;
-    if (worldPos.y > highestSampleY) return 1.0;
+    const float ys[5] = float[5](205.0, 250.0, 310.0, 390.0, 560.0);
+    const float thick[5] = float[5](45.0, 50.0, 70.0, 110.0, 250.0);
+    if (worldPos.y > ys[4]) return 1.0;
     CloudWeather w = cloudWeather();
     float od = 0.0;
-    for (int i = 0; i < 4; i++) {
-        float y = L0_BASE + 30.0 + L0_THICK * 0.6 * (float(i) + 0.5) / 4.0;
-        if (y < worldPos.y) continue;
-        vec3 p = worldPos + lightDir * ((y - worldPos.y) / lightDir.y);
-        od += l0Density(p, w, 2) * L0_THICK * 0.15;
+    for (int i = 0; i < 5; i++) {
+        if (ys[i] < worldPos.y) continue;
+        vec3 p = worldPos + lightDir * ((ys[i] - worldPos.y) / lightDir.y);
+        od += l0Density(p, w, 2) * thick[i];
     }
-    return mix(exp(-od * 0.07), 1.0, 0.12);
+    return mix(exp(-od * 0.05), 1.0, 0.12);
 }
 
 // Tileable caustic pattern (after joltz0r's water shader). Returns roughly 0..1 bright filaments.
