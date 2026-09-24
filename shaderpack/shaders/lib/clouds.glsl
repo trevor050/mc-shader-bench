@@ -24,7 +24,7 @@ uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exi
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
 #define L1_ALT 1150.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
-#define L1_THICK 110.0
+#define L1_THICK 220.0        // deep enough to read as volume from below, not a painted band
 #define L2_ALT 2600.0         // high, fibrous cirrus volume
 #define L2_THICK 180.0
 #define CLOUD_MAX_DIST 18000.0
@@ -62,8 +62,9 @@ CloudWeather cloudWeather() {
     float c = noise1(t * 1.1 + 41.0);
     w.cov0 = mix(0.26, 0.58, a) * CLOUD_COVERAGE / 0.34;
     w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
-    w.cov1 = mix(0.05, 0.62, b);
-    w.cirrus = mix(0.15, 1.0, c);
+    w.cov1 = mix(0.0, 0.45, b);
+    // Cirrus stays a light accent: at full strength the thin high sheet read as flat and painted.
+    w.cirrus = mix(0.0, 0.5, c);
     // Regimes: some days bring a low grey deck over the valleys, some build afternoon thunderstorms.
     w.low = mix(0.05, 0.75, smoothstep(0.3, 0.8, noise1(t * 0.8 + 131.0)));
     w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
@@ -117,21 +118,36 @@ CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
     return c;
 }
 
-// Cumulus density. lod -1 = extra close detail, 0 = full detail, 1 = no close detail, 2 = shape only.
-float l0Density(vec3 p, CloudWeather w, int lod) {
-    if (p.y <= L0_SLAB_BOTTOM || p.y >= L0_SLAB_TOP) return 0.0;
+// Upper deck: in some regions a second, flatter layer of puffy stratocumulus floats well above the first, so
+// clouds stack on clouds and there is a gap to fly between them. Returns thick = 0 where there is none.
+float upperDeckAmount(vec2 xz) {
+    return saturate((cloudTex(vec3(xz / 9000.0, 0.55)).g - 0.48) / 0.2);
+}
+
+CloudColumn upperColumn(vec2 xz, CloudColumn lower, CloudWeather w, float stack) {
+    CloudColumn c;
+    c.base = max(lower.base + mix(lower.thick * 0.55, lower.thick, w.tower) + 110.0, 560.0)
+           + 90.0 * (cloudTex(vec3(xz / 2700.0, 0.71)).r - 0.5);
+    c.thick = stack > 0.0 && c.base + 120.0 < L0_SLAB_TOP ? min(170.0, L0_SLAB_TOP - c.base) : 0.0;
+    c.cb = 0.0;
+    c.low = 0.45;
+    return c;
+}
+
+// One cumulus deck. seed shifts the coverage and shape noise so decks do not mirror each other; covScale
+// thins a deck (upper decks are patchier).
+float cumulusDeck(vec3 p, CloudWeather w, int lod, CloudColumn col, float seed, float covScale) {
     vec3 wind = cloudWind();
     vec2 xzw = p.xz + wind.xz;
-    CloudColumn col = cloudColumn(xzw, w);
     float h = (p.y - col.base) / col.thick;
     if (h <= 0.0 || h >= 1.0) return 0.0;
 
     // Coverage map: where cloud cells exist, and a convection field that decides how tall each grows.
-    vec2 cq = xzw / 3000.0;
+    vec2 cq = xzw / 3000.0 + seed;
     vec4 cm = cloudTex(vec3(cq, 0.37));
     float field = saturate(((cm.r * 0.7 + cm.g * 0.3) - 0.42) / 0.27);
     // Low decks spread wider (more coverage); storm cells merge into one massive body.
-    float cov = w.cov0 + col.low * w.lowCov + col.cb * 0.35;
+    float cov = (w.cov0 + col.low * w.lowCov + col.cb * 0.35) * covScale;
     float local = saturate(remap(field, 1.0 - cov - 0.15, 1.0 - cov + 0.22, 0.0, 1.0));
     // Anvil: near the top of a storm cell the cloud spreads sideways into a flat shelf.
     float anvil = col.cb * smoothstep(0.72, 0.86, h) * (1.0 - smoothstep(0.96, 1.0, h));
@@ -144,7 +160,7 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
     if (h >= top) return 0.0;
     float hn = h / top;
 
-    vec3 q = (p + wind) / 700.0;
+    vec3 q = (p + wind) / 700.0 + seed;
     vec4 n = cloudTex(q * vec3(1.0, 2.6, 1.0));
     float fbm = n.g * 0.625 + n.b * 0.25 + n.a * 0.125;
     float shape = remap(n.r, fbm - 1.0, 1.0, 0.0, 1.0);
@@ -177,6 +193,20 @@ float l0Density(vec3 p, CloudWeather w, int lod) {
     }
     // Dense cores: real cumulus are optically thick a few blocks inside the edge.
     return smoothstep(0.0, 0.45, d) * 1.5;
+}
+
+// Cumulus density. lod -1 = extra close detail, 0 = full detail, 1 = no close detail, 2 = shape only.
+float l0Density(vec3 p, CloudWeather w, int lod) {
+    if (p.y <= L0_SLAB_BOTTOM || p.y >= L0_SLAB_TOP) return 0.0;
+    vec2 xzw = p.xz + cloudWind().xz;
+    CloudColumn col = cloudColumn(xzw, w);
+    float d = cumulusDeck(p, w, lod, col, 0.0, 1.0);
+    if (d > 0.0 || p.y < col.base + col.thick * 0.5) return d;
+    float stack = upperDeckAmount(xzw);
+    if (stack <= 0.0) return 0.0;
+    CloudColumn up = upperColumn(xzw, col, w, stack);
+    if (up.thick <= 0.0) return 0.0;
+    return cumulusDeck(p, w, lod, up, 0.43, 0.75 * smoothstep(0.0, 1.0, stack));
 }
 
 float hgPhase(float mu, float g) {
