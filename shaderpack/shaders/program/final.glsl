@@ -223,8 +223,46 @@ vec3 colorGrade(vec3 c) {
     return saturate(c);
 }
 
+#ifdef DIM_END
+uniform mat4 gbufferModelView;
+uniform vec3 cameraPosition;
+
+// Being inside the End storm, as pure camera effects (Trevor preferred these to any geometry in front of the
+// lens): the image is smeared sideways along the wind as gusts hit, and buffeted by a fast, low wobble. Strength
+// follows the storm intensity the ClaudeBench Ambience mod packs into the End's rain level (see end_atmosphere.glsl).
+vec3 endStormCamera(vec2 uv) {
+    float I = rainStrength < 0.1 ? 0.55 : clamp(fract((rainStrength - 0.2) / 0.8 * 64.0) * 1.01, 0.0, 1.0);
+    float t = frameTimeCounter;
+    float gust = 0.5 + 0.5 * sin(t * 1.3) * sin(t * 0.47 + 1.7);
+    gust = gust * gust;
+    // The gale circles the vortex at the world origin; project its direction onto the screen.
+    vec3 rel = cameraPosition - vec3(0.0, 100.0, 0.0);
+    vec3 windWorld = normalize(vec3(-rel.z, 0.0, rel.x) + vec3(1e-3, 0.0, 0.0));
+    vec3 windView = mat3(gbufferModelView) * windWorld;
+    vec2 dir = length(windView.xy) > 0.05 ? normalize(windView.xy) : vec2(1.0, 0.0);
+    dir.x *= viewHeight / viewWidth;
+    // Buffeting: a fast, low-frequency wobble of the whole image.
+    vec2 wob = vec2(valueNoise(vec2(t * 7.0, 0.3)), valueNoise(vec2(1.7, t * 6.0))) - 0.5;
+    uv += wob * (0.0015 + 0.004 * gust) * I;
+    // Wind smear: 9 taps along the wind, weighted toward the centre, swelling with gusts.
+    float len = (0.002 + 0.016 * gust) * I * I;
+    vec3 acc = vec3(0.0);
+    float wsum = 0.0;
+    for (int k = -4; k <= 4; k++) {
+        float w = 1.0 - abs(float(k)) / 5.0;
+        acc += texture(colortex0, uv + dir * len * float(k) / 4.0).rgb * w;
+        wsum += w;
+    }
+    return acc / wsum;
+}
+#endif
+
 void main() {
+#ifdef DIM_END
+    vec3 col = endStormCamera(texcoord);
+#else
     vec3 col = texture(colortex0, texcoord).rgb;
+#endif
     // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
     col += texture(colortex3, texcoord).rgb;

@@ -285,9 +285,6 @@ void main() {
             col = vec3(mix(col.r, r.r, 0.6), col.g, mix(col.b, b.b, 0.6));
         }
         col += vec3(0.7, 0.35, 1.0) * bolt.w * (0.06 + 0.12 * I);
-        vec3 rayView = projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0);
-        vec3 ray = normalize(mat3(gbufferModelViewInverse) * rayView);
-        col = endGusts(col, ray, sky ? 1e6 : dist, I, bolt);
     }
 #endif
 
