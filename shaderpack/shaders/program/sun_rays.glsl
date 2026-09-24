@@ -107,7 +107,7 @@ vec3 sunRays(vec2 uv) {
         // Opaque vanilla geometry already rejects this tap; avoid the DH depth and color lookups.
         if (texture(depthtex0, p).r >= 1.0) {
             if (texture(dhDepthTex0, p).r >= 1.0)
-                acc += textureLod(colortex0, p, 4.0).rgb * nearSun * decay;
+                acc += max(textureLod(colortex0, p, 4.0).rgb, 0.0) * nearSun * decay;
         }
         // The final two taps are symmetric around the sun because the loop samples at 1.5..48.5 steps.
         if (i < N - 2) nearSun *= nearSunStep;

@@ -132,14 +132,15 @@ void main() {
 
         vec3 history = toYCoCg(sampleHistory(prevUV));
         history = clamp(history, lo, hi);
-        history = fromYCoCg(history);
+        // Clipping in YCoCg can leave RGB slightly negative beside extreme contrast (the sun's disc against the sky).
+        history = max(fromYCoCg(history), 0.0);
 
         float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
         float blend = mix(0.9, 0.75, saturate(velocity / 20.0));
         // (A former "hot pixel" history bypass made the sun re-alias every frame while turning, which read as
         // flicker. The sun's radiance is now soft-capped, so ordinary blending handles it.)
-        float currentLum = luminance(current);
-        float historyLum = luminance(history);
+        float currentLum = max(luminance(current), 0.0);
+        float historyLum = max(luminance(history), 0.0);
         // Weigh by inverse luminance so bright fireflies do not smear.
         float wc = (1.0 - blend) / (1.0 + currentLum);
         float wh = blend / (1.0 + historyLum);
@@ -168,6 +169,10 @@ void main() {
         adapted = isnan(prev) || isinf(prev) || prev == 0.0 ? target : mix(prev, target, 1.0 - exp(-frameTime * rate));
     }
 
+    // Never let a bad value into the persistent history: a negative luminance of -1 once divided the blend by zero,
+    // and the resulting NaN spread through the sun rays into a black circle around the sun.
+    result = max(result, 0.0);
+    if (any(isnan(result)) || any(isinf(result))) result = max(current, 0.0);
     outColor = vec4(result, 1.0);
     outHistory = vec4(result, adapted);
 }
