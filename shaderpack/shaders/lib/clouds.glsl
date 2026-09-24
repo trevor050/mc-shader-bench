@@ -23,8 +23,8 @@ uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exi
 
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
-#define L1_ALT 1220.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
-#define L1_THICK 130.0
+#define L1_ALT 1150.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
+#define L1_THICK 110.0
 #define L2_ALT 2600.0         // high, fibrous cirrus volume
 #define L2_THICK 180.0
 #define CLOUD_MAX_DIST 18000.0
@@ -339,18 +339,24 @@ vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
         float t = t0 + (float(i) + dither) * stepLen;
         vec3 p = ro + rd * t;
         float h = saturate((p.y - L1_ALT) / L1_THICK);
-        vec2 q = (p.xz + wind.xz) / 1450.0;
-        float big = cloudTex(vec3(q * 0.25, 0.13)).r;
-        vec4 n = cloudTex(vec3(q * 2.4, h * 0.16 + 0.5));
-        float cells = n.r * 0.68 + n.g * 0.32;
-        float cov = w.cov1 * smoothstep(0.25, 0.72, big);
-        float local = saturate(remap(cells, 1.0 - cov - 0.18, 1.0 - cov + 0.08, 0.0, 1.0));
-        // A broad, almost-flat underside keeps this layer reading as puffs instead of a rippled ceiling.
-        float profile = smoothstep(0.0, 0.16, h) * (1.0 - smoothstep(0.78, 1.0, h));
-        float d = saturate(local * profile - cloudTex(vec3(q * 7.0, 0.71)).b * 0.2) * 1.25;
+        // Broad cell spacing and a slower weather field make layered banks rather than rows of tiny puffs.
+        vec2 q = (p.xz + wind.xz) / 2400.0;
+        float big = cloudTex(vec3(q * 0.30, 0.13)).r;
+        vec4 n = cloudTex(vec3(q * 1.8, 0.5));
+        float cells = n.r * 0.65 + n.g * 0.35;
+        float weatherCoverage = w.cov1 * mix(0.56, 1.0, smoothstep(0.05, 0.6, rainStrength));
+        float cov = weatherCoverage * smoothstep(0.18, 0.64, big);
+        float local = saturate(remap(cells, 1.0 - cov - 0.13, 1.0 - cov + 0.09, 0.0, 1.0));
+        // Cloud cells reach different heights. Bases stay broad while ragged, lobe-shaped tops leave
+        // visible openings between banks when seen from above.
+        float cellTop = mix(0.38, 1.0, smoothstep(0.3, 0.84, cells));
+        if (h >= cellTop) continue;
+        float hn = h / cellTop;
+        float profile = smoothstep(0.0, 0.12, hn) * (1.0 - smoothstep(0.45, 1.0, hn));
+        float d = saturate(local * profile - cloudTex(vec3(q * 5.5, 0.71)).b * 0.16) * 1.2;
         if (d <= 0.0) continue;
         float lightOD = d * 25.0 / max(lightDir.y, 0.1) * 0.5;
-        const float sigma = 0.05;
+        const float sigma = 0.01;
         vec3 s = cloudScatter(lightOD * sigma, d * 15.0 * sigma, 0.0, mu, 1.0, directLight, skyLight, vec3(0.0));
         float stepT = exp(-d * sigma * stepLen);
         float weight = trans * (1.0 - stepT);
