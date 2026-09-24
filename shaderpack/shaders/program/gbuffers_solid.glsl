@@ -224,10 +224,7 @@ void main() {
     vec3 cell = floor(wp - worldNormal * 0.5);
     albedo.rgb *= 0.93 + 0.14 * hash12(cell.xz + cell.y * vec2(17.3, 5.1));
     if (mat == MAT_LAVA) {
-        float heat;
-        vec2 unusedWarp, unusedWarpDx, unusedWarpDy;
-        lavaPoolFields(lavaPlane(wp, normalize(worldNormal)), wp.y, frameTimeCounter,
-                       vec2(0.0), vec2(0.0), heat, unusedWarp, unusedWarpDx, unusedWarpDy);
+        float heat = lavaBroadHeat(lavaPlane(wp, normalize(worldNormal)), wp.y, frameTimeCounter);
         albedo.rgb *= lavaPoolTint(heat);
     }
 #endif

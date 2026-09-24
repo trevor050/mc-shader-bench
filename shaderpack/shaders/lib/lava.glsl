@@ -1,102 +1,78 @@
-// Lava: Minecraft's own animated sprite, remapped through a heat palette with structure at three scales.
+// Lava: Minecraft's own animated sprite with its own colours, minus the wallpaper repeat.
 //
-// Why pools usually look bad (Solas, vanilla): one noise scale at one brightness, so a lake is a flat mottled
-// sheet with no focal points. Here most of the surface is molten orange, a few convection cells well up
-// white-hot and pulse, their borders cool to deep red seams, broad slow currents move the whole field, and the
-// shoreline burns where lava meets rock. The vanilla pixels still carry the fine detail (their brightness
-// perturbs the heat), and heat is evaluated per sprite texel, so the result stays pixel art rather than a
-// smooth "realistic" surface. Emission scales with heat, so only the hottest parts bloom.
+// Trevor's brief: keep the vanilla look (bright orange blobs on a deep orange body), only stop the same tile
+// from visibly repeating across a lake, and make it hot enough to hurt. So:
+//  - Pools are cut into irregular patches a few blocks across (a jittered, domain-warped Voronoi evaluated on
+//    the sprite's own texel grid, so patch borders are pixel staircases, never smooth curves). Each patch shows
+//    the sprite with its own 90-degree orientation, texel-aligned offset and slow drift direction. Rotations by
+//    quarter turns and whole-texel offsets map the 16x16 pixel grid onto itself, so every pixel is a genuine,
+//    crisp lava pixel; neighbouring patches just disagree about which one, which reads as separate currents.
+//  - Large, slow heat zones (tens of blocks) push the palette a little toward deep red or toward yellow-white
+//    and scale the emission, and rare upwellings glow white-hot. The sprite still carries all fine detail.
+//  - The shoreline burns where lava meets rock.
+// Falls keep the vanilla flowing sprite and UVs.
 
 vec2 lavaPlane(vec3 p, vec3 n) {
     vec3 an = abs(n);
     return an.y >= max(an.x, an.z) ? p.xz : (an.x >= an.z ? p.zy : p.xy);
 }
 
-float lavaValueNoiseGradient(vec2 p, out vec2 gradient) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    vec2 du = 6.0 * f * (1.0 - f);
-    float a = hash12(i);
-    float b = hash12(i + vec2(1.0, 0.0));
-    float c = hash12(i + vec2(0.0, 1.0));
-    float d = hash12(i + vec2(1.0, 1.0));
-    float row0 = mix(a, b, u.x);
-    float row1 = mix(c, d, u.x);
-    gradient = vec2(mix(b - a, d - c, u.y) * du.x, (row1 - row0) * du.y);
-    return mix(row0, row1, u.y);
+// Broad heat field (0..1): two octaves of slowly drifting value noise, ~40 and ~12 blocks.
+float lavaBroadHeat(vec2 p, float worldY, float time) {
+    float broad = valueNoise(p * 0.025 + vec2(time * 0.008, -time * 0.006) + worldY * 0.017);
+    float eddy = valueNoise(p * 0.085 + vec2(-time * 0.018, time * 0.014) + worldY * 0.043);
+    return broad * 0.7 + eddy * 0.3;
 }
 
-// Broad current (~40 blocks) and eddy (~11 blocks) fields. Their slow drift also warps the sprite coordinates,
-// which hides the vanilla tile grid without introducing seams.
-void lavaPoolFields(vec2 p, float worldY, float time, vec2 pDx, vec2 pDy,
-                    out float heat, out vec2 warp, out vec2 warpDx, out vec2 warpDy) {
-    vec2 broadGradient;
-    vec2 eddyGradient;
-    float broad = lavaValueNoiseGradient(p * 0.025 + vec2(time * 0.008, -time * 0.006) + worldY * 0.017, broadGradient);
-    float eddy = lavaValueNoiseGradient(p * 0.09 + vec2(-time * 0.018, time * 0.014) + worldY * 0.043, eddyGradient);
-    heat = broad * 0.74 + eddy * 0.26;
-    warp = (vec2(broad, eddy) - 0.5) * 0.56;
-    warpDx = 0.56 * vec2(dot(broadGradient, pDx * 0.025), dot(eddyGradient, pDx * 0.09));
-    warpDy = 0.56 * vec2(dot(broadGradient, pDy * 0.025), dot(eddyGradient, pDy * 0.09));
+// Kept for the DH far field: broad-scale tint only (DH supplies a flat lava colour).
+vec3 lavaPoolTint(float heat) {
+    return mix(vec3(0.82, 0.62, 0.55), vec3(1.08, 1.1, 1.25), smoothstep(0.25, 0.8, heat));
 }
 
-// Convection cells: F1, F2 distances and a per-cell random, with centres that wander slowly.
-vec3 lavaCells(vec2 p, float time) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float f1 = 8.0, f2 = 8.0, id = 0.0;
+// Patch lookup on the texel grid. Returns three per-patch hashes and the F2-F1 border distance in w.
+vec4 lavaPatch(vec2 q) {
+    // Warp so patches are irregular and vary in size (3-6 blocks).
+    vec2 w = vec2(valueNoise(q * 0.21 + 3.1), valueNoise(q * 0.21 + 8.7)) - 0.5;
+    vec2 s = (q + w * 2.2) / 4.2;
+    vec2 i = floor(s), f = fract(s);
+    float d1 = 8.0, d2 = 8.0;
+    vec2 best = vec2(0.0);
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec2 g = vec2(x, y);
-            float h = hash12(i + g);
-            float h2 = hash12(i + g + 17.17);
-            vec2 o = 0.5 + 0.36 * sin(time * (0.05 + 0.05 * h) + TAU * vec2(h, h2));
+            vec2 o = vec2(hash12(i + g), hash12(i + g + 31.7)) * 0.85 + 0.075;
             float d = length(g + o - f);
-            if (d < f1) { f2 = f1; f1 = d; id = h; }
-            else if (d < f2) f2 = d;
+            if (d < d1) { d2 = d1; d1 = d; best = i + g; }
+            else if (d < d2) d2 = d;
         }
     }
-    return vec3(f1, f2, id);
+    return vec4(hash12(best + 5.3), hash12(best + 11.9), hash12(best + 23.1), d2 - d1);
 }
 
-// Heat (0 = cooling seam, 1 = white-hot) to sRGB albedo. Never brown or black: the coolest lava still glows red.
-vec3 lavaRamp(float h) {
-    h = saturate(h);
-    vec3 c = mix(vec3(0.50, 0.07, 0.02), vec3(0.93, 0.30, 0.035), smoothstep(0.0, 0.42, h));
-    c = mix(c, vec3(1.00, 0.60, 0.12), smoothstep(0.38, 0.74, h));
-    return mix(c, vec3(1.00, 0.93, 0.62), smoothstep(0.72, 1.0, h));
+// Quarter-turn rotation and optional mirror, k in 0..7. Maps the texel grid onto itself.
+vec2 lavaOrient(vec2 v, int k) {
+    if ((k & 4) != 0) v.x = -v.x;
+    if ((k & 1) != 0) v = vec2(-v.y, v.x);
+    if ((k & 2) != 0) v = -v;
+    return v;
 }
 
-// Emission strength stored in the material buffer's emissive channel (0..1); lighting squares it.
-float lavaEmission(float h) {
-    return mix(0.38, 1.0, smoothstep(0.1, 1.0, h));
+// Heat-grade a vanilla lava pixel (sRGB). heat 0..1 from the broad field (0.5 = vanilla).
+vec3 lavaGrade(vec3 s, float heat, float hot) {
+    float l = luminance(s);
+    // Cooler zones: the darker pixels sink toward deep red, bright blobs stay orange.
+    vec3 cool = s * mix(vec3(0.78, 0.46, 0.34), vec3(0.95, 0.8, 0.7), smoothstep(0.45, 0.8, l));
+    // Hotter zones: bright blobs run toward yellow-white.
+    vec3 warm = mix(s, vec3(1.0, 0.86, 0.52), smoothstep(0.5, 0.85, l) * 0.55);
+    vec3 c = heat < 0.5 ? mix(cool, s, smoothstep(0.1, 0.5, heat)) : mix(s, warm, smoothstep(0.5, 0.9, heat));
+    // Upwellings: white-hot cores.
+    return mix(c, vec3(1.0, 0.95, 0.75), hot * (0.35 + 0.65 * smoothstep(0.4, 0.8, l)));
 }
 
-// Kept for the DH far field: broad-scale tint only.
-vec3 lavaPoolTint(float heat) {
-    return lavaRamp(0.3 + heat * 0.5) / vec3(0.93, 0.45, 0.10);
-}
-
-// Pool heat at a (texel-quantized) position. shore: 0 far from rock, 1 touching it.
-float lavaPoolHeat(vec2 q, float broadHeat, float spriteDetail, float shore, float time) {
-    // Flow: a smooth vector field pushes the pattern around locally (domain warping), so upwellings smear into
-    // organic streaks and the whole surface drifts. (Rotating absolute world coordinates, which are hundreds of
-    // blocks large, turned tiny angle changes into huge offsets and drew fingerprint-like rings.)
-    vec2 flow = vec2(valueNoise(q * 0.035 + 1.3), valueNoise(q * 0.035 + 7.7)) - 0.5;
-    vec2 qs = q + flow * 14.0 + vec2(-time * 0.3, time * 0.12);
-    vec2 w = vec2(valueNoise(qs * 0.17 + 3.7), valueNoise(qs * 0.17 + 9.1)) - 0.5;
-    vec3 c = lavaCells((qs + w * 5.0) / 9.0, time);
-    // A quarter of the cells well up, pulsing slowly; smaller, hotter cores with a soft molten halo.
-    float pulse = 0.55 + 0.45 * sin(time * (0.35 + 0.4 * c.z) + c.z * TAU);
-    float core = exp(-c.x * c.x * 14.0) * 0.55 + exp(-c.x * c.x * 4.0) * 0.25;
-    float upwell = core * pulse * smoothstep(0.7, 0.8, c.z);
-    // Cooler skin: streaky drifting bands of deeper red (no cracks, which read as dried mud).
-    float skin = smoothstep(0.55, 0.85, valueNoise(qs * 0.075 + vec2(time * 0.02, 0.0)));
-    float h = 0.5 + (broadHeat - 0.5) * 0.4 + upwell - skin * 0.18 + spriteDetail;
-    // Where lava meets rock: a thin white-hot contact line with a slightly cooler band just behind it.
-    h += shore * shore * 0.55 - smoothstep(0.25, 0.7, shore) * (1.0 - shore) * 0.25;
-    return h;
+// Emission (0..1, lighting squares it). Bright pixels and hot zones blaze; the body glows strongly anyway.
+float lavaEmission(vec3 graded, float heat, float hot) {
+    float l = luminance(graded);
+    return saturate(mix(0.62, 0.9, smoothstep(0.3, 0.85, l)) * mix(0.82, 1.1, heat) + hot * 0.25);
 }
 
 #ifdef PROG_TERRAIN
@@ -105,48 +81,50 @@ vec4 lavaSurface(vec3 worldPos, vec3 posDx, vec3 posDy, vec3 normal,
                  vec2 spriteMid, vec2 spriteHalfExtent, float time, float shore) {
     vec2 texel = 1.0 / vec2(textureSize(gtexture, 0));
     vec2 halfExtent = max(spriteHalfExtent, vec2(0.0));
-    vec2 safeHalf = max(halfExtent - texel, vec2(0.0));
-    bool pool = abs(normal.y) > 0.5;
-
-    if (!pool) {
-        // Falls keep their vanilla flowing sprite and UVs (Trevor: showy falls look like they try too hard). Only
-        // the palette changes, plus a faint downward shimmer in brightness.
-        return vec4(0.0);
-    }
+    vec2 safeHalf = max(halfExtent - texel * 0.5, vec2(0.0));
 
     vec2 p = lavaPlane(worldPos, normal);
     vec2 pDx = lavaPlane(posDx, normal);
     vec2 pDy = lavaPlane(posDy, normal);
-    float broad;
-    vec2 warp, warpDx, warpDy;
-    lavaPoolFields(p, worldPos.y, time, pDx, pDy, broad, warp, warpDx, warpDy);
 
-    vec2 raw = p + warp;
-    vec2 local = fract(raw);
-    vec2 uv = clamp(spriteMid + (local * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
-    vec2 gx = (pDx + warpDx) * (2.0 * halfExtent), gy = (pDy + warpDy) * (2.0 * halfExtent);
-    vec3 sprite = textureGrad(gtexture, uv, gx, gy).rgb;
-    // Pixel-space stochastic tiling: a second read of the same sprite at an unrelated offset, chosen per texel by
-    // a slow noise mask. Every pixel is still a genuine vanilla lava pixel, but the one-block period that makes
-    // a lake look like wallpaper is broken up.
-    vec2 raw2 = raw * vec2(1.0, -1.0) + vec2(0.43, 0.71) + warp.yx * 0.8;
-    vec2 uv2 = clamp(spriteMid + (fract(raw2) * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
-    float pick = valueNoise(floor(raw * 16.0) / 16.0 * 0.45 + 17.3);
-    if (pick > 0.5) sprite = textureGrad(gtexture, uv2, gx, gy).rgb;
-
-    // Evaluate heat once per sprite texel (the same warped 16x16 grid the sprite uses) so edges stay pixel
-    // crisp. When a texel is smaller than a screen pixel, quantizing only aliases, so fade it out.
+    // Texel centre in world units (the sprite is 16 texels per block), so patch borders follow the pixel grid.
+    // Up close only; when a texel shrinks below a screen pixel the quantization would only alias.
     float footprint = max(length(pDx), length(pDy)) * 16.0;
-    vec2 q = mix((floor(raw * 16.0) + 0.5) / 16.0, raw, smoothstep(0.6, 1.5, footprint));
-    float detail = (luminance(sprite) - 0.62) * 0.55;
-    float h = lavaPoolHeat(q, broad, detail, shore, time);
-    return vec4(lavaRamp(h), lavaEmission(h));
+    vec2 q = mix((floor(p * 16.0) + 0.5) / 16.0, p, smoothstep(0.7, 1.6, footprint));
+    vec4 pch = lavaPatch(q);
+    int k = int(pch.x * 8.0);
+    vec2 offset = floor(vec2(pch.y, pch.z) * 16.0) / 16.0;
+    // Each patch creeps in its own direction at 0.05-0.12 blocks per second.
+    float ang = pch.x * 37.0 + pch.z * TAU;
+    vec2 drift = vec2(cos(ang), sin(ang)) * mix(0.05, 0.12, pch.y) * time;
+
+    vec2 local = lavaOrient(p, k) + offset + drift;
+    vec2 uv = clamp(spriteMid + (fract(local) * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
+    vec2 gx = lavaOrient(pDx, k) * (2.0 * halfExtent), gy = lavaOrient(pDy, k) * (2.0 * halfExtent);
+    vec3 sprite = textureGrad(gtexture, uv, gx, gy).rgb;
+
+    float heat = lavaBroadHeat(q, worldPos.y, time);
+    // Rare upwellings: a small hot core in about one patch in eight, breathing slowly.
+    float well = step(0.87, fract(pch.y * 7.31 + pch.z * 3.17));
+    float core = smoothstep(0.25, 0.75, pch.w);
+    float hot = well * core * (0.55 + 0.45 * sin(time * 0.6 + pch.x * TAU));
+    heat = saturate(heat + hot * 0.3);
+
+    vec3 c = lavaGrade(sprite, heat, hot);
+    float e = lavaEmission(c, heat, hot);
+    // Where lava meets rock: a thin white-hot contact line.
+    float rim = shore * shore;
+    c = mix(c, vec3(1.0, 0.9, 0.6), rim * 0.6);
+    e = saturate(e + rim * 0.3);
+    return vec4(c, e);
 }
 
-// Falls and side faces: vanilla flowing sprite (already sampled by the caller) through the same palette.
+// Falls and side faces: the vanilla flowing sprite (already sampled by the caller), lightly heat-graded with
+// a faint downward shimmer so a tall fall is not one flat sheet.
 vec4 lavaFall(vec3 sprite, vec3 worldPos, float time) {
     float streak = valueNoise(vec2(worldPos.x * 3.0 + worldPos.z * 3.0, worldPos.y * 0.6 + time * 1.8));
-    float h = 0.46 + (luminance(sprite) - 0.62) * 0.8 + (streak - 0.5) * 0.16;
-    return vec4(lavaRamp(h), lavaEmission(h));
+    float heat = 0.4 + streak * 0.35;
+    vec3 c = lavaGrade(sprite, heat, 0.0);
+    return vec4(c, lavaEmission(c, heat, 0.0));
 }
 #endif
