@@ -7,17 +7,19 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
 import net.minecraft.resources.ResourceKey;
 
-/** Opt-in, in-memory radius overrides for the DH-equipped ShaderBench harness. */
+/** In-memory Art-only radius overrides for the DH-equipped ShaderBench harness. */
 public final class DhNetherRadiusTrial {
 	private static final int DEFAULT_NETHER_RADIUS = 64;
 	private static final int DEFAULT_END_RADIUS = 64;
 	private static final int MIN_NETHER_RADIUS = 32;
 	private static final int MIN_END_RADIUS = 64;
-	private static final String END_REQUIRED_PACK_NAME = "ClaudeBenchV4Art";
+	private static final String REQUIRED_PACK_NAME = "ClaudeBenchV4Art";
+	private static final boolean AUTO_ART_RADIUS = !Boolean.getBoolean("benchcam.disableArtDhRadiusAuto");
 	private static final long MAX_CLEAR_RETRY_MS = 10_000;
 	private static final boolean DH_PRESENT = FabricLoader.getInstance().isModLoaded("distanthorizons");
-	private static boolean netherEnabled = DH_PRESENT && Boolean.getBoolean("benchcam.dhNetherRadiusTrial");
-	private static boolean endEnabled;
+	// null follows the Art-only automatic default; explicit commands persist for this JVM session.
+	private static Boolean netherSessionOverride = Boolean.getBoolean("benchcam.dhNetherRadiusTrial") ? Boolean.TRUE : null;
+	private static Boolean endSessionOverride;
 	private static boolean netherFailed;
 	private static boolean endFailed;
 	private static boolean owned;
@@ -37,9 +39,10 @@ public final class DhNetherRadiusTrial {
 
 	/** Called at renderFrame HEAD and at tick end, always on the client thread. */
 	public static void update(Minecraft mc) {
-		if (!DH_PRESENT || (!netherEnabled && !endEnabled && !owned && !clearPending)) return;
+		if (!DH_PRESENT || (!netherControlEnabled() && !endControlEnabled() && !owned && !clearPending)) return;
+		boolean artPackActive = isRequiredArtPackActive();
 		ResourceKey<Level> dimension = mc.level == null ? null : mc.level.dimension();
-		int desiredRadius = desiredRadius(dimension);
+		int desiredRadius = desiredRadius(dimension, artPackActive);
 		if (suspended) desiredRadius = 0;
 
 		if (owned && (!java.util.Objects.equals(dimension, ownedDimension) || desiredRadius != ownedRadius)) {
@@ -61,16 +64,29 @@ public final class DhNetherRadiusTrial {
 		}
 	}
 
-	private static int desiredRadius(ResourceKey<Level> dimension) {
-		if (Level.NETHER.equals(dimension) && netherEnabled && !netherFailed) return requestedNetherRadius;
-		if (Level.END.equals(dimension) && endEnabled && !endFailed && isRequiredEndPackActive()) return requestedEndRadius;
+	private static int desiredRadius(ResourceKey<Level> dimension, boolean artPackActive) {
+		if (!artPackActive) return 0;
+		if (Level.NETHER.equals(dimension) && netherControlEnabled() && !netherFailed) return requestedNetherRadius;
+		if (Level.END.equals(dimension) && endControlEnabled() && !endFailed) return requestedEndRadius;
 		return 0;
 	}
 
-	/** Iris 1.11.4 currentPackName is set after successful pack load; the public API confirms a non-vanilla pipeline is active. */
-	private static boolean isRequiredEndPackActive() {
-		return END_REQUIRED_PACK_NAME.equals(Iris.getCurrentPackName())
+	/** Iris 1.11.4 currentPackName is set after successful pack load; the API confirms a pipeline is active. */
+	private static boolean isRequiredArtPackActive() {
+		return REQUIRED_PACK_NAME.equals(Iris.getCurrentPackName())
 				&& IrisApi.getInstance().isShaderPackInUse();
+	}
+
+	private static boolean netherControlEnabled() {
+		return netherSessionOverride != null ? netherSessionOverride : AUTO_ART_RADIUS;
+	}
+
+	private static boolean endControlEnabled() {
+		return endSessionOverride != null ? endSessionOverride : AUTO_ART_RADIUS;
+	}
+
+	private static String controlSource(Boolean override) {
+		return override == null ? (AUTO_ART_RADIUS ? "auto" : "auto_disabled") : (override ? "session_on" : "session_off");
 	}
 
 	public static String command(String arg, Minecraft mc) {
@@ -85,12 +101,12 @@ public final class DhNetherRadiusTrial {
 				}
 				netherFailed = false;
 				netherError = "none";
-				netherEnabled = true;
+				netherSessionOverride = true;
 				update(mc);
 				yield netherFailed ? "err " + netherError : status(mc);
 			}
 			case "off" -> {
-				netherEnabled = false;
+				netherSessionOverride = false;
 				if (Level.NETHER.equals(ownedDimension)) clear();
 				yield clearPending ? "err DH radius cleanup pending: " + clearError : status(mc);
 			}
@@ -110,12 +126,12 @@ public final class DhNetherRadiusTrial {
 				}
 				endFailed = false;
 				endError = "none";
-				endEnabled = true;
+				endSessionOverride = true;
 				update(mc);
 				yield endFailed ? "err " + endError : status(mc);
 			}
 			case "off" -> {
-				endEnabled = false;
+				endSessionOverride = false;
 				if (Level.END.equals(ownedDimension)) clear();
 				yield clearPending ? "err DH radius cleanup pending: " + clearError : status(mc);
 			}
@@ -159,7 +175,7 @@ public final class DhNetherRadiusTrial {
 			return "err DH radius check: " + t;
 		}
 		requestedNetherRadius = chunks;
-		if (netherEnabled && !netherFailed && !suspended && mc.level != null && Level.NETHER.equals(mc.level.dimension())) {
+		if (netherControlEnabled() && !netherFailed && !suspended && mc.level != null && Level.NETHER.equals(mc.level.dimension())) {
 			update(mc);
 			if (netherFailed) return "err " + netherError;
 		}
@@ -169,10 +185,15 @@ public final class DhNetherRadiusTrial {
 	public static String status(Minecraft mc) {
 		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
 		String ownerDimension = ownedDimension == null ? "none" : ownedDimension.toString();
-		boolean endPackActive = isRequiredEndPackActive();
-		String prefix = "ok enabled=" + netherEnabled + " requested=" + requestedNetherRadius + " dhPresent=" + DH_PRESENT
-				+ " dimension=" + dimension + " endEnabled=" + endEnabled + " endRequested=" + requestedEndRadius
-				+ " endPack=" + END_REQUIRED_PACK_NAME + " endPackActive=" + endPackActive
+		boolean artPackActive = isRequiredArtPackActive();
+		String netherSuppressed = netherSuppression(artPackActive);
+		String endSuppressed = endSuppression(artPackActive);
+		String prefix = "ok enabled=" + netherControlEnabled() + " source=" + controlSource(netherSessionOverride)
+				+ " requested=" + requestedNetherRadius + " dhPresent=" + DH_PRESENT
+				+ " dimension=" + dimension + " endEnabled=" + endControlEnabled() + " endSource=" + controlSource(endSessionOverride)
+				+ " endRequested=" + requestedEndRadius + " autoArt=" + AUTO_ART_RADIUS + " pack=" + REQUIRED_PACK_NAME
+				+ " artPackActive=" + artPackActive + " netherSuppressed=" + netherSuppressed + " endSuppressed=" + endSuppressed
+				+ " endPack=" + REQUIRED_PACK_NAME + " endPackActive=" + artPackActive
 				+ " ownerDimension=" + ownerDimension + " owned=" + owned + " apiOwner=not_exposed" + " suspended=" + suspended
 				+ " failed=" + (netherFailed || endFailed) + " netherFailed=" + netherFailed + " endFailed=" + endFailed
 				+ " clearPending=" + clearPending + " clearFailures=" + clearFailures
@@ -184,6 +205,22 @@ public final class DhNetherRadiusTrial {
 		} catch (Throwable t) {
 			return "err DH status: " + t;
 		}
+	}
+
+	private static String netherSuppression(boolean artPackActive) {
+		if (suspended) return "suspended";
+		if (Boolean.FALSE.equals(netherSessionOverride)) return "session_off";
+		if (!AUTO_ART_RADIUS && netherSessionOverride == null) return "auto_disabled";
+		if (!artPackActive) return "art_guard";
+		return netherFailed ? "failed" : "none";
+	}
+
+	private static String endSuppression(boolean artPackActive) {
+		if (suspended) return "suspended";
+		if (Boolean.FALSE.equals(endSessionOverride)) return "session_off";
+		if (!AUTO_ART_RADIUS && endSessionOverride == null) return "auto_disabled";
+		if (!artPackActive) return "art_guard";
+		return endFailed ? "failed" : "none";
 	}
 
 	private static String setRequestedEndRadius(String raw, Minecraft mc) {
@@ -203,7 +240,7 @@ public final class DhNetherRadiusTrial {
 		} catch (Throwable t) {
 			return "err DH radius validation: " + t;
 		}
-		if (endEnabled && !endFailed && !suspended && Level.END.equals(mc.level == null ? null : mc.level.dimension())
+		if (endControlEnabled() && !endFailed && !suspended && Level.END.equals(mc.level == null ? null : mc.level.dimension())
 				&& owned && Level.END.equals(ownedDimension) && !clearPending && java.util.Objects.equals(ownedRadius, chunks)) {
 			try {
 				if (DhAccess.isActive(chunks)) return status(mc);
@@ -223,7 +260,7 @@ public final class DhNetherRadiusTrial {
 		}
 		if (chunks == requestedEndRadius) return status(mc);
 		requestedEndRadius = chunks;
-		if (endEnabled && !endFailed && !suspended && mc.level != null && Level.END.equals(mc.level.dimension())) {
+		if (endControlEnabled() && !endFailed && !suspended && mc.level != null && Level.END.equals(mc.level.dimension())) {
 			update(mc);
 			if (endFailed) return "err " + endError;
 		}
@@ -269,11 +306,9 @@ public final class DhNetherRadiusTrial {
 		boolean firstFailure = !clearPending;
 		if (Level.NETHER.equals(ownedDimension)) {
 			netherFailed = true;
-			netherEnabled = false;
 			netherError = t.toString().replace(' ', '_');
 		} else if (Level.END.equals(ownedDimension)) {
 			endFailed = true;
-			endEnabled = false;
 			endError = t.toString().replace(' ', '_');
 		}
 		clearPending = true;
@@ -296,11 +331,9 @@ public final class DhNetherRadiusTrial {
 	private static void fail(ResourceKey<Level> dimension, Throwable t) {
 		if (Level.NETHER.equals(dimension)) {
 			netherFailed = true;
-			netherEnabled = false;
 			netherError = t.toString().replace(' ', '_');
 		} else {
 			endFailed = true;
-			endEnabled = false;
 			endError = t.toString().replace(' ', '_');
 		}
 		BenchCam.LOG.error("BenchCam DH {} radius trial failed; clearing override", dimension, t);

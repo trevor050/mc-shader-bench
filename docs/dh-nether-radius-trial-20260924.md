@@ -1,6 +1,6 @@
 # Nether-only Distant Horizons radius trial, 2026-09-24
 
-The installed DH 3.3.2 configuration renders LODs to a radius of 512 chunks (8,192 blocks). The V4 Art Nether far-smog term reaches its 520-block cap well inside 64 chunks (1,024 blocks). This made a Nether-only, in-memory 64-chunk override worth testing. The override uses DH's public API; the saved TOML value remains 512. The [trial adapter](../harness/benchcam/DH_NETHER_RADIUS_TRIAL.md) is opt-in and off by default. Shader source and `LOD_DISTANCE` were not changed.
+The installed DH 3.3.2 configuration renders LODs to a radius of 512 chunks (8,192 blocks). The V4 Art Nether far-smog term reaches its 520-block cap well inside 64 chunks (1,024 blocks). A guarded Art-on trial tested an in-memory 64-chunk override using DH's public API; the saved TOML value remains 512. The [BenchCam adapter](../harness/benchcam/DH_NETHER_RADIUS_TRIAL.md) now applies 64 automatically only when ClaudeBenchV4Art is loaded and Iris's shader pipeline is active in the Nether. Shader source and `LOD_DISTANCE` were not changed.
 
 ## Guarded runtime check
 
@@ -20,4 +20,4 @@ With shaders off, a Nether → Overworld → End → Nether transition reported 
 
 The original BenchCam jar, Iris properties, and Minecraft options were restored byte-for-byte after normal game exit; shaders remain disabled, the player returned to the original Nether portal pose in creative mode, and monitors were sent off again. Both watchdog runs printed armed then completed without stderr or forced termination. The DH TOML still reports radius 512.
 
-**Status:** keep the adapter opt-in and uninstalled. Before enabling it for normal play, run display-on PresentMon GPU Busy, CPU Busy, and presentation-tail A/B/A; inspect more Nether views and moving-camera behavior at full resolution; verify dimension transitions with shaders on. DH quadtree rebuilds on radius changes, and its background generation bounds are separate. No claim that this fixes the prior stalls or improves on-screen FPS yet.
+**Status:** 64 is promoted as the Art-guarded Nether default based on the reversible process-GPU allocation drop and consistent settled portal/lava imagery. The run did not measure display-on whole-frame GPU Busy, CPU Busy, or presentation tails, and continuous camera motion was not evaluated. DH quadtree rebuilds on radius changes, and its background generation bounds are separate. This does not establish an on-screen FPS gain or show that the earlier stalls are fixed. The saved DH radius remains 512.
