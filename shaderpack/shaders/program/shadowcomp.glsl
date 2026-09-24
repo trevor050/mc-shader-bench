@@ -54,6 +54,9 @@ void main() {
     }
 
     light = clamp(light, vec3(0.0), vec3(4000.0)); // one bad value must not flood the volume
+#ifdef LIGHT_FIELD_SELFTEST
+    light = vec3(0.0, 6.0, 0.0); // proves this pass runs and later passes read the field
+#endif
     if (readA) imageStore(lightFieldB, pos, vec4(light, 1.0));
     else imageStore(lightFieldA, pos, vec4(light, 1.0));
 }

@@ -51,6 +51,14 @@ vec3 emitterColor(vec2 uv, vec2 mid) {
 }
 
 void voxelize(int mat, vec3 worldPos, vec3 normal) {
+#ifdef LIGHT_FIELD_SELFTEST
+    // Unfiltered: every vertex marks its block solid, proving image stores from this stage land.
+    {
+        ivec3 sv = worldBlockToVoxel(ivec3(floor(worldPos + at_midBlock.xyz / 64.0)), cameraPositionInt);
+        if (voxelInside(sv)) imageStore(voxelImg, sv, uvec4(VOXEL_SOLID, 0u, 0u, 0u));
+        return;
+    }
+#endif
     if (renderStage != MC_RENDER_STAGE_TERRAIN_SOLID && renderStage != MC_RENDER_STAGE_TERRAIN_CUTOUT
         && renderStage != MC_RENDER_STAGE_TERRAIN_CUTOUT_MIPPED && renderStage != MC_RENDER_STAGE_TERRAIN_TRANSLUCENT) return;
     vec3 toCentre = at_midBlock.xyz / 64.0;

@@ -385,13 +385,15 @@ void main() {
     if (depth < 1.0) {
         vec3 dn = decodeNormal(texture(colortex1, texcoord).xy);
         vec3 f = lightFieldTap(voxelUVW(playerPos + dn * 0.55, cameraPositionFract));
-        col = log2(1.0 + f) * 0.35;
+        // Saturated HDR categories (grey debug values get scrambled by exposure and AgX):
+        // green = field, blue = solid voxel, magenta = emitter voxel, red = outside the grid.
+        col = vec3(0.0, log2(1.0 + luminance(f)) * 2.0, 0.0);
         ivec3 vb = worldBlockToVoxel(ivec3(floor(playerPos + cameraPosition - dn * 0.5)), cameraPositionInt);
         if (voxelInside(vb)) {
             uint t = voxelType(texelFetch(voxelSampler, vb, 0).r);
-            if (t == VOXEL_SOLID) col += vec3(0.0, 0.25, 0.25);
-            if (t == VOXEL_EMITTER) col += vec3(0.6, 0.0, 0.6);
-        } else col += vec3(0.08);
+            if (t == VOXEL_SOLID) col.b += 4.0;
+            if (t == VOXEL_EMITTER) col += vec3(4.0, 0.0, 4.0);
+        } else col.r += 4.0;
     } else col = vec3(0.0);
 #endif
     // Water and glass read this copy for refraction and draw clouds in front of themselves, so it must not
