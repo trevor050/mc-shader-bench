@@ -34,7 +34,7 @@ vec4 previousLightInterior(ivec3 p, bool readA) {
 }
 
 // Extra-light energy per class: 1 = fire-like, 2 = nether portal, 3 = lava.
-const float EXTRA_ENERGY[4] = float[4](0.0, 0.05, 0.3, 1.0);
+const float EXTRA_ENERGY[4] = float[4](0.0, 0.0, 0.4, 0.8); // Complementary: portal 0.4, lava 0.8
 
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);

@@ -72,6 +72,7 @@ struct FieldLight {
     vec3 radiance;  // light amplitude at the surface (for glints), scaled by LIGHT_FIELD_GAIN
     vec3 hue;       // colour of the block light, luminance 1
     float extra;    // extra light level (0..1) from lava seas and portals, beyond vanilla's reach
+    float extraRaw; // square root of the stored extra-light energy (Complementary's lightVolume.a)
     vec3 dir;       // world direction toward where the light comes from (zero when isotropic)
     float focus;    // 0 = light from everywhere, 1 = a single dominant direction
     float weight;   // 0 outside the volume
@@ -84,6 +85,7 @@ FieldLight sampleLightField(vec3 playerPos, vec3 n) {
     f.radiance = vec3(0.0);
     f.hue = BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR);
     f.extra = 0.0;
+    f.extraRaw = 0.0;
     f.dir = vec3(0.0);
     f.focus = 0.0;
     vec3 uvw = voxelUVW(playerPos + n * 0.55, cameraPositionFract);
@@ -92,7 +94,8 @@ FieldLight sampleLightField(vec3 playerPos, vec3 n) {
     vec4 raw = lightFieldTapRaw(uvw);
     vec3 amp = sqrt(max(raw.rgb, vec3(0.0)));
     float l0 = luminance(amp);
-    f.extra = saturate(sqrt(max(raw.a, 0.0)) * LIGHT_FIELD_EXTRA_GAIN);
+    f.extraRaw = sqrt(max(raw.a, 0.0));
+    f.extra = saturate(f.extraRaw * LIGHT_FIELD_EXTRA_GAIN);
     // Hue needs only a trace of field: far-away light still tells the colour. A pinch of the default warm tint
     // keeps it defined where the field is empty.
     vec3 h = amp + BLOCKLIGHT_COLOR * 0.004;

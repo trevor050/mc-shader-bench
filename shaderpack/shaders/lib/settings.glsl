@@ -13,6 +13,8 @@
 #define BLOCKLIGHT_COLOR vec3(1.0, 0.62, 0.32)
 #define BLOCKLIGHT_STRENGTH 2.2
 #define MIN_LIGHT 0.006
+#define CU_EXPOSURE_SCALE 1.0 // Complementary-port lighting output scale (linear)
+#define LAVA_EMISSION 22.0     // lava emission strength (squared emissive channel times this)
 
 // Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the
 // camera. Must match the image sizes in shaders.properties.

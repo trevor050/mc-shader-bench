@@ -136,15 +136,33 @@ vec3 agx(vec3 c) {
 // the brightest channel instead and keep the colour's own proportions, with a partial path to white only at the
 // very top, so lava stays a vivid yellow-orange (Trevor's Solas reference) while the rest of the image keeps
 // AgX's look.
+// Filmic tonemap after Jim Hejl (2015), as used by Bliss's "v2.0.4 colour processing" profile (Trevor's pick
+// over AgX: deeper, more saturated colour and firmer contrast). White point 3.0; output linear, then sRGB-encoded.
+vec3 hejl2015(vec3 hdr) {
+    vec4 vh = vec4(hdr * 0.85, 3.0);
+    vec4 va = 1.75 * vh + 0.05;
+    vec4 vf = (vh * va + 0.004) / (vh * (va + 0.55) + 0.0491) - 0.0821 + 0.000633604888;
+    return vf.xyz / vf.www;
+}
+vec3 linearToSrgb(vec3 c) {
+    c = max(c, 0.0);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+vec3 filmic(vec3 c) { return saturate(linearToSrgb(hejl2015(c))); }
+
+// Hejl's curve (like AgX) runs each channel on its own, so a very bright saturated colour (lava, fire, a sunset)
+// has its dominant channel compressed first and drifts toward pink and white. For bright, saturated colours,
+// tonemap the brightest channel instead and keep the colour's proportions, with a partial path to white only
+// at the very top, so lava stays a vivid yellow-orange.
 vec3 agxHuePreserving(vec3 c) {
-    vec3 a = agx(c);
+    vec3 a = filmic(c);
     float m = max(c.r, max(c.g, c.b));
     if (m <= 1e-5) return a;
     float mn = min(c.r, min(c.g, c.b));
     float chroma = (m - mn) / m;
     float w = smoothstep(0.35, 0.8, chroma) * smoothstep(0.4, 3.0, m);
     if (w <= 0.0) return a;
-    float mt = agx(vec3(m)).g;
+    float mt = filmic(vec3(m)).g;
     // AgX's output is display-encoded, so carry the colour's proportions over in display space too.
     vec3 hp = pow(c / m, vec3(1.0 / 2.2)) * mt;
     // The hottest pixels still run toward yellow-white, the way molten rock and the sun's disc do.
@@ -180,7 +198,9 @@ vec3 colorGrade(vec3 c) {
     // Work directly in turns; this avoids scaling the hue for degree-based ranges and scaling it back.
     float h = hsv.x;
     // Hue shaping: yellow-greens (60-110 deg) nudge toward green and gain saturation; cyans/blues gain depth.
-    float green = smoothstep(55.0 / 360.0, 80.0 / 360.0, h) * (1.0 - smoothstep(130.0 / 360.0, 160.0 / 360.0, h));
+    // Only genuine yellow-greens (grass, leaves) shift; starting lower dragged autumn and red-orange modded
+    // foliage toward green.
+    float green = smoothstep(72.0 / 360.0, 92.0 / 360.0, h) * (1.0 - smoothstep(130.0 / 360.0, 160.0 / 360.0, h));
     float blue = smoothstep(180.0 / 360.0, 200.0 / 360.0, h) * (1.0 - smoothstep(245.0 / 360.0, 270.0 / 360.0, h));
     float warm = 1.0 - smoothstep(25.0 / 360.0, 50.0 / 360.0, h) + smoothstep(330.0 / 360.0, 350.0 / 360.0, h);
     hsv.x += green * (1.0 / 60.0) * smoothstep(0.1, 0.4, hsv.y);

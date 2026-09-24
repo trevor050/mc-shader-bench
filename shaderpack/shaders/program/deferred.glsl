@@ -246,6 +246,8 @@ void main() {
         // Very dark textures (obsidian, blackstone) crush to pure black with a plain 2.2 decode; ease the
         // curve at the bottom so their texture and hue survive.
         vec3 albedo = pow(gAlbedo.rgb, vec3(mix(1.75, 2.2, smoothstep(0.0, 0.25, luminance(gAlbedo.rgb)))));
+        // Packed and blue ice: vanilla's saturated blue reads as plastic; pull it toward a paler, icier tone.
+        if (mat == MAT_ICE_SOLID) albedo = mix(vec3(luminance(albedo)), albedo, 0.55) * 1.15;
         float NdotL = dot(n, envLightDir);
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
@@ -264,7 +266,7 @@ void main() {
         }
         if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
-        if (!isLod && !isHand && (NdotL > 0.0 || foliage)) {
+        if (!isLod && !isHand && (NdotL > -0.4 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
                 // Project along the light onto the water plane so the pattern slides with the sun.
@@ -316,27 +318,11 @@ void main() {
 #endif
         float fieldWeight = 0.0;
 #ifdef FIELD_SHADING
-        surfaceField = FieldLight(vec3(0.0), BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR), 0.0, vec3(0.0), 0.0, 0.0);
+        surfaceField = FieldLight(vec3(0.0), BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR), 0.0, 0.0, vec3(0.0), 0.0, 0.0);
         if (!isHand && !isLod) surfaceField = sampleLightField(playerPos, n);
         fieldWeight = surfaceField.weight;
 #endif
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
-#ifdef DIM_NETHER
-        if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao, fieldWeight) / PI;
-#endif
-#ifdef FIELD_SHADING
-        // Block light glints off surfaces: a broad sheen on everything and a tight highlight on dark glassy stone
-        // (obsidian, blackstone, basalt), which is how lava and portals read as reflecting off nearby blocks.
-        if (fieldWeight > 0.0 && surfaceField.focus > 0.05 && mat != MAT_LAVA && mat != MAT_EMISSIVE) {
-            vec3 h = normalize(surfaceField.dir - rd);
-            float nh = saturate(dot(n, h));
-            float nl = saturate(dot(n, surfaceField.dir));
-            float fres = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, h)), 5.0);
-            float glassy = 1.0 - smoothstep(0.02, 0.09, luminance(gAlbedo.rgb));
-            float lobe = mix(pow(nh, 24.0) * 3.2, pow(nh, 160.0) * 22.0, glassy);
-            col += surfaceField.radiance * surfaceField.focus * nl * fres * lobe * mix(0.35, 1.0, glassy) * ao * fieldWeight;
-        }
-#endif
 #if !defined DIM_NETHER && !defined DIM_END
         // Snow: sparse point glints from individual crystals (lib/ice.glsl), plus the forward-scattering sheen
         // that makes sunlit snow glow when looking toward the sun across it.
@@ -348,11 +334,6 @@ void main() {
         }
         // Packed and blue ice: polished, with a clear sky reflection and a tight sun highlight. Light also
         // travels through ice, so its shaded faces glow a luminous blue instead of dropping to near-black.
-        if (mat == MAT_ICE_SOLID) {
-            vec3 iceAlbedo = mix(vec3(luminance(albedo)), albedo, 0.75);
-            col = mix(col, col * iceAlbedo / max(albedo, vec3(1e-4)), 0.6);
-            col += iceAlbedo * envDirect / PI * 0.22 * (1.0 - 0.7 * luminance(shadow)) * lm.y * ao;
-        }
         if (mat == MAT_ICE_SOLID && !isLod) {
             vec3 rr = reflect(rd, n);
             float F = iceFresnel(dot(-rd, n));

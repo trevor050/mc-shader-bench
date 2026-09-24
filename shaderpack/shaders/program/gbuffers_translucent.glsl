@@ -340,11 +340,14 @@ void main() {
 #if !defined DIM_NETHER && !defined DIM_END
         shadow = sampleShadow(playerPos, n0, saturate(dot(n0, envLightDir)), dither);
 #endif
-        // Vanilla's white streaks become frost suspended in the ice, lit like snow.
+        // Ice is milky, not glass: the block itself (its own texture, lit like any surface, a little desaturated)
+        // makes up most of what you see, with the water or ground below showing through faintly. Vanilla's white
+        // streaks read as denser frost. This keeps sea ice pale and icy from afar instead of a dark mirror.
         vec4 tex = texture(gtexture, texcoord) * glcolor;
-        float frost = smoothstep(0.62, 0.92, luminance(tex.rgb)) * 0.3;
-        vec3 frostLit = shadeSurface(env, vec3(0.78, 0.88, 1.0), n0, -rd, lmcoord, 1.0, mat, shadow, 0.0);
-        vec3 body = mix(refracted * iceTransmit(thickness), frostLit, frost);
+        vec3 iceAlbedo = toLinear(mix(vec3(luminance(tex.rgb)), tex.rgb, 0.7)) * 1.1;
+        float frost = smoothstep(0.55, 0.9, luminance(tex.rgb));
+        vec3 iceLit = shadeSurface(env, iceAlbedo, n0, -rd, lmcoord, 1.0, mat, shadow, 0.0);
+        vec3 body = mix(refracted * iceTransmit(thickness), iceLit, 0.55 + 0.35 * frost);
 
         bool below = isEyeInWater == 1 || dot(n0, rd) > 0.0;
         float skyVis = lmcoord.y * lmcoord.y;
@@ -354,7 +357,7 @@ void main() {
         vec4 ssr = traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
         refl = mix(refl, ssr.rgb, ssr.a);
         // Seen from below (or from inside water) ice is nearly index-matched: no mirror, it just lets light in.
-        float F = iceFresnel(abs(dot(-rd, n))) * (below ? 0.15 : 1.0);
+        float F = iceFresnel(abs(dot(-rd, n))) * (below ? 0.15 : 0.75);
         vec3 col = mix(body, refl, F);
 
         // A tight sun highlight: polished, not glittery.

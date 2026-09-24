@@ -47,116 +47,245 @@ LightEnv makeLightEnv(vec3 sunDir) {
     return e;
 }
 
-// Block light versus Minecraft's linear light levels. A gentle curve (level 15 is only ~8x level 7), close to
-// what Complementary's lightmap curve works out to after its square-root light mix: light pools and spreads
-// through a cave or room instead of dying a couple of blocks from the source, with a brighter core near it.
-float blockLightLevel(float lmBlock) {
-    float l2 = lmBlock * lmBlock;
-    return BLOCKLIGHT_STRENGTH * pow(lmBlock, 1.6) * (0.35 + 0.65 * l2 * l2);
-}
-
-vec3 blockLight(float lmBlock) {
-    return BLOCKLIGHT_COLOR * blockLightLevel(lmBlock);
-}
-
 #ifdef FIELD_SHADING
 // Set by the caller (sampleLightField) before shadeSurface; lets the same entry point serve passes that do
 // not read the voxel field.
 FieldLight surfaceField;
+#endif
 
-// Block light with the voxel field. Brightness follows Minecraft's own light level, which is always right and
-// never lags behind the camera, so nothing turns black where the field has not spread yet. The field adds what
-// vanilla cannot: the light's colour (a lava-lit wall glows orange, a portal-lit one purple, glow berries warm),
-// its direction (faces toward the source are brighter) and extra reach for lava seas and portals.
-vec3 fieldBlockLight(FieldLight f, vec3 n, float lmBlock, float ao) {
-    float level = blockLightLevel(max(lmBlock, f.extra)) * luminance(BLOCKLIGHT_COLOR);
-    // Lava and portals are far more intense than a torch: near them the light climbs well past vanilla's
-    // maximum, so rock beside a lava lake blazes orange instead of reading as torch-lit.
-    level *= 1.0 + 2.5 * f.extra * f.extra;
-    float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;
-    float directional = mix(1.0, saturate(facing * 0.5 + 0.6) * 1.25, f.focus * 0.7);
-    return f.hue * level * directional * mix(ao, 1.0, 0.35);
+uniform vec3 skyColor;
+uniform float screenBrightness;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Surface lighting, ported from Complementary Unbound r5.9.3 (EminGT; lib/lighting/mainLighting.glsl DoLighting,
+// lib/colors/lightAndAmbientColors.glsl, lib/lighting/minimumLighting.glsl). Credit to EminGT; Trevor asked for
+// this engine specifically. The structure is kept: every light term is combined under one square root in
+// display ("gamma") space, sqrt(shade^2 * (block + scene^2 + minimum) + emission^2), which is why torches dominate
+// dark caves yet vanish in daylight, why shade never collapses to black, and why coloured light reads as a tint
+// of the surface rather than an added glow. Our pipeline is linear, so the result is raised to 2.2 at the end
+// (identical to Complementary's own late pow(color, 2.2)).
+//
+// Changes from the original:
+//  - Block light colour and direction come from our voxel field: the field's gradient brightens faces turned
+//    toward a source (Complementary's volume only gives a hue), and emitters take their colour from their own
+//    texture, so modded light blocks need no table.
+//  - Extra light (lava seas, portals) accumulates across many source blocks, so a lava lake reaches farther
+//    than a single lava block, and the smoke in the Nether is lit by the same field.
+//  - Sun and moon colour follow our physical sky (the transmittance hue at the current sun height) blended into
+//    Complementary's hand-tuned palette, so sunsets carry the actual colour of the sky overhead.
+//  - The sealed-cave leak guard (direct light needs some vanilla sky light) is kept from our engine: shadow maps
+//    are not reliable occluders deep underground.
+//  - Cloud shadows, our shadow filter and SSAO are applied as before.
+// ---------------------------------------------------------------------------------------------------------------
+
+const vec3 CU_BLOCKLIGHT_COL = vec3(0.1775, 0.104, 0.077);
+
+float cuLuminance(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec3 cuLuminanceCorrection(vec3 c) { return c / (cuLuminance(c) + 0.0001); }
+float cuSmoothstep1(float x) { return x * x * (3.0 - 2.0 * x); }
+
+struct CuTime {
+    float sunVisibility2, noonFactor, invNoonFactor, invNoonFactor2, shadowTime, vsBrightness, rainFactor;
+};
+
+CuTime cuTime(vec3 sunDir) {
+    CuTime t;
+    float SdotU = sunDir.y;
+    float sunVisibility = clamp(SdotU + 0.0625, 0.0, 0.125) / 0.125;
+    t.sunVisibility2 = sunVisibility * sunVisibility;
+    // sin(timeAngle * 2pi) is the sun's height on its (rotated) path.
+    t.noonFactor = sqrt(saturate(SdotU / 0.9063));
+    t.invNoonFactor = 1.0 - t.noonFactor;
+    t.invNoonFactor2 = t.invNoonFactor * t.invNoonFactor;
+    float s1 = abs(sunVisibility - 0.5) * 2.0;
+    float s2 = s1 * s1;
+    t.shadowTime = s2 * s2;
+    t.vsBrightness = clamp(screenBrightness, 0.0, 1.0);
+    t.rainFactor = rainStrength;
+    return t;
 }
-#endif
 
-// albedo is linear. shadow is the filtered visibility for the light (1 = lit).
-vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, float ao, int mat, vec3 shadow, float emissive) {
-    float NdotL = dot(n, env.lightDir);
-    bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
-
-    // Minecraft sky light only drops one level per block, so a cave seven blocks from an opening still reads
-    // half-open. Real skylight falls with the visible solid angle of the opening, much faster: cube it.
-    float skyVis = lm.y * lm.y * lm.y;
-    float diffuse = foliage ? (0.45 + 0.55 * saturate(NdotL)) : saturate(NdotL);
-    // Direct light also needs open sky: stops light leaking into sealed caves beyond shadow range.
-    float leak = smoothstep(0.08, 0.45, lm.y);
-    vec3 direct = env.directLight * diffuse * shadow * leak;
-
-    // Subsurface glow when backlit, strongest looking toward the light.
-    if (foliage) {
-        float backFacing = saturate(dot(viewDir, env.lightDir));
-        float backFacing2 = backFacing * backFacing;
-        float back = backFacing2 * backFacing2;
-        direct += env.directLight * shadow * leak * back * 0.9 * albedo;
-    }
-
-    // Sky light: favor upward-facing surfaces, keep some fill on walls.
-    float skyFacing = 0.62 + 0.38 * n.y;
-    vec3 skyAmb = mix(env.skyAmbient, vec3(luminance(env.skyAmbient)), 0.3);
-    // Ground bounce: sunlight reflected off terrain fills shadows with warmer light, strongest on walls.
-    vec3 bounce = env.directLight * vec3(0.30, 0.26, 0.20) * 0.18 * (1.0 - 0.6 * n.y);
-    vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
+// Sun/moon light colour and sky ambient colour (Complementary's palette, gamma-space units).
+void cuLightAndAmbient(CuTime t, LightEnv env, out vec3 lightColor, out vec3 ambientColor) {
 #if defined DIM_NETHER
-    // Smog fill: dim, lit from below by the lava seas, tinted by the biome's own air (crimson red, warped
-    // teal-grey, soul sand valley cold grey, basalt ash). Hue only, partly desaturated, so blocks keep their own
-    // colours: the old constant orange multiplier turned grey soul sand red. Local warmth comes from the light
-    // field and netherUplight, not from here.
-    vec3 biomeAir = toLinear(fogColor);
-    biomeAir = mix(vec3(luminance(biomeAir)), biomeAir, 0.55) / max(luminance(biomeAir), 1e-3);
-    ambient = mix(vec3(0.36, 0.29, 0.25), biomeAir * 0.30, 0.6) * 1.6 * (0.8 - 0.3 * n.y) * ao;
+    lightColor = vec3(0.0);
+    vec3 fc = toLinear(fogColor) + 1e-4;
+    vec3 netherColor = pow(fc, vec3(1.0 / 2.2)) * 0.6 + 0.2 * normalize(fc);
+    const vec3 lavaLightColor = vec3(0.15, 0.06, 0.01);
+    ambientColor = (netherColor + 0.5 * lavaLightColor) * (0.9 + 0.45 * t.vsBrightness);
 #elif defined DIM_END
-    // Dim violet ambient plus a soft light from the storm overhead, so pillars and islands keep their shape.
-    const vec3 endLightDir = vec3(0.37, 0.83, 0.42);
-    ambient = vec3(0.26, 0.18, 0.40) * (0.75 + 0.25 * n.y) * ao
-            + vec3(0.9, 0.55, 1.5) * saturate(dot(n, endLightDir) * 0.8 + 0.2) * 0.55 * ao;
-#endif
-    vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
-#ifdef FIELD_SHADING
-    if (surfaceField.weight > 0.0 && mat != MAT_HAND)
-        torch = mix(torch, fieldBlockLight(surfaceField, n, lm.x, ao), surfaceField.weight);
-#endif
-#if defined DIM_NETHER
-    // Keep the Nether's residual fill warm-neutral instead of the cool blue floor used elsewhere.
-    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.95, 0.72, 0.48) * ao;
+    const vec3 endLightColor = vec3(0.68, 0.51, 1.07);
+    float endLightBalancer = 0.2 * t.vsBrightness;
+    lightColor = endLightColor * (0.35 - endLightBalancer);
+    ambientColor = endLightColor * (0.2 + endLightBalancer);
 #else
-    // The floor only exists near open sky (moonless night, deep overhangs). Sealed caves get almost none, so an
-    // unlit cave is dark and only its light sources reveal it.
-    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao * mix(0.4, 1.0, smoothstep(0.0, 0.5, lm.y));
+    vec3 noonClearLightColor = vec3(0.65, 0.55, 0.375) * 2.05;
+    vec3 noonClearAmbientColor = pow(skyColor, vec3(0.75)) * 0.85;
+    vec3 sunsetClearLightColor = pow(vec3(0.64, 0.45, 0.3), vec3(1.5 + t.invNoonFactor)) * 5.0;
+    vec3 sunsetClearAmbientColor = noonClearAmbientColor * vec3(1.21, 0.92, 0.76) * 0.95;
+    vec3 nightClearLightColor = 0.9 * vec3(0.15, 0.14, 0.20) * (0.4 + t.vsBrightness * 0.4);
+    vec3 nightClearAmbientColor = 0.9 * vec3(0.09, 0.12, 0.17) * (1.55 + t.vsBrightness * 0.77);
+    vec3 dayRainLightColor = vec3(0.21, 0.16, 0.13) * 0.85 + t.noonFactor * vec3(0.0, 0.02, 0.06);
+    vec3 dayRainAmbientColor = vec3(0.2, 0.2, 0.25) * (1.8 + 0.5 * t.vsBrightness);
+    vec3 nightRainLightColor = vec3(0.03, 0.035, 0.05) * (0.5 + 0.5 * t.vsBrightness);
+    vec3 nightRainAmbientColor = vec3(0.16, 0.20, 0.3) * (0.75 + 0.6 * t.vsBrightness);
+
+    vec3 dayLightColor = mix(sunsetClearLightColor, noonClearLightColor, t.noonFactor);
+    // Our physical sky's transmittance colour, carried into the day palette as a hue (luminance kept).
+    vec3 skyHue = env.directLight / max(cuLuminance(env.directLight), 1e-5);
+    dayLightColor = mix(dayLightColor, skyHue * cuLuminance(dayLightColor), 0.35);
+    vec3 dayAmbientColor = mix(sunsetClearAmbientColor, noonClearAmbientColor, t.noonFactor);
+    vec3 clearLightColor = mix(nightClearLightColor, dayLightColor, t.sunVisibility2);
+    vec3 clearAmbientColor = mix(nightClearAmbientColor, dayAmbientColor, t.sunVisibility2);
+    const float rainShadowVisReduce = 0.4;
+    vec3 rainLightColor = mix(nightRainLightColor, dayRainLightColor * (1.0 - rainShadowVisReduce), t.sunVisibility2) * 2.5;
+    vec3 rainAmbientColor = mix(nightRainAmbientColor, dayRainAmbientColor * (1.0 + rainShadowVisReduce), t.sunVisibility2);
+    lightColor = mix(clearLightColor, rainLightColor, t.rainFactor);
+    ambientColor = mix(clearAmbientColor, rainAmbientColor, t.rainFactor);
+#endif
+}
+
+// Kept for callers outside the surface path (handheld light).
+float blockLightLevel(float lmBlock) {
+    float l2 = lmBlock * lmBlock;
+    return BLOCKLIGHT_STRENGTH * pow(lmBlock, 1.6) * (0.35 + 0.65 * l2 * l2);
+}
+vec3 blockLight(float lmBlock) { return BLOCKLIGHT_COLOR * blockLightLevel(lmBlock); }
+
+// albedo is linear. shadow is the filtered visibility for the light (1 = lit), not yet multiplied by N.L.
+vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, float ao, int mat, vec3 shadow, float emissive) {
+    CuTime t = cuTime(env.sunDir);
+    vec3 lightColorM, ambientColorM;
+    cuLightAndAmbient(t, env, lightColorM, ambientColorM);
+    vec3 gammaAlbedo = pow(max(albedo, vec3(0.0)), vec3(1.0 / 2.2));
+
+    bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
+    int subsurfaceMode = (mat == MAT_FOLIAGE || mat == MAT_TALL_UPPER) ? 1 : (mat == MAT_LEAVES ? 2 : 0);
+    float NdotU = n.y;
+    float NdotUmax0 = max(NdotU, 0.0);
+    float absNdotN = abs(n.z);
+    float absNdotE = abs(n.x);
+    float NdotL = dot(n, env.lightDir);
+    float lightmapY2 = lm.y * lm.y;
+    float lightmapYM = cuSmoothstep1(lm.y);
+    float ambientMult = 1.0;
+
+    // Sun / moon.
+    vec3 shadowMult = vec3(0.0);
+#if !defined DIM_NETHER
+    float NdotLM = subsurfaceMode != 0 ? 1.0 : max(NdotL + 0.4, 0.0) * 0.714; // side shadowing
+#ifdef DIM_END
+    NdotLM = pow(NdotLM, 1.0 / 3.0);
+#endif
+    shadowMult = shadow * max(NdotLM * t.shadowTime, 0.0);
+#if !defined DIM_END
+    // Direct light needs some open sky: deep caves never see the sun even where the shadow map is unreliable.
+    shadowMult *= smoothstep(0.08, 0.45, lm.y);
+#endif
+#endif
+    float shadowMultFloat = min(cuLuminance(shadowMult), 1.0);
+
+    // Block light: Complementary's vanilla curve, coloured (and here also directed and extended) by the field.
+    float vsB = t.vsBrightness;
+    const float XLIGHT_CURVE = 1.0;
+    float steep = pow(lm.x * lm.x, 4.0) * (2.8 - 0.6 * vsB + XLIGHT_CURVE);
+    float calm = lm.x * (2.8 + 0.6 * vsB - XLIGHT_CURVE);
+    float lightmapXM = pow(steep + calm, 2.25);
+    vec3 blockLighting = lightmapXM * CU_BLOCKLIGHT_COL;
+#ifdef FIELD_SHADING
+    if (surfaceField.weight > 0.0 && mat != MAT_HAND) {
+        FieldLight f = surfaceField;
+        float volA = f.extraRaw;
+        vec3 special = f.radiance / LIGHT_FIELD_GAIN;
+        lightmapXM = max(lightmapXM, mix(lightmapXM, 10.0, volA));
+        special *= 1.0 + 50.0 * volA;
+        special = lightmapXM * 0.13 * cuLuminanceCorrection(special + CU_BLOCKLIGHT_COL * 0.05);
+        // Direction from the field's gradient (ours): faces toward the source a little brighter, away darker.
+        float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;
+        special *= mix(1.0, saturate(facing * 0.5 + 0.6) * 1.2, f.focus * 0.6);
+        // Complementary's AddSpecialLightDetail: a non-contrasty lift that carries the light's hue into dark texels.
+        vec3 lightM = max(special, vec3(0.0));
+        lightM /= (0.2 + 0.8 * cuLuminance(lightM));
+        lightM *= (1.0 / (1.0 + emissive)) * 0.22;
+        special = special * 0.9 + (lightM / (gammaAlbedo + 0.1)) * (lightM / (gammaAlbedo + 0.1));
+        blockLighting = mix(blockLighting, special, f.weight);
+    }
 #endif
 
-    vec3 col = albedo * (direct / PI + ambient / PI + torch + minLight);
-    // Coloured light soaks into dark surfaces too: blackstone, netherrack and deepslate next to lava pick up an
-    // orange cast instead of staying a neutral dark (after Complementary's AddSpecialLightDetail).
-    col += torch * 0.045 * (1.0 - smoothstep(0.0, 0.3, luminance(albedo))) * ao;
-#if defined DIM_NETHER
-    // Obsidian, blackstone and basalt have near-zero albedo. Give those opaque stone surfaces a restrained
-    // ashen floor so their texture and face-to-face shape survive exposure without lifting foliage or lava.
-    float darkRock = (mat == MAT_NONE || mat == MAT_LOD || mat == MAT_POLISHED || mat == MAT_GLASSY)
-        ? 1.0 - smoothstep(0.025, 0.16, luminance(albedo))
-        : 0.0;
-    col += vec3(0.016, 0.011, 0.008) * darkRock * ao * (0.72 + 0.28 * n.y);
+    // Minimum (cave) light: cool, only where sky light is absent.
+    vec3 minLighting = vec3(0.0);
+#if !defined DIM_END
+    minLighting = vec3(0.005625 + vsB * 0.043) * vec3(0.45, 0.475, 0.6) * (1.0 - lightmapYM);
 #endif
-    // Lava stores its heat-dependent emission here and is far brighter than other emitters: seams glow dull
-    // red, the molten body is bright, white-hot upwellings are blinding and bloom.
-    col += albedo * (mat == MAT_LAVA ? emissive * emissive * 16.0 : emissive * 6.0);
+
+#if !defined DIM_NETHER && !defined DIM_END
+    ambientMult = mix(lightmapYM, lightmapYM * lightmapYM * lightmapYM, t.rainFactor);
+    // Daylight suppresses block light; nearer surfaces a little brighter at night and in rain.
+    float lxFactor = (t.sunVisibility2 * 0.4 + (0.6 - 0.6 * t.invNoonFactor2)) * (6.0 - 5.0 * t.rainFactor);
+    lxFactor *= lightmapY2 + lightmapY2 * 2.0 * shadowMultFloat * shadowMultFloat;
+    lxFactor = max(lxFactor - emissive * 1000000.0, 0.0);
+    blockLighting *= pow(lightmapXM / 60.0 + 0.001, 0.09 * lxFactor);
+#endif
+
+    // Directional shading.
+    float absNdotE2 = absNdotE * absNdotE;
+#if !defined DIM_NETHER
+    float NdotUM = 0.75 + NdotU * 0.25;
+#else
+    float NdotUM = 0.75 + abs(NdotU + 0.5) * 0.16666;
+#endif
+    float directionShade = NdotUM * (1.0 - 0.1 * absNdotE2) * (1.0 + 0.075 * absNdotN);
+#if !defined DIM_NETHER && !defined DIM_END
+    lightColorM *= 1.0 + absNdotE2 * 0.75;
+    // Fake bounced light, and a more natural noon.
+    ambientColorM = mix(ambientColorM, lightColorM, (0.05 + 0.03 * float(subsurfaceMode)) * absNdotN * lightmapY2);
+    lightColorM *= 1.0 + max(1.0 - float(subsurfaceMode), 0.0) * pow(t.noonFactor, 20.0) * (absNdotN * absNdotN * 0.8 - absNdotE2 * 0.2);
+#elif defined DIM_NETHER
+    directionShade *= directionShade;
+    // Glow of the lava seas on ceilings and north/south faces.
+    ambientColorM += vec3(0.15, 0.06, 0.01) * pow(absNdotN * 0.5 + max(-NdotU, 0.0), 2.0) * (0.7 + 0.35 * vsB);
+#endif
+
+    vec3 sceneLighting = lightColorM * shadowMult + ambientColorM * ambientMult;
+    float dotSceneLighting = dot(sceneLighting, sceneLighting);
+
+    // Vanilla ambient occlusion curve.
+    float vanillaAO = ao;
+    if (subsurfaceMode != 0) vanillaAO = mix(min(vanillaAO * 1.15, 1.0), 1.0, shadowMultFloat);
+    else {
+        vanillaAO = min(vanillaAO + 0.08, 1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+        vanillaAO = pow(pow(vanillaAO, 1.5), 1.0 + dotSceneLighting * 0.02 + NdotUmax0 * (0.15 + 0.25 * pow(t.noonFactor * lightmapY2, 2.0)));
+#elif defined DIM_NETHER
+        vanillaAO = pow(pow(vanillaAO, 1.5), 1.0 + NdotUmax0 * 0.5);
+#else
+        vanillaAO = pow(vanillaAO, 0.75 + NdotUmax0 * 0.25);
+#endif
+    }
+    vanillaAO = vanillaAO * 0.9 + 0.1;
+
+    float shadeAO = directionShade * vanillaAO;
+    vec3 finalDiffuse = shadeAO * shadeAO * (blockLighting + sceneLighting * sceneLighting + minLighting);
+    finalDiffuse = sqrt(max(finalDiffuse, vec3(0.0)));
+
+    // Back to linear: albedo_lin * finalDiffuse^2.2 == (gammaAlbedo * finalDiffuse)^2.2.
+    vec3 col = albedo * pow(finalDiffuse, vec3(2.2)) * CU_EXPOSURE_SCALE;
+
+    // Foliage: a soft translucent highlight looking toward the sun.
+#if !defined DIM_NETHER
+    if (subsurfaceMode != 0) {
+        float sss = pow(saturate(dot(-viewDir, env.lightDir)), 10.0);
+        vec3 highlightColor = normalize(pow(max(lightColorM, 1e-4), vec3(0.37))) * (0.3 + 1.5 * t.sunVisibility2) * (1.0 - 0.85 * t.rainFactor);
+        col += pow(albedo, vec3(0.5)) * shadowMult * highlightColor * sss * (subsurfaceMode == 1 ? 0.8 : 0.6) * CU_EXPOSURE_SCALE;
+    }
+#endif
+
+    // Emission, kept additive in linear: lava is far brighter than the rest.
+    col += albedo * (mat == MAT_LAVA ? emissive * emissive * LAVA_EMISSION : emissive * 6.0);
 #if defined DIM_END
-    // Near-black obsidian and unclassified terrain otherwise collapse into flat cutouts. A restrained violet
-    // bounce lifts only dark terrain/LOD texels; AO and storm-facing direction keep it shaped and localized.
     if (mat == MAT_NONE || mat == MAT_LOD || mat == MAT_GLASSY) {
         float darkSurface = 1.0 - smoothstep(0.012, 0.075, luminance(albedo));
-        float textureDetail = 0.62 + 0.38 * sqrt(saturate(luminance(albedo) * 48.0));
-        float stormFacing = 0.65 + 0.35 * saturate(dot(n, vec3(0.37, 0.83, 0.42)) * 0.5 + 0.5);
-        col += vec3(0.006, 0.002, 0.012) * darkSurface * textureDetail * stormFacing * ao;
+        col += vec3(0.006, 0.002, 0.012) * darkSurface * ao;
     }
 #endif
     return col;
