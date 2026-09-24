@@ -83,6 +83,9 @@ uniform sampler2D colortex9;
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
 #include "/lib/portal.glsl"
+#if defined PROG_DH && defined DIM_END
+#include "/lib/end_lod.glsl"
+#endif
 
 in vec2 texcoord;
 in vec2 lmcoord;
@@ -172,6 +175,9 @@ void main() {
 
 #ifdef PROG_DH
     if (dist < far * 0.78) discard;
+#if defined DIM_END
+    if (!endLodVisible(dist, gl_FragCoord.xy, frameCounter)) discard;
+#endif
     // DH depth-tests only against LOD depth, so reject fragments hidden behind real chunks.
     float chunkDepth = texture(depthtex1, uv).r;
     if (chunkDepth < 1.0 && length(viewFromDepth(uv, chunkDepth)) < dist) discard;

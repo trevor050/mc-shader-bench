@@ -104,6 +104,10 @@ uniform float far;
 uniform float viewWidth;
 uniform float viewHeight;
 uniform mat4 dhProjectionInverse;
+#if defined DIM_END
+uniform int frameCounter;
+#include "/lib/end_lod.glsl"
+#endif
 #endif
 
 in vec2 texcoord;
@@ -168,7 +172,11 @@ void main() {
     // Skip LOD fragments that overlap real chunks so the two never z-fight.
     vec3 ndc = vec3(gl_FragCoord.xy / vec2(viewWidth, viewHeight), gl_FragCoord.z) * 2.0 - 1.0;
     vec3 viewPos = projectAndDivide(dhProjectionInverse, ndc);
-    if (length(viewPos) < far * 0.1) discard;
+    float lodDistance = length(viewPos);
+    if (lodDistance < far * 0.1) discard;
+#if defined DIM_END
+    if (!endLodVisible(lodDistance, gl_FragCoord.xy, frameCounter)) discard;
+#endif
     // Break up flat LOD faces with a little world-space value noise.
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
     vec3 cell = floor(wp - worldNormal * 0.5);

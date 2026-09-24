@@ -23,6 +23,13 @@
 // Distant Horizons render radius in blocks (lodChunkRenderDistanceRadius * 16). Keep in sync with the DH config.
 #define LOD_DISTANCE 8192.0
 
+// In the End, fade DH geometry into the void before the renderer's full-distance edge. The existing End
+// aerial haze begins at 150 blocks and reaches full strength at 450, so this dissolve finishes just inside it.
+#ifdef DIM_END
+#define END_DH_FADE_START 220.0
+#define END_DH_FADE_END 430.0
+#endif
+
 #define VOLUMETRIC_LIGHT
 #define VL_STEPS 20
 #define FOG_DENSITY 1.0
