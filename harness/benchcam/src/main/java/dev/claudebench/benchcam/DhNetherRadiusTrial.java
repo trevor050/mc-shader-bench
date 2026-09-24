@@ -87,6 +87,13 @@ public final class DhNetherRadiusTrial {
 		} catch (Throwable t) {
 			return "err DH radius validation: " + t;
 		}
+		if (owned && !clearPending && java.util.Objects.equals(ownedRadius, chunks)) {
+			try {
+				if (DhAccess.isActive(chunks)) return status(mc);
+			} catch (Throwable t) {
+				return "err DH radius check: " + t;
+			}
+		}
 		if (clearPending) return "err DH radius cleanup pending: " + clearError;
 		if (owned) {
 			clear();
@@ -223,6 +230,12 @@ public final class DhNetherRadiusTrial {
 
 		private static Integer apiValue() {
 			return radius().getApiValue();
+		}
+
+		private static boolean isActive(int chunks) {
+			var value = radius();
+			return Integer.valueOf(chunks).equals(value.getValue())
+					&& Integer.valueOf(chunks).equals(value.getApiValue());
 		}
 
 		private static String status() {
