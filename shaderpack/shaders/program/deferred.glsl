@@ -285,6 +285,13 @@ void main() {
         }
         if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter);
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
+#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
+        {
+            // Lightning briefly lights the landscape: cold light from the sky, strongest on open ground.
+            vec4 fl = cloudFlash(cameraPosition);
+            if (fl.w > 0.0) col += albedo * vec3(0.7, 0.78, 1.0) * fl.w * 0.03 * lm.y * lm.y * (0.6 + 0.4 * n.y) * ao;
+        }
+#endif
 
         if (wet > 0.0 && !isLod) {
             vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
@@ -307,6 +314,15 @@ void main() {
         float sceneDist = (depth >= 1.0 && !isLod) ? 1e6 : length(playerPos);
         vec4 clouds = upsampleClouds(texcoord, sceneDist);
         col = col * clouds.a + clouds.rgb;
+        // Lightning lights the clouds after temporal accumulation (history would average a flash away).
+        vec4 flash = cloudFlash(cameraPosition);
+        if (flash.w > 0.0 && clouds.a < 0.98) {
+            vec2 halfRes = floor(vec2(viewWidth, viewHeight) * 0.5);
+            float cd = texelFetch(colortex8, ivec2(texcoord * halfRes), 0).r;
+            vec3 cp = cameraPosition + rd * min(cd, 30000.0);
+            float near = exp(-length(cp - flash.xyz) / 420.0);
+            col += vec3(0.7, 0.78, 1.0) * flash.w * near * (1.0 - clouds.a) * 0.11;
+        }
     }
 #endif
     outColor = vec4(col, 1.0);

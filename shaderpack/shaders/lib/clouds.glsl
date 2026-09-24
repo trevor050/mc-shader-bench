@@ -19,6 +19,7 @@ uniform sampler3D cloudNoise;
 uniform int worldDay;
 uniform int worldTime;
 uniform float thunderStrength;
+uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exists
 
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
@@ -205,6 +206,30 @@ vec3 cloudScatter(float lightOD, float skyOD, float groundOD, float mu, float po
         powder = mix(powder, 1.0, 0.5);
     }
     return s;
+}
+
+// Lightning inside the clouds. During thunder, a flash fires every few seconds somewhere near the camera
+// (a fixed spot per time slot, so it does not slide with the player), flickering in two or three pulses.
+// A real bolt adds a brighter flash at its own position. Returns flash position (xyz) and radiance (w).
+vec4 cloudFlash(vec3 camPos) {
+    vec4 f = vec4(0.0);
+    if (thunderStrength > 0.01) {
+        const float slot = 3.3;
+        float epoch = floor(frameTimeCounter / slot);
+        float local = frameTimeCounter - epoch * slot;
+        float h = fract(sin(epoch * 12.9898) * 43758.5453);
+        float h2 = fract(sin(epoch * 78.233) * 43758.5453);
+        if (h < 0.6) {
+            float flicker = exp(-local * 9.0) + 0.7 * exp(-abs(local - 0.18) * 25.0) + 0.4 * exp(-abs(local - 0.42) * 20.0);
+            vec2 anchor = floor(camPos.xz / 900.0) * 900.0;
+            vec2 off = (vec2(h, h2) - 0.5) * 2600.0;
+            f = vec4(anchor.x + off.x, 380.0 + h2 * 260.0, anchor.y + off.y, flicker * thunderStrength * 6.0);
+        }
+    }
+    if (lightningBoltPosition.w > 0.5) {
+        f = vec4(lightningBoltPosition.x + camPos.x, 420.0, lightningBoltPosition.z + camPos.z, 14.0);
+    }
+    return f;
 }
 
 // Cumulus march. Returns premultiplied radiance in rgb, transmittance in a; dist gets the
