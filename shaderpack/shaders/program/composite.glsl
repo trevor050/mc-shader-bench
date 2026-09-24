@@ -39,6 +39,9 @@ uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
 #include "/lib/clouds.glsl"
+#if defined DIM_NETHER
+#include "/lib/nether_atmosphere.glsl"
+#endif
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -157,17 +160,32 @@ void main() {
 #endif
 #if defined DIM_NETHER
         float hazeY = mix(worldY, cameraPosition.y, 0.5);
-        float plume = netherPlume(rd, hazeY);
-        // A single procedural density evaluation adds depth to rising smoke without a full-resolution march.
-        // It only changes atmospheric colour/opacity: no scene-buffer distortion, so portals stay stable.
-        float plumeFog = plume * (1.0 - exp(-min(dist, 180.0) * 0.018)) * 0.30;
-        fogAmt = 1.0 - (1.0 - fogAmt) * (1.0 - plumeFog);
-        col = mix(col, netherHaze(rd, hazeY, plume), saturate(fogAmt));
+        col = mix(col, netherFogColor(rd, hazeY), saturate(fogAmt));
 #else
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
 #endif
 
     }
+
+#if defined DIM_NETHER
+    // Integrate a single representative sample through the smoke-height segment. World-space anchoring
+    // keeps the billows from sticking to the screen; skip the hand and nearby portal surfaces entirely.
+    if (depth >= 0.56 && (sky || dist > 24.0)) {
+        vec3 smokeRay;
+        float smokeLimit;
+        if (sky) {
+            vec3 viewRay = projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0);
+            smokeRay = normalize(mat3(gbufferModelViewInverse) * viewRay);
+            smokeLimit = 220.0;
+        } else {
+            smokeRay = normalize(playerPos);
+            smokeLimit = min(dist, 190.0);
+        }
+
+        vec4 smoke = sampleNetherSmoke(cameraPosition, smokeRay, smokeLimit);
+        col = mix(col, smoke.rgb, smoke.a);
+    }
+#endif
 
 #ifdef VOLUMETRIC_LIGHT
 #if !defined DIM_NETHER && !defined DIM_END
