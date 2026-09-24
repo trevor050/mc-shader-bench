@@ -71,7 +71,7 @@ float endPulse(float t) {
 
 // Lightning in the eye wall: returns (world position of the current bolt, brightness). A new strike every few
 // seconds at a random point on the wall, flickering for a fraction of a second.
-uniform float thunderStrength;
+// thunderStrength is declared by cloud_weather.glsl, which every caller includes first.
 
 vec4 endLightning(float t) {
     // With the ClaudeBench Ambience mod installed, the mod decides the strikes (so each flash gets its thunderclap)
