@@ -114,9 +114,13 @@ void main() {
     if (!rejectHistory) {
         // 3x3 neighborhood bounds in YCoCg; history outside them is clipped (kills ghosting).
         vec2 px = 1.0 / vec2(viewWidth, viewHeight);
-        vec3 m1 = vec3(0.0), m2 = vec3(0.0);
+        // Reuse the center sample already fetched into current. All nine values still
+        // contribute; only the floating-point addition order changes slightly.
+        vec3 center = toYCoCg(current);
+        vec3 m1 = center, m2 = center * center;
         for (int y = -1; y <= 1; y++)
             for (int x = -1; x <= 1; x++) {
+                if (x == 0 && y == 0) continue;
                 vec3 s = toYCoCg(texture(colortex0, texcoord + vec2(x, y) * px).rgb);
                 m1 += s;
                 m2 += s * s;
