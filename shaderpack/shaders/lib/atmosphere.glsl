@@ -90,18 +90,38 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
 #ifdef DIM_NETHER
 uniform vec3 fogColor;
 
-// Nether air: dark ashen smoke, lit from below by the lava seas (lava level is y = 31). The biome's fog
+// Nether air: warm smoke lit from below by the lava seas (lava level is y = 31). The biome's fog
 // colour only tints it (soul sand valley turns cold and ghostly, warped forest a little teal), instead of
 // replacing it, so no biome turns into a glowing blue box.
-vec3 netherHaze(vec3 rd, float y) {
+// A cheap, non-tiled plume field on the world-space view direction. Domain warping breaks up the lattice,
+// while scrolling its vertical coordinate makes the smoke rise without screen-space refraction artifacts.
+float netherPlume(vec3 rd, float y) {
+    rd = normalize(rd);
+    vec2 p = vec2(rd.x * 2.1 + rd.z * 0.72, rd.y * 3.35 + rd.z * 0.28);
+    p.y -= frameTimeCounter * 0.0065;
+    vec2 warp = vec2(valueNoise(p * 0.58 + vec2(4.1, 1.7)),
+                     valueNoise(p * 0.58 + vec2(9.2, 6.4))) - 0.5;
+    float broad = valueNoise(p * 0.9 + warp * 1.55);
+    float wisps = valueNoise(p * 1.9 - warp * 0.65 + vec2(3.7, 11.2));
+    float billow = smoothstep(0.44, 0.72, broad * 0.72 + wisps * 0.28);
+    float height = smoothstep(27.0, 46.0, y) * (1.0 - smoothstep(118.0, 165.0, y));
+    return billow * height;
+}
+
+vec3 netherHaze(vec3 rd, float y, float plume) {
     vec3 tint = toLinear(fogColor);
-    tint = mix(vec3(luminance(tint)), tint, 0.45) / max(luminance(tint), 0.02);
-    vec3 smoke = vec3(0.07, 0.028, 0.02) * mix(vec3(1.0), tint, 0.5);
+    tint = mix(vec3(luminance(tint)), tint, 0.3) / max(luminance(tint), 0.02);
+    vec3 smoke = vec3(0.11, 0.028, 0.008) * mix(vec3(1.0), tint, 0.35);
     float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
-    // Looking down toward the lava sea the haze glows; looking up into the smoke it goes dark.
-    float look = min(saturate(0.35 - rd.y * 0.65), 0.55);
-    vec3 ember = vec3(1.0, 0.3, 0.06) * (0.08 + 0.3 * nearLava) * look;
-    return smoke + ember * mix(vec3(1.0), tint, 0.2);
+    // Restore the stronger lava-sea ember lift. Smoke stays warm across biomes rather than going blue.
+    float look = saturate(0.35 - rd.y * 0.65);
+    vec3 ember = vec3(1.0, 0.30, 0.045) * (0.12 + 0.55 * nearLava) * look;
+    vec3 litSmoke = vec3(0.55, 0.105, 0.012) * plume;
+    return smoke + ember * mix(vec3(1.0), tint, 0.08) + litSmoke;
+}
+
+vec3 netherHaze(vec3 rd, float y) {
+    return netherHaze(rd, y, netherPlume(rd, y));
 }
 #endif
 
