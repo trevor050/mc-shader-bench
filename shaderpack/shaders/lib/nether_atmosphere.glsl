@@ -47,10 +47,11 @@ float netherSmogDensity(vec3 p, float time, float ash) {
 vec3 netherSeaGlow(vec3 p, float time) {
     float h = max(p.y - NETHER_LAVA_LEVEL, 0.0);
     float pulse = 0.92 + 0.08 * valueNoise(p.xz * 0.02 + time * 0.15);
-    return vec3(1.0, 0.30, 0.05) * 1.35 * exp(-h / 26.0) * pulse;
+    // Falls off fast: smoke hanging low over the seas glows, smoke overhead stays sooty and dark.
+    return vec3(1.0, 0.30, 0.05) * 1.5 * exp(-h / 17.0) * pulse;
 }
 
 // Soot and ember ambient that keeps high smoke from going pure black.
 vec3 netherSmogAmbient(vec3 biomeAir) {
-    return mix(vec3(0.030, 0.018, 0.012), biomeAir * 0.024, 0.55);
+    return mix(vec3(0.020, 0.012, 0.009), biomeAir * 0.016, 0.55);
 }

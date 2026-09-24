@@ -183,7 +183,7 @@ void main() {
             vec3 farLight = netherSeaGlow(mid, frameTimeCounter) + netherSmogAmbient(netherBiomeAir());
             float sigmaFar = (0.0065 + 0.018 * exp(-max(mid.y - NETHER_LAVA_LEVEL, 0.0) / 34.0) + 0.012) * (1.0 + ash * 0.9);
             float farT = exp(-sigmaFar * (smogDist - NETHER_SMOG_RANGE));
-            col = col * farT + farLight * 0.55 * (1.0 - farT);
+            col = col * farT + farLight * 0.45 * (1.0 - farT);
         }
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;

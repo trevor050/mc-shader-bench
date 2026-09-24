@@ -137,7 +137,7 @@ void main() {
 #endif
         float stepT = exp(-sigma * stepLen);
         // Smoke is dark soot: a low single-scattering albedo keeps it heavy and brown rather than milky.
-        scatter += trans * light * 0.55 * (1.0 - stepT);
+        scatter += trans * light * 0.45 * (1.0 - stepT);
         trans *= stepT;
     }
     outScatter = vec4(scatter, trans);
