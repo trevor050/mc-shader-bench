@@ -65,3 +65,42 @@ Upstream references: [Voxy issue #675](https://github.com/MCRcortex/voxy/issues/
 [Voxy project](https://modrinth.com/mod/voxy),
 [Iris DH shader contract](https://github.com/IrisShaders/ShaderDoc/blob/master/dh-support.md),
 [example Voxy shader contract](https://github.com/sixthsurge/photon/blob/main/shaders/program/voxy.json).
+
+## Trial outcome and return to DH
+
+The isolated instance was created with Voxy 0.2.19-beta, Iris 1.11.2 and
+Sodium 0.9.1. Its initial launch exposed BenchCam's hard dependency on the
+live Iris/Sodium/DH versions; BenchCam was disabled **only in the trial**.
+The second launch reached the copied BenchWorld and initialized Voxy's normal
+render pipeline. Art was unexpectedly active in that trial despite the
+shader-off setup, and its sky and lighting were visibly broken according to
+Trevor. That is consistent with Art lacking the Voxy-specific shader hooks.
+No LOD import, paired FPS run, or validated Art port was completed. Trevor
+chose to stop the Voxy route. The trial Java process exited and all Voxy port
+agents were stopped; the isolated trial files remain for possible later work.
+
+Three newly downloaded shader archives, `Horizon Unbound.zip`,
+`DreamersFantasy_r1.2.zip`, and `Pegasus (v 0.4).zip`, were copied from Downloads
+to both Prism shaderpacks folders with source/destination SHA-256 equality.
+The first two archives contain a Voxy JSON shader contract; Pegasus does not.
+Copying these archives did not select a pack or change its code.
+
+The original `ShaderBench` DH instance relaunched into BenchWorld. BenchCam
+confirmed Art active, DH saved/effective radius 64, and loaded chunks. A
+45-second **moving Overworld** passive capture from 16:15:19 to 16:16:04
+(before Trevor selected another pack) produced 2,635 displayed frames:
+
+| Measure | Median | p95 | p99 | Worst |
+| --- | ---: | ---: | ---: | ---: |
+| DisplayedTime | 16.42 ms | 22.78 ms | 26.70 ms | 70.28 ms |
+| GPUBusy | 12.01 ms | 13.94 ms | 15.26 ms | 17.06 ms |
+| CPUBusy | 16.38 ms | 22.22 ms | 25.75 ms | 70.32 ms |
+
+DisplayedTime median is roughly 61 FPS in this moving interval. Minecraft
+dedicated GPU allocation ranged 4.24–5.29 GiB, Java private bytes
+12.14–14.61 GiB, and Windows available physical RAM 5.07–5.43 GiB. No
+multi-second stall appeared during the sample. The exact-game watchdog was
+canceled after the capture, leaving Minecraft running. At 16:16:28 the user
+selected `Pegasus (v 0.4).zip`; DH remained active at 64. The 45-second Art
+result says nothing about Pegasus' frame rate or long-session stability.
+Raw evidence: `harness/out/dh64-return-guard-20260924/`.
