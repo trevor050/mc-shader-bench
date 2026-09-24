@@ -30,7 +30,7 @@ CloudWeather cloudWeather() {
     float a = noise1(t * 0.9) * 0.65 + noise1(t * 2.3 + 5.0) * 0.35;
     float b = noise1(t * 0.7 + 17.0);
     float c = noise1(t * 1.1 + 41.0);
-    w.cov0 = mix(0.26, 0.58, a) * CLOUD_COVERAGE / 0.34;
+    w.cov0 = mix(0.31, 0.58, a) * CLOUD_COVERAGE / 0.34;
     w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
     w.cov1 = mix(0.0, 0.45, b);
     // Cirrus stays a light accent: at full strength the thin high sheet read as flat and painted.

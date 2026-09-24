@@ -40,7 +40,7 @@ vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1
 // The cumulus volume spans a tall slab; inside it every region picks its own cloud base and depth, so one
 // march covers low decks that hug mountain tops, ordinary fair-weather cumulus higher up, and the occasional
 // thunderstorm tower whose flat anvil spreads out near the top of the slab.
-#define L0_SLAB_BOTTOM 175.0
+#define L0_SLAB_BOTTOM 132.0
 #define L0_SLAB_TOP 1080.0
 
 struct CloudColumn {
@@ -60,10 +60,12 @@ CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
     // Continuous height field: w.low pushes the whole distribution down (low-deck days) or up.
     float lowness = saturate(smoothstep(0.0, 1.0, 1.0 - region) * (0.4 + w.low));
     c.low = smoothstep(0.55, 0.95, lowness);
-    c.base = mix(430.0, 185.0, lowness) + 70.0 * (m.g - 0.5) + 110.0 * (own - 0.55);
-    c.base = max(c.base, 180.0);
+    // Fair-weather cumulus bases sit just above the peaks (about y 200-300), low enough to reach on foot from a
+    // mountain top or with a short flight.
+    c.base = mix(305.0, 190.0, lowness) + 60.0 * (m.g - 0.5) + 90.0 * (own - 0.55);
+    c.base = max(c.base, 178.0);
     // Low clouds are flatter layers; higher ones build taller cumulus.
-    c.thick = mix(330.0, 140.0, lowness);
+    c.thick = mix(320.0, 130.0, lowness);
     float storm = saturate((m.b - 0.55) / 0.15);
     c.cb = smoothstep(0.55, 0.95, storm) * w.cb * (1.0 - c.low);
     c.thick += c.cb * 520.0;
@@ -73,12 +75,12 @@ CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
 // Upper deck: in some regions a second, flatter layer of puffy stratocumulus floats well above the first, so
 // clouds stack on clouds and there is a gap to fly between them. Returns thick = 0 where there is none.
 float upperDeckAmount(vec2 xz) {
-    return saturate((cloudTex(vec3(xz / 9000.0, 0.55)).g - 0.48) / 0.2);
+    return saturate((cloudTex(vec3(xz / 9000.0, 0.55)).g - 0.38) / 0.2);
 }
 
 CloudColumn upperColumn(vec2 xz, CloudColumn lower, CloudWeather w, float stack) {
     CloudColumn c;
-    c.base = max(lower.base + mix(lower.thick * 0.55, lower.thick, w.tower) + 110.0, 560.0)
+    c.base = max(lower.base + mix(lower.thick * 0.55, lower.thick, w.tower) + 90.0, 520.0)
            + 90.0 * (cloudTex(vec3(xz / 2700.0, 0.71)).r - 0.5);
     c.thick = stack > 0.0 && c.base + 120.0 < L0_SLAB_TOP ? min(170.0, L0_SLAB_TOP - c.base) : 0.0;
     c.cb = 0.0;
@@ -147,9 +149,31 @@ float cumulusDeck(vec3 p, CloudWeather w, int lod, CloudColumn col, float seed, 
     return smoothstep(0.0, 0.45, d) * 1.5;
 }
 
+// Scud: ragged, low fractus drifting below the cumulus, around mountain shoulders and over valleys. Patchy on
+// fair days, a broken grey deck on low-cloud days and in rain. Returns 0 outside its thin band.
+#define SCUD_BASE 138.0
+#define SCUD_TOP 188.0
+float scudDensity(vec3 p, CloudWeather w, int lod) {
+    if (p.y <= SCUD_BASE || p.y >= SCUD_TOP) return 0.0;
+    vec2 xzw = p.xz + cloudWind().xz * 1.7;
+    float region = cloudTex(vec3(xzw / 5200.0, 0.81)).r;
+    float amount = saturate((region - 0.5) / 0.22) * mix(0.35, 1.0, max(w.low, rainStrength));
+    if (amount <= 0.0) return 0.0;
+    CloudColumn c;
+    c.base = SCUD_BASE + 18.0 * (cloudTex(vec3(xzw / 1900.0, 0.27)).g - 0.3);
+    c.thick = SCUD_TOP - c.base;
+    c.cb = 0.0;
+    c.low = 1.0;
+    return cumulusDeck(p, w, lod, c, 0.71, amount * 0.9) * 0.7;
+}
+
 // Cumulus density. lod -1 = extra close detail, 0 = full detail, 1 = no close detail, 2 = shape only.
 float l0Density(vec3 p, CloudWeather w, int lod) {
     if (p.y <= L0_SLAB_BOTTOM || p.y >= L0_SLAB_TOP) return 0.0;
+    if (p.y < SCUD_TOP) {
+        float s = scudDensity(p, w, lod);
+        if (s > 0.0 || p.y < 178.0) return s;
+    }
     vec2 xzw = p.xz + cloudWind().xz;
     CloudColumn col = cloudColumn(xzw, w);
     float d = cumulusDeck(p, w, lod, col, 0.0, 1.0);
@@ -454,8 +478,8 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
 // heights where cloud bodies live (low deck to storm towers).
 float cloudShadow(vec3 worldPos, vec3 lightDir, CloudWeather w) {
     if (lightDir.y < 0.05) return 1.0;
-    const float ys[5] = float[5](205.0, 250.0, 310.0, 390.0, 560.0);
-    const float thick[5] = float[5](45.0, 50.0, 70.0, 110.0, 250.0);
+    const float ys[5] = float[5](162.0, 215.0, 275.0, 360.0, 540.0);
+    const float thick[5] = float[5](40.0, 55.0, 70.0, 110.0, 250.0);
     if (worldPos.y > ys[4]) return 1.0;
     float od = 0.0;
     for (int i = 0; i < 5; i++) {
