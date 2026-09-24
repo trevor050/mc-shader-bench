@@ -3,6 +3,7 @@ package dev.claudebench.benchcam;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
+import net.minecraft.resources.ResourceKey;
 
 /** Opt-in, in-memory radius overrides for the DH-equipped ShaderBench harness. */
 public final class DhNetherRadiusTrial {
@@ -20,7 +21,7 @@ public final class DhNetherRadiusTrial {
 	private static boolean clearPending;
 	private static int requestedNetherRadius = DEFAULT_NETHER_RADIUS;
 	private static Integer ownedRadius;
-	private static String ownedDimension = "none";
+	private static ResourceKey<Level> ownedDimension;
 	private static int clearFailures;
 	private static long nextClearRetryNs;
 	private static String netherError = "none";
@@ -31,19 +32,19 @@ public final class DhNetherRadiusTrial {
 
 	/** Called at renderFrame HEAD and at tick end, always on the client thread. */
 	public static void update(Minecraft mc) {
-		if (!DH_PRESENT) return;
-		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
+		if (!DH_PRESENT || (!netherEnabled && !endEnabled && !owned && !clearPending)) return;
+		ResourceKey<Level> dimension = mc.level == null ? null : mc.level.dimension();
 		int desiredRadius = desiredRadius(dimension);
 		if (suspended) desiredRadius = 0;
 
-		if (owned && (!dimension.equals(ownedDimension) || desiredRadius != ownedRadius)) {
+		if (owned && (!java.util.Objects.equals(dimension, ownedDimension) || desiredRadius != ownedRadius)) {
 			if (!clearPending || System.nanoTime() - nextClearRetryNs >= 0) clear();
 		}
 		if (clearPending || owned || desiredRadius == 0) return;
 
 		try {
 			if (!DhAccess.ready()) return;
-			Integer savedRadius = DhAccess.set(desiredRadius, dimension);
+			Integer savedRadius = DhAccess.set(desiredRadius, dimension.toString());
 			owned = true;
 			ownedRadius = desiredRadius;
 			ownedDimension = dimension;
@@ -54,9 +55,9 @@ public final class DhNetherRadiusTrial {
 		}
 	}
 
-	private static int desiredRadius(String dimension) {
-		if (Level.NETHER.toString().equals(dimension) && netherEnabled && !netherFailed) return requestedNetherRadius;
-		if (Level.END.toString().equals(dimension) && endEnabled && !endFailed) return END_RADIUS;
+	private static int desiredRadius(ResourceKey<Level> dimension) {
+		if (Level.NETHER.equals(dimension) && netherEnabled && !netherFailed) return requestedNetherRadius;
+		if (Level.END.equals(dimension) && endEnabled && !endFailed) return END_RADIUS;
 		return 0;
 	}
 
@@ -78,7 +79,7 @@ public final class DhNetherRadiusTrial {
 			}
 			case "off" -> {
 				netherEnabled = false;
-				if (Level.NETHER.toString().equals(ownedDimension)) clear();
+				if (Level.NETHER.equals(ownedDimension)) clear();
 				yield clearPending ? "err DH radius cleanup pending: " + clearError : status(mc);
 			}
 			default -> "err usage: dhtrial on|off|status|radius <chunks>";
@@ -102,7 +103,7 @@ public final class DhNetherRadiusTrial {
 			}
 			case "off" -> {
 				endEnabled = false;
-				if (Level.END.toString().equals(ownedDimension)) clear();
+				if (Level.END.equals(ownedDimension)) clear();
 				yield clearPending ? "err DH radius cleanup pending: " + clearError : status(mc);
 			}
 			default -> "err usage: dhend on|off|status";
@@ -126,7 +127,7 @@ public final class DhNetherRadiusTrial {
 		} catch (Throwable t) {
 			return "err DH radius validation: " + t;
 		}
-		if (owned && Level.NETHER.toString().equals(ownedDimension) && !clearPending
+		if (owned && Level.NETHER.equals(ownedDimension) && !clearPending
 				&& java.util.Objects.equals(ownedRadius, chunks)) {
 			try {
 				if (DhAccess.isActive(chunks)) return status(mc);
@@ -135,7 +136,7 @@ public final class DhNetherRadiusTrial {
 			}
 		}
 		if (clearPending) return "err DH radius cleanup pending: " + clearError;
-		if (owned && Level.NETHER.toString().equals(ownedDimension)) {
+		if (owned && Level.NETHER.equals(ownedDimension)) {
 			clear();
 			if (owned || clearPending) return "err DH radius cleanup pending: " + clearError;
 		}
@@ -154,9 +155,10 @@ public final class DhNetherRadiusTrial {
 
 	public static String status(Minecraft mc) {
 		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
+		String ownerDimension = ownedDimension == null ? "none" : ownedDimension.toString();
 		String prefix = "ok enabled=" + netherEnabled + " requested=" + requestedNetherRadius + " dhPresent=" + DH_PRESENT
 				+ " dimension=" + dimension + " endEnabled=" + endEnabled + " endRequested=" + END_RADIUS
-				+ " ownerDimension=" + ownedDimension + " owned=" + owned + " suspended=" + suspended
+				+ " ownerDimension=" + ownerDimension + " owned=" + owned + " apiOwner=not_exposed" + " suspended=" + suspended
 				+ " failed=" + (netherFailed || endFailed) + " netherFailed=" + netherFailed + " endFailed=" + endFailed
 				+ " clearPending=" + clearPending + " clearFailures=" + clearFailures
 				+ " error=" + netherError + " endError=" + endError + " clearError=" + clearError;
@@ -181,14 +183,14 @@ public final class DhNetherRadiusTrial {
 			if (!java.util.Objects.equals(apiValue, ownedRadius)) {
 				String changedValue = String.valueOf(apiValue);
 				releaseOwnership();
-				BenchCam.LOG.warn("BenchCam did not clear a DH radius override changed by another mod: {}", changedValue);
+				BenchCam.LOG.warn("BenchCam did not clear a DH radius API value that differs from its recorded value: {}", changedValue);
 				return;
 			}
 			DhAccess.clear();
 			if (DhAccess.apiValue() != null) throw new IllegalStateException("DH radius override remained after clear");
-			String oldDimension = ownedDimension;
+			String oldDimension = ownedDimension.toString();
 			releaseOwnership();
-			BenchCam.LOG.info("BenchCam DH {} radius override cleared", oldDimension);
+		BenchCam.LOG.info("BenchCam DH {} radius override cleared", oldDimension);
 		} catch (Throwable t) {
 			recordClearFailure(t);
 		}
@@ -197,7 +199,7 @@ public final class DhNetherRadiusTrial {
 	private static void releaseOwnership() {
 		owned = false;
 		ownedRadius = null;
-		ownedDimension = "none";
+		ownedDimension = null;
 		clearPending = false;
 		clearFailures = 0;
 		nextClearRetryNs = 0;
@@ -206,11 +208,11 @@ public final class DhNetherRadiusTrial {
 
 	private static void recordClearFailure(Throwable t) {
 		boolean firstFailure = !clearPending;
-		if (Level.NETHER.toString().equals(ownedDimension)) {
+		if (Level.NETHER.equals(ownedDimension)) {
 			netherFailed = true;
 			netherEnabled = false;
 			netherError = t.toString().replace(' ', '_');
-		} else if (Level.END.toString().equals(ownedDimension)) {
+		} else if (Level.END.equals(ownedDimension)) {
 			endFailed = true;
 			endEnabled = false;
 			endError = t.toString().replace(' ', '_');
@@ -232,8 +234,8 @@ public final class DhNetherRadiusTrial {
 		suspended = false;
 	}
 
-	private static void fail(String dimension, Throwable t) {
-		if (Level.NETHER.toString().equals(dimension)) {
+	private static void fail(ResourceKey<Level> dimension, Throwable t) {
+		if (Level.NETHER.equals(dimension)) {
 			netherFailed = true;
 			netherEnabled = false;
 			netherError = t.toString().replace(' ', '_');
