@@ -36,6 +36,7 @@ public final class GpuPassProfiler {
 	private static String activeStage;
 	private static String activePass;
 	private static long activeCpuStartNs;
+	private static int activeFeatureNodes;
 	private static Session session;
 	private static boolean recording;
 	private static long submitted;
@@ -47,7 +48,7 @@ public final class GpuPassProfiler {
 	private static boolean restartRequired;
 	private static long unreleasedQueries;
 
-	private record Pending(int query, long frame, String stage, String pass, long cpuWallNs) {}
+	private record Pending(int query, long frame, String stage, String pass, long cpuWallNs, int featureNodes) {}
 
 	private GpuPassProfiler() {}
 
@@ -72,7 +73,7 @@ public final class GpuPassProfiler {
 		if (!absolute.getParent().equals(root)) throw new IOException("output path escaped capture root");
 		BufferedWriter out = Files.newBufferedWriter(absolute, StandardCharsets.UTF_8,
 			StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-		out.write("frame,stage,pass,gpu_ns,cpu_wall_ns");
+		out.write("frame,stage,pass,gpu_ns,cpu_wall_ns,feature_nodes");
 		out.newLine();
 		out.flush();
 		return new Session(absolute, out);
@@ -205,7 +206,14 @@ public final class GpuPassProfiler {
 		activeStage = stage;
 		activePass = pass;
 		activeCpuStartNs = System.nanoTime();
+		activeFeatureNodes = -1;
 		return activeToken;
+	}
+
+	/** Number of submitted node references executed in the current shadow feature phase. */
+	public static void setFeatureNodeCount(int count) {
+		if (activeQuery != 0 && activePass != null && activePass.startsWith("feature_"))
+			activeFeatureNodes = count;
 	}
 
 	public static void end(long token) {
@@ -241,7 +249,7 @@ public final class GpuPassProfiler {
 			return;
 		}
 		long cpuWallNs = System.nanoTime() - activeCpuStartNs;
-		PENDING.addLast(new Pending(activeQuery, frame, activeStage, activePass, cpuWallNs));
+		PENDING.addLast(new Pending(activeQuery, frame, activeStage, activePass, cpuWallNs, activeFeatureNodes));
 		submitted++;
 		activeQuery = 0;
 		activeToken = 0;
@@ -386,7 +394,7 @@ public final class GpuPassProfiler {
 			}
 			FREE.addLast(sample.query);
 			received++;
-			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs)) droppedRows++;
+			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs + "," + (sample.featureNodes < 0 ? "" : sample.featureNodes))) droppedRows++;
 		}
 		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0) {
 			retireFreeQueries();

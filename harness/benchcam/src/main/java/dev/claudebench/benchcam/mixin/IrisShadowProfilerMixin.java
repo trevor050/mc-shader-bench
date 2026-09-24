@@ -2,10 +2,14 @@ package dev.claudebench.benchcam.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.claudebench.benchcam.GpuPassProfiler;
+import dev.claudebench.benchcam.ShadowFeaturePhaseScope;
 import net.irisshaders.iris.mixin.LevelRendererAccessor;
 import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -80,11 +84,19 @@ public abstract class IrisShadowProfilerMixin {
 		benchcam$nextShadowPhase("block_entity_submit");
 	}
 
-	@Inject(method = "renderShadows", at = @At(value = "INVOKE", shift = At.Shift.AFTER,
-		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;renderBlockEntities(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeStorage;Lnet/minecraft/client/renderer/state/level/LevelRenderState;Lnet/minecraft/client/Camera;)I", remap = false), remap = false, require = 1)
-	private void benchcam$beginFeatureRender(LevelRendererAccessor levelRenderer, Camera playerCamera,
-			CameraRenderState renderState, CallbackInfo ci) {
-		benchcam$nextShadowPhase("feature_render");
+	/** Scope the vanilla dispatcher hooks to Iris's shadow call only. The guard above handles exceptions. */
+	@WrapOperation(method = "renderShadows", at = @At(value = "INVOKE",
+		target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher;renderAllFeatures(Lnet/minecraft/client/renderer/SubmitNodeStorage;)V", remap = false),
+		remap = false, require = 1)
+	private void benchcam$profileShadowFeatures(FeatureRenderDispatcher dispatcher, SubmitNodeStorage storage,
+			Operation<Void> original) {
+		benchcam$nextShadowPhase("feature_prepare_frame");
+		ShadowFeaturePhaseScope.enter(this::benchcam$nextShadowPhase);
+		try {
+			original.call(dispatcher, storage);
+		} finally {
+			ShadowFeaturePhaseScope.exit();
+		}
 	}
 
 	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
