@@ -48,6 +48,13 @@ void main() {
     lmcoord = saturate((lm - 1.0 / 32.0) * 16.0 / 15.0);
     glcolor = gl_Color;
     worldNormal = mat3(gbufferModelViewInverse) * normalize(gl_NormalMatrix * gl_Normal);
+#if defined PROG_TERRAIN || defined PROG_DH
+    // Chunk geometry has no model rotation, so its normal is already in world space. Going through the view
+    // matrices instead tilted every normal with view bobbing (the bob reaches the normal matrix and the
+    // gbufferModelView uniform differently); at a low sun that few-degree wobble swung the ground between lit
+    // and shaded with every step (Trevor: shadows bouncing while walking, fine while flying or without bobbing).
+    worldNormal = normalize(gl_Normal);
+#endif
     mat = MAT_NONE;
 
 #ifdef PROG_BASIC

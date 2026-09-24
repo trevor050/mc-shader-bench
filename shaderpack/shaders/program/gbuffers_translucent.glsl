@@ -37,6 +37,10 @@ void main() {
     lmcoord = saturate((lm - 1.0 / 32.0) * 16.0 / 15.0);
     glcolor = gl_Color;
     worldNormal = mat3(gbufferModelViewInverse) * normalize(gl_NormalMatrix * gl_Normal);
+#if defined PROG_WATER || defined PROG_DH
+    // Chunk geometry: the normal is already world space; the view-matrix round trip wobbled with view bobbing.
+    worldNormal = normalize(gl_Normal);
+#endif
 #if defined PROG_HAND
     mat = MAT_HAND;
 #elif defined PROG_DH
