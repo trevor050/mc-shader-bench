@@ -23,7 +23,8 @@ PROGRAMS = {
     "gbuffers_entities": ("gbuffers_solid.glsl", "PROG_ENTITIES"),
     "dh_terrain": ("gbuffers_solid.glsl", "PROG_DH"),
     "gbuffers_water": ("gbuffers_translucent.glsl", "PROG_WATER"),
-    "gbuffers_hand_water": ("gbuffers_translucent.glsl", "PROG_WATER"),
+    # The underwater held-item pass must use opaque hand shading, not translucent world-water shading.
+    "gbuffers_hand_water": ("gbuffers_translucent.glsl", "PROG_HAND"),
     "gbuffers_hand": ("gbuffers_solid.glsl", "PROG_HAND"),
     "dh_water": ("gbuffers_translucent.glsl", "PROG_DH"),
     "gbuffers_skybasic": ("sky.glsl", ""),

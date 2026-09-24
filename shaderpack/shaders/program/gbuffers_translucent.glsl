@@ -1,6 +1,6 @@
 // Forward-shaded translucents: water (refraction, absorption, SSR) and tinted glass/ice.
 // colortex4 holds the lit opaque scene from deferred, used for refraction and reflections.
-// Variants: PROG_WATER (gbuffers_water), PROG_DH (dh_water).
+// Variants: PROG_WATER (gbuffers_water), PROG_HAND (gbuffers_hand_water), PROG_DH (dh_water).
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"

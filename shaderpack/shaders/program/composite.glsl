@@ -86,6 +86,13 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
     float depth = texture(depthtex0, texcoord).r;
+    // The hand is a screen-space overlay with its own depth convention. Keep world fog, underwater
+    // absorption, and half-resolution light shafts from tinting it with the scene behind.
+    if (depth < 0.56) {
+        outColor = vec4(col, 1.0);
+        outAdaptLum = vec4(min(luminance(col), 4.0));
+        return;
+    }
     bool sky = false;
     float dhDepth;
     if (!(depth < 1.0)) {
@@ -102,8 +109,6 @@ void main() {
         playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
         dist = length(playerPos);
     }
-    // The hand uses its own projection; keep fog and light shafts off it.
-    if (depth < 0.56) dist = 0.5;
     if (isEyeInWater == 1) {
         // Underwater: strong absorption toward teal, lit by filtered sky/sun.
         const vec3 absorb = vec3(0.30, 0.07, 0.05);

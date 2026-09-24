@@ -101,7 +101,7 @@ void main() {
     // depthtex1 includes the solid hand while depthtex2 excludes it. The hand
     // uses a separate depth projection and follows the camera, so ordinary
     // world reprojection blends the scene through it.
-    bool rejectHistory = offscreen;
+    bool rejectHistory = offscreen || hand;
     if (!rejectHistory) {
         float solidDepth = texture(depthtex1, texcoord).r;
         float noHandDepth = texture(depthtex2, texcoord).r;
