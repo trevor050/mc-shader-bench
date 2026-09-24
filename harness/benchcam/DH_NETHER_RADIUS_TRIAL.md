@@ -1,6 +1,6 @@
 # Optional DH Nether and End radius trials
 
-These BenchCam-only trials apply Distant Horizons 3.3.2 public API overrides by dimension. The Nether trial remains independently controlled with `dhtrial` and defaults to 64 LOD chunks. The new End trial is independently controlled with `dhend` and uses a fixed 64 LOD chunks (1,024 blocks). Both are off by default; neither changes the underlying DH configuration value. The trials do not change shaders, Prism files, or the game installation.
+These BenchCam-only trials apply Distant Horizons 3.3.2 public API overrides by dimension. The Nether trial remains independently controlled with `dhtrial` and defaults to 64 LOD chunks. The End trial is independently controlled with `dhend`, defaults to 64 chunks (1,024 blocks), and can be set at runtime from 64 chunks up to DH's saved radius. Both are off by default; neither changes the underlying DH configuration value. The trials do not change shaders, Prism files, or the game installation.
 
 Build from `harness/benchcam` with `./gradlew build` (PowerShell: `.\gradlew.bat build`). The build needs the pinned Iris 1.11.4 and DH 3.3.2 jars as compile-only dependencies. Set `BENCHCAM_IRIS_JAR` and `BENCHCAM_DH_JAR` if they are not at the ShaderBench Prism paths in `build.gradle`. The output is `build/libs/benchcam-0.1.0.jar`; building does not install it.
 
@@ -19,16 +19,20 @@ py bench.py raw "dhstatus"
 
 The expected active sequence is 64 → 48 → 64, while `true` stays at the saved value (for example 512). `requested` reports the selected target even when the trial is off or the player is outside the Nether. Values below 32 or above DH's current saved `true` radius are rejected. A pending cleanup or a radius override owned by another mod blocks the switch.
 
-The End trial has its own fixed target and switch. It can be enabled while in another dimension and applies on arrival in the End. If both trials are enabled, only the current dimension's target is applied; changing dimensions clears the old API override before applying the new target.
+The End trial has its own target and switch. It can be enabled while in another dimension and applies on arrival in the End. If both trials are enabled, only the current dimension's target is applied; changing dimensions clears the old API override before applying the new target.
 
 ```powershell
 py bench.py raw "dhend status"
 py bench.py raw "dhend on"
 py bench.py raw "dhstatus"
+py bench.py raw "dhend radius 128"
+py bench.py raw "dhend radius 256"
+py bench.py raw "dhend radius 512"
+py bench.py raw "dhend radius 64"
 py bench.py raw "dhend off"
 ```
 
-The End target is fixed at 64 chunks and is validated against DH's saved radius when applied. `dhend off` only clears a BenchCam override currently owned in the End; it does not disturb the Nether trial or an override currently owned in another dimension.
+`dhend radius <chunks>` selects the End target without changing the Nether target or enabling the End trial. Values below 64 or above DH's saved `true` radius are rejected. Repeating the currently selected and active target is a no-op. Use 128, 256, and 512 as guarded comparison points when the saved radius permits them. A preliminary capture appeared to lose a distant End island horizon at 64 chunks, but shaders were off during that capture, so it is not valid evidence of the Art-on result. `dhend off` disables the End control and asks the adapter to clear its recorded End override; it does not change the Nether control.
 
 Suggested A/B/A check: record `dhstatus` in the Nether with the Nether trial off, send `dhtrial on`, record status and frames, send `dhtrial off`, record status and frames. Repeat in the End with `dhend on/off`. Also check Nether -> Overworld -> End -> Nether with status after each dimension settles. BenchCam clears its owned override on leaving its dimension, disconnect, client stop, or trial failure. A disconnect suspends both controls until a new connection joins; an enabled Nether JVM-property trial can therefore resume in a later world. Each runtime `off` remains off until its matching `on`; the Nether property is read only at process start.
 

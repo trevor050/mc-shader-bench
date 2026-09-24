@@ -8,8 +8,9 @@ import net.minecraft.resources.ResourceKey;
 /** Opt-in, in-memory radius overrides for the DH-equipped ShaderBench harness. */
 public final class DhNetherRadiusTrial {
 	private static final int DEFAULT_NETHER_RADIUS = 64;
-	private static final int END_RADIUS = 64;
-	private static final int MIN_RADIUS = 32;
+	private static final int DEFAULT_END_RADIUS = 64;
+	private static final int MIN_NETHER_RADIUS = 32;
+	private static final int MIN_END_RADIUS = 64;
 	private static final long MAX_CLEAR_RETRY_MS = 10_000;
 	private static final boolean DH_PRESENT = FabricLoader.getInstance().isModLoaded("distanthorizons");
 	private static boolean netherEnabled = DH_PRESENT && Boolean.getBoolean("benchcam.dhNetherRadiusTrial");
@@ -20,6 +21,7 @@ public final class DhNetherRadiusTrial {
 	private static boolean suspended;
 	private static boolean clearPending;
 	private static int requestedNetherRadius = DEFAULT_NETHER_RADIUS;
+	private static int requestedEndRadius = DEFAULT_END_RADIUS;
 	private static Integer ownedRadius;
 	private static ResourceKey<Level> ownedDimension;
 	private static int clearFailures;
@@ -44,7 +46,8 @@ public final class DhNetherRadiusTrial {
 
 		try {
 			if (!DhAccess.ready()) return;
-			Integer savedRadius = DhAccess.set(desiredRadius, dimension.toString());
+			int minRadius = Level.END.equals(dimension) ? MIN_END_RADIUS : MIN_NETHER_RADIUS;
+			Integer savedRadius = DhAccess.set(desiredRadius, dimension.toString(), minRadius);
 			owned = true;
 			ownedRadius = desiredRadius;
 			ownedDimension = dimension;
@@ -57,7 +60,7 @@ public final class DhNetherRadiusTrial {
 
 	private static int desiredRadius(ResourceKey<Level> dimension) {
 		if (Level.NETHER.equals(dimension) && netherEnabled && !netherFailed) return requestedNetherRadius;
-		if (Level.END.equals(dimension) && endEnabled && !endFailed) return END_RADIUS;
+		if (Level.END.equals(dimension) && endEnabled && !endFailed) return requestedEndRadius;
 		return 0;
 	}
 
@@ -87,6 +90,7 @@ public final class DhNetherRadiusTrial {
 	}
 
 	public static String endCommand(String arg, Minecraft mc) {
+		if (arg.startsWith("radius ")) return setRequestedEndRadius(arg.substring(7).strip(), mc);
 		return switch (arg) {
 			case "status" -> status(mc);
 			case "on" -> {
@@ -117,7 +121,7 @@ public final class DhNetherRadiusTrial {
 		} catch (NumberFormatException e) {
 			return "err usage: dhtrial radius <chunks>";
 		}
-		if (chunks < MIN_RADIUS) return "err DH radius must be at least " + MIN_RADIUS;
+		if (chunks < MIN_NETHER_RADIUS) return "err DH radius must be at least " + MIN_NETHER_RADIUS;
 		if (!DH_PRESENT) return "err DH absent";
 		try {
 			if (!DhAccess.ready()) return "err DH configs initializing";
@@ -157,7 +161,7 @@ public final class DhNetherRadiusTrial {
 		String dimension = mc.level == null ? "none" : mc.level.dimension().toString();
 		String ownerDimension = ownedDimension == null ? "none" : ownedDimension.toString();
 		String prefix = "ok enabled=" + netherEnabled + " requested=" + requestedNetherRadius + " dhPresent=" + DH_PRESENT
-				+ " dimension=" + dimension + " endEnabled=" + endEnabled + " endRequested=" + END_RADIUS
+				+ " dimension=" + dimension + " endEnabled=" + endEnabled + " endRequested=" + requestedEndRadius
 				+ " ownerDimension=" + ownerDimension + " owned=" + owned + " apiOwner=not_exposed" + " suspended=" + suspended
 				+ " failed=" + (netherFailed || endFailed) + " netherFailed=" + netherFailed + " endFailed=" + endFailed
 				+ " clearPending=" + clearPending + " clearFailures=" + clearFailures
@@ -169,6 +173,50 @@ public final class DhNetherRadiusTrial {
 		} catch (Throwable t) {
 			return "err DH status: " + t;
 		}
+	}
+
+	private static String setRequestedEndRadius(String raw, Minecraft mc) {
+		final int chunks;
+		try {
+			chunks = Integer.parseInt(raw);
+		} catch (NumberFormatException e) {
+			return "err usage: dhend radius <chunks>";
+		}
+		if (chunks < MIN_END_RADIUS) return "err End DH radius must be at least " + MIN_END_RADIUS;
+		if (!DH_PRESENT) return "err DH absent";
+		try {
+			if (!DhAccess.ready()) return "err DH configs initializing";
+			Integer savedRadius = DhAccess.trueValue();
+			if (savedRadius == null) return "err DH saved radius unavailable";
+			if (chunks > savedRadius) return "err DH radius exceeds saved radius " + savedRadius;
+		} catch (Throwable t) {
+			return "err DH radius validation: " + t;
+		}
+		if (endEnabled && !endFailed && !suspended && Level.END.equals(mc.level == null ? null : mc.level.dimension())
+				&& owned && Level.END.equals(ownedDimension) && !clearPending && java.util.Objects.equals(ownedRadius, chunks)) {
+			try {
+				if (DhAccess.isActive(chunks)) return status(mc);
+			} catch (Throwable t) {
+				return "err DH radius check: " + t;
+			}
+		}
+		if (clearPending) return "err DH radius cleanup pending: " + clearError;
+		if (owned && Level.END.equals(ownedDimension)) {
+			clear();
+			if (owned || clearPending) return "err DH radius cleanup pending: " + clearError;
+		}
+		try {
+			if (DhAccess.apiValue() != null && !owned) return "err DH radius overridden by another mod";
+		} catch (Throwable t) {
+			return "err DH radius check: " + t;
+		}
+		if (chunks == requestedEndRadius) return status(mc);
+		requestedEndRadius = chunks;
+		if (endEnabled && !endFailed && !suspended && mc.level != null && Level.END.equals(mc.level.dimension())) {
+			update(mc);
+			if (endFailed) return "err " + endError;
+		}
+		return status(mc);
 	}
 
 	/** Called on disconnect and client stop in addition to ordinary dimension transitions. */
@@ -260,13 +308,13 @@ public final class DhNetherRadiusTrial {
 			return configs.graphics().chunkRenderDistance();
 		}
 
-		private static Integer set(int chunks, String dimension) {
+		private static Integer set(int chunks, String dimension, int minRadius) {
 			var value = radius();
 			if (!value.getCanBeOverrodeByApi()) throw new IllegalStateException("DH radius cannot be overridden");
 			if (value.getApiValue() != null) throw new IllegalStateException("DH radius already overridden by another mod");
 			Integer savedRadius = value.getTrueValue();
-			if (savedRadius == null || chunks < MIN_RADIUS || chunks > savedRadius)
-				throw new IllegalArgumentException("requested DH radius outside [" + MIN_RADIUS + ", saved radius " + savedRadius + "]");
+			if (savedRadius == null || chunks < minRadius || chunks > savedRadius)
+				throw new IllegalArgumentException("requested DH radius outside [" + minRadius + ", saved radius " + savedRadius + "]");
 			if (!value.setValue(chunks, "BenchCam " + dimension + " radius trial")) throw new IllegalStateException("DH rejected radius override");
 			return savedRadius;
 		}
