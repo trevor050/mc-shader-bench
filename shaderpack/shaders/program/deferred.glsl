@@ -450,5 +450,6 @@ const int shadowMapResolution = 3072;
 const float shadowDistance = 192.0;
 #endif
 const float shadowDistanceRenderMul = 1.0;
+const float voxelDistance = 64.0; // safe-zone radius for the light field's voxelization (shadow.culling=reversed)
 const float sunPathRotation = -25.0;
 const bool shadowHardwareFiltering = false;
