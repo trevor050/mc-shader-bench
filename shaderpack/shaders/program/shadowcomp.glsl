@@ -28,6 +28,11 @@ vec3 previousLight(ivec3 p, bool readA) {
     return readA ? texelFetch(lightFieldSamplerA, p, 0).rgb : texelFetch(lightFieldSamplerB, p, 0).rgb;
 }
 
+vec3 previousLightInterior(ivec3 p, bool readA) {
+    // Caller guarantees p and all six axial neighbours are inside the volume.
+    return readA ? texelFetch(lightFieldSamplerA, p, 0).rgb : texelFetch(lightFieldSamplerB, p, 0).rgb;
+}
+
 void main() {
     ivec3 pos = ivec3(gl_GlobalInvocationID);
     // Even frames read A and write B; odd frames the reverse. Readers pick the buffer written this frame.
@@ -48,9 +53,18 @@ void main() {
         float flicker = 1.0 + warm * 0.12 * (valueNoise(vec2(frameTimeCounter * 6.0 + phase * 40.0, phase * 13.0)) - 0.5);
         light = c * pow(level, 2.2) * LIGHT_FIELD_SOURCE * flicker;
     } else if (type != VOXEL_SOLID) {
-        vec3 sum = previousLight(prev + ivec3(1, 0, 0), readA) + previousLight(prev - ivec3(1, 0, 0), readA)
-                 + previousLight(prev + ivec3(0, 1, 0), readA) + previousLight(prev - ivec3(0, 1, 0), readA)
-                 + previousLight(prev + ivec3(0, 0, 1), readA) + previousLight(prev - ivec3(0, 0, 1), readA);
+        vec3 sum;
+        if (all(greaterThanEqual(prev, ivec3(1))) && all(lessThan(prev, VOXEL_SIZE - 1))) {
+            // Interior voxels need no per-neighbour volume bounds checks: all six fetches are in range.
+            sum = previousLightInterior(prev + ivec3(1, 0, 0), readA) + previousLightInterior(prev - ivec3(1, 0, 0), readA)
+                + previousLightInterior(prev + ivec3(0, 1, 0), readA) + previousLightInterior(prev - ivec3(0, 1, 0), readA)
+                + previousLightInterior(prev + ivec3(0, 0, 1), readA) + previousLightInterior(prev - ivec3(0, 0, 1), readA);
+        } else {
+            // Keep the existing clipped-neighbour behavior for shifted grid edges.
+            sum = previousLight(prev + ivec3(1, 0, 0), readA) + previousLight(prev - ivec3(1, 0, 0), readA)
+                + previousLight(prev + ivec3(0, 1, 0), readA) + previousLight(prev - ivec3(0, 1, 0), readA)
+                + previousLight(prev + ivec3(0, 0, 1), readA) + previousLight(prev - ivec3(0, 0, 1), readA);
+        }
         light = sum * (LIGHT_FIELD_KEEP / 6.0);
         if (type == VOXEL_TINT) light *= voxelColor(data);
     }

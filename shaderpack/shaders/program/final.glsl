@@ -62,6 +62,14 @@ vec3 sunStreaks(vec2 uv) {
     if (onScreen <= 0.0) return vec3(0.0);
     vec2 sc = clamp(sunUV, 0.0, 1.0);
 
+    // Test the sun radiance before the depth taps. When it is below the streak threshold, visibility cannot
+    // affect the zero result, so skip 34 depth reads for every pixel in that frame.
+    vec3 src = textureLod(colortex0, sc, 2.0).rgb;
+    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
+    // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
+    float blinding = smoothstep(avgLum * 30.0, avgLum * 300.0, luminance(src));
+    if (blinding <= 0.0) return vec3(0.0);
+
     // Visible fraction of the sun: open sky over a small cross around it.
     // A 17-tap Vogel disc resolves leaf-sized gaps, so sun glinting through foliage still flares a little.
     float open = 0.0;
@@ -73,10 +81,6 @@ vec3 sunStreaks(vec2 uv) {
     }
     // Even a sliver of visible sun is blinding: perceived glare rises quickly with the visible fraction.
     open = sqrt(open / 17.0);
-    vec3 src = textureLod(colortex0, sc, 2.0).rgb;
-    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
-    // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
-    float blinding = smoothstep(avgLum * 30.0, avgLum * 300.0, luminance(src));
     float vis = open * blinding * onScreen;
     if (vis <= 0.0) return vec3(0.0);
 
@@ -103,8 +107,8 @@ layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
 vec3 agxContrast(vec3 x) {
-    vec3 x2 = x * x, x4 = x2 * x2;
-    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+    // Horner form exposes multiply-adds and avoids separately constructing x^2, x^3, x^4, x^5, and x^6.
+    return (((((15.5 * x - 40.14) * x + 31.96) * x - 6.868) * x + 0.4298) * x + 0.1191) * x - 0.00232;
 }
 
 vec3 agx(vec3 c) {
@@ -151,12 +155,13 @@ vec3 colorGrade(vec3 c) {
     c = mix(c, s, GRADE_CONTRAST);
 
     vec3 hsv = rgb2hsv(c);
-    float h = hsv.x * 360.0;
+    // Work directly in turns; this avoids scaling the hue for degree-based ranges and scaling it back.
+    float h = hsv.x;
     // Hue shaping: yellow-greens (60-110 deg) nudge toward green and gain saturation; cyans/blues gain depth.
-    float green = smoothstep(55.0, 80.0, h) * (1.0 - smoothstep(130.0, 160.0, h));
-    float blue = smoothstep(180.0, 200.0, h) * (1.0 - smoothstep(245.0, 270.0, h));
-    float warm = 1.0 - smoothstep(25.0, 50.0, h) + smoothstep(330.0, 350.0, h);
-    hsv.x += green * 6.0 / 360.0 * smoothstep(0.1, 0.4, hsv.y);
+    float green = smoothstep(55.0 / 360.0, 80.0 / 360.0, h) * (1.0 - smoothstep(130.0 / 360.0, 160.0 / 360.0, h));
+    float blue = smoothstep(180.0 / 360.0, 200.0 / 360.0, h) * (1.0 - smoothstep(245.0 / 360.0, 270.0 / 360.0, h));
+    float warm = 1.0 - smoothstep(25.0 / 360.0, 50.0 / 360.0, h) + smoothstep(330.0 / 360.0, 350.0 / 360.0, h);
+    hsv.x += green * (1.0 / 60.0) * smoothstep(0.1, 0.4, hsv.y);
     hsv.y *= 1.0 + green * 0.08 + blue * 0.12 + warm * 0.04;
     hsv.z *= 1.0 - blue * 0.04 * hsv.y;
     // Vibrance.
