@@ -131,6 +131,28 @@ vec3 agx(vec3 c) {
     return c;
 }
 
+// AgX tonemaps each channel on its own, so a very bright saturated colour (lava, fire, a sunset) has its dominant
+// channel crushed first and drifts toward salmon-pink and then white. For bright, saturated colours, tonemap
+// the brightest channel instead and keep the colour's own proportions, with a partial path to white only at the
+// very top, so lava stays a vivid yellow-orange (Trevor's Solas reference) while the rest of the image keeps
+// AgX's look.
+vec3 agxHuePreserving(vec3 c) {
+    vec3 a = agx(c);
+    float m = max(c.r, max(c.g, c.b));
+    if (m <= 1e-5) return a;
+    float mn = min(c.r, min(c.g, c.b));
+    float chroma = (m - mn) / m;
+    float w = smoothstep(0.35, 0.8, chroma) * smoothstep(0.4, 3.0, m);
+    if (w <= 0.0) return a;
+    float mt = agx(vec3(m)).g;
+    // AgX's output is display-encoded, so carry the colour's proportions over in display space too.
+    vec3 hp = pow(c / m, vec3(1.0 / 2.2)) * mt;
+    // The hottest pixels still run toward yellow-white, the way molten rock and the sun's disc do.
+    float white = smoothstep(0.82, 1.0, mt);
+    hp = mix(hp, vec3(mt) * vec3(1.0, 0.93, 0.75), white * 0.45);
+    return mix(a, hp, w);
+}
+
 vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -202,7 +224,9 @@ void main() {
     float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
     exposure = clamp(exposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
 #else
-    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN, EXPOSURE_MAX_OTHERWORLD);
+    // A narrow range: glowing lava and lit smoke must not stop the eye down until the rock around them goes black
+    // (Trevor, comparing with Solas, where the Nether's rock stays readable beside blazing lava).
+    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN_OTHERWORLD, EXPOSURE_MAX_OTHERWORLD);
 #endif
     col *= exposure;
 #if !defined DIM_NETHER && !defined DIM_END
@@ -217,7 +241,7 @@ void main() {
     // Kept subtle: a strong shift painted every dark cave wall blue-grey.
     col = mix(col, rodColor, scotopic * 0.35);
 
-    col = agx(col);
+    col = agxHuePreserving(col);
     col = colorGrade(col);
 
     vec2 v = texcoord - 0.5;

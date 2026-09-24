@@ -68,6 +68,9 @@ FieldLight surfaceField;
 // its direction (faces toward the source are brighter) and extra reach for lava seas and portals.
 vec3 fieldBlockLight(FieldLight f, vec3 n, float lmBlock, float ao) {
     float level = blockLightLevel(max(lmBlock, f.extra)) * luminance(BLOCKLIGHT_COLOR);
+    // Lava and portals are far more intense than a torch: near them the light climbs well past vanilla's
+    // maximum, so rock beside a lava lake blazes orange instead of reading as torch-lit.
+    level *= 1.0 + 2.5 * f.extra * f.extra;
     float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;
     float directional = mix(1.0, saturate(facing * 0.5 + 0.6) * 1.25, f.focus * 0.7);
     return f.hue * level * directional * mix(ao, 1.0, 0.35);
@@ -143,7 +146,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #endif
     // Lava stores its heat-dependent emission here and is far brighter than other emitters: seams glow dull
     // red, the molten body is bright, white-hot upwellings are blinding and bloom.
-    col += albedo * (mat == MAT_LAVA ? emissive * emissive * 20.0 : emissive * 6.0);
+    col += albedo * (mat == MAT_LAVA ? emissive * emissive * 16.0 : emissive * 6.0);
 #if defined DIM_END
     // Near-black obsidian and unclassified terrain otherwise collapse into flat cutouts. A restrained violet
     // bounce lifts only dark terrain/LOD texels; AO and storm-facing direction keep it shaped and localized.

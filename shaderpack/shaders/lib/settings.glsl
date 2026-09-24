@@ -59,6 +59,7 @@
 #define EXPOSURE_MIN 0.02
 #define EXPOSURE_MAX 20.0
 #define EXPOSURE_MAX_CAVE 5.0       // exposure ceiling underground and in the Nether/End
+#define EXPOSURE_MIN_OTHERWORLD 1.4 // Nether/End: lava and lit smoke cannot darken the scene below this
 #define EXPOSURE_MAX_OTHERWORLD 3.0 // Nether/End: dark biomes stay dark instead of opening up to grey
 #define EXPOSURE_KEY_OTHERWORLD 0.55 // Nether/End key (log-average metering there)
 //#define EXPOSURE_DEBUG

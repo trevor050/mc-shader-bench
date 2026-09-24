@@ -37,7 +37,7 @@ vec2 netherSmog(vec3 p, float time, float ash) {
     float nearSea = exp(-hp / 30.0);
     // Fumes: a dense sheet hugging the lava seas.
     float sheet = exp(-hp / 3.5);
-    float haze = 0.010 + 0.026 * nearSea + 0.05 * sheet;
+    float haze = 0.006 + 0.012 * nearSea + 0.01 * sheet;
 
     // Swirl: the domain rotates slowly with height and time, so rising columns twist and drift.
     vec2 swirl = vec2(sin(p.y * 0.047 + time * 0.13), cos(p.y * 0.039 - time * 0.11)) * 7.0;
@@ -64,12 +64,12 @@ vec3 netherSeaGlow(vec3 p, float time) {
     float h = max(p.y - NETHER_LAVA_LEVEL, 0.0);
     float pulse = 0.92 + 0.08 * valueNoise(p.xz * 0.02 + time * 0.15);
     // Falls off fast: smoke hanging low over the seas glows, smoke overhead stays sooty and dark.
-    return vec3(1.0, 0.30, 0.05) * 1.9 * exp(-h / 14.0) * pulse;
+    return vec3(1.0, 0.30, 0.05) * 2.4 * exp(-h / 18.0) * pulse;
 }
 
 // Soot and ember ambient that keeps high smoke from going pure black.
 vec3 netherSmogAmbient(vec3 biomeAir) {
     // Grey-brown soot. The Nether's orange belongs to the lava, not the air: cold, dirty smoke is what makes the
     // lava read as blinding by contrast (Solas and Bliss both keep their smoke grey).
-    return mix(vec3(0.017, 0.014, 0.012), biomeAir * 0.015, 0.4);
+    return mix(vec3(0.04, 0.033, 0.028), biomeAir * 0.035, 0.4);
 }
