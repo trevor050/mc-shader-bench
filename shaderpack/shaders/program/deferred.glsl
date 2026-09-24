@@ -267,9 +267,10 @@ void main() {
         if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
         // The hand has its own projection, so it cannot look up its own pixels in the shadow map. Use the shadow
-        // at the player's chest instead (one value for the whole hand): standing in shade darkens it, instead of
-        // the sky-light guess that kept it sunlit under trees and overhangs.
-        if (isHand) shadow = sampleShadow(vec3(0.0, -0.4, 0.0), envLightDir, 1.0, 0.5) * smoothstep(0.3, 0.8, nl.w);
+        // next to the player instead (one value for the whole hand): standing in shade darkens it, instead of
+        // the sky-light guess that kept it sunlit under trees and overhangs. The point sits a block toward the sun
+        // so the player's own body, which is in the shadow map, never shades it.
+        if (isHand) shadow = sampleShadow(vec3(0.0, -0.3, 0.0) + envLightDir * 1.1, envLightDir, 1.0, 0.5) * smoothstep(0.3, 0.8, nl.w);
         if (!isLod && !isHand && (NdotL > -0.4 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
