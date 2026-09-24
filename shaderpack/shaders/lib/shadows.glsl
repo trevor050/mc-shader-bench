@@ -48,17 +48,16 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(beyondShadowVisibility());
     float dist = sqrt(dist2);
 
-    // Low sun: shadow texels smear across many blocks and the map re-rasterizes on a shifted grid every time Iris
-    // re-centres it, so a sharp filter reshuffles lit and shaded patches as the player walks. Widen the filter and
-    // the offset as the sun drops; the soft result stays put.
+    // Low sun: shadow texels smear across many blocks; a slightly wider filter keeps edges from crawling. (A larger
+    // bias/normal offset here let the low sun leak through thin cave walls; keep those unchanged.)
     float lowSun = 1.0 - smoothstep(0.1, 0.45, abs(shadowModelView[1][2]));
     // Normal offset scaled by distance keeps acne away on far, low-res texels.
-    vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL)) * (1.0 + 1.5 * lowSun);
+    vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL));
     vec3 sp = (shadowProjection * (shadowModelView * vec4(offsetPos, 1.0))).xyz;
     float f = length(sp.xy) * SHADOW_DISTORT + (1.0 - SHADOW_DISTORT);
     // Reuse f from the offset and bias calculations instead of recomputing it in distortShadow.
     vec3 ds = vec3(sp.xy / f, sp.z * 0.2) * 0.5 + 0.5;
-    float bias = 0.00008 * f * (1.0 + 2.0 * lowSun);
+    float bias = 0.00008 * f;
 
     // Blocker search sets the penumbra width (contact hardening).
     float texel = 1.0 / float(SHADOW_MAP_RES);
