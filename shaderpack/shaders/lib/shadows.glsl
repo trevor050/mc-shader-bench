@@ -34,10 +34,18 @@ vec2 rotateVogel12(int i, float c, float s) {
 }
 
 // Returns colored shadow visibility. playerPos is relative to the camera; normal is world space.
+// Beyond the shadow map nothing is known about occluders. By day treating it as lit is right (most open land
+// is), but with a low sun most distant slopes are shaded by the hills in front of them, and lighting them all
+// made distant land glow orange at sunset ("the sun peeks through the ground"). Blend toward partial shade.
+float beyondShadowVisibility() {
+    float lightElev = abs(shadowModelView[1][2]);
+    return mix(1.0, 0.3, 1.0 - smoothstep(0.08, 0.35, lightElev));
+}
+
 vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     shadowWaterDepth = 0.0;
     float dist2 = dot(playerPos, playerPos);
-    if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(1.0);
+    if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(beyondShadowVisibility());
     float dist = sqrt(dist2);
 
     // Normal offset scaled by distance keeps acne away on far, low-res texels.
@@ -58,7 +66,7 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
         float d = texture(shadowtex0, ds.xy + o).r;
         if (d < ds.z - bias) { blocker += d; count += 1.0; }
     }
-    if (count < 0.5) return vec3(1.0);
+    if (count < 0.5) return vec3(mix(1.0, beyondShadowVisibility(), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist)));
     blocker /= count;
     // Wider contact hardening: crisp at contact, soft and diffuse further out, never a hard binary edge.
     float penumbra = clamp((ds.z - blocker) * 440.0, 0.9, 11.0) * SHADOW_SOFTNESS;
@@ -90,6 +98,6 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     }
     vis /= float(SHADOW_SAMPLES);
     // Fade out near the edge of the shadow distance.
-    return mix(vis, vec3(1.0), smoothstep(SHADOW_DIST * 0.85, SHADOW_DIST, dist));
+    return mix(vis, vec3(beyondShadowVisibility()), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist));
 }
 #endif

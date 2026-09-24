@@ -161,11 +161,12 @@ void main() {
         // composite meters log2(luminance) + 24 here, so the mip chain is already a log average.
         float target = mix(whole, center, 0.25) - 24.0;
 #else
-        float target = log2(max(mix(whole, center, 0.25), 1e-5));
+        // (Center weight 0.25 made the sun entering the middle of the view swing the exposure.)
+        float target = log2(max(mix(whole, center, 0.12), 1e-5));
 #endif
         float prev = texelFetch(colortex5, ivec2(0), 0).a;
         // Adapt faster toward bright scenes than dark ones, like eyes do.
-        float rate = target > prev ? 3.0 : 1.2;
+        float rate = target > prev ? 1.6 : 1.0;
         adapted = isnan(prev) || isinf(prev) || prev == 0.0 ? target : mix(prev, target, 1.0 - exp(-frameTime * rate));
     }
 

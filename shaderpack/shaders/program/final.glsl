@@ -20,7 +20,48 @@ uniform float frameTimeCounter;
 out vec2 texcoord;
 flat out vec3 whiteBalance;
 flat out float sunsetGrade;
+flat out vec3 veilColor;
+flat out vec2 veilUV;
 uniform vec3 sunPosition;
+uniform mat4 gbufferProjection;
+uniform float viewWidth;
+uniform float viewHeight;
+uniform sampler2D colortex0;
+uniform sampler2D depthtex0;
+uniform sampler2D dhDepthTex0;
+
+// Veiling glare of a blinding sun, evaluated once per frame (every vertex computes the same value): how much of
+// the disc is visible past terrain and leaves, and dimmed by clouds using the sun's absolute brightness rather
+// than a ratio to the screen average, so panning the view does not make it pulse.
+void computeVeil(vec3 sd) {
+    veilColor = vec3(0.0);
+    veilUV = vec2(-10.0);
+#if !defined DIM_NETHER && !defined DIM_END
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return;
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    veilUV = sunUV;
+    float onScreen = smoothstep(-0.25, 0.02, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    if (onScreen <= 0.0) return;
+    vec2 sc = clamp(sunUV, 0.001, 0.999);
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    float open = 0.0;
+    for (int i = 0; i < 17; i++) {
+        float r = sqrt((float(i) + 0.5) / 17.0) * 0.012;
+        float th = float(i) * 2.39996323;
+        vec2 o = vec2(cos(th), sin(th)) * r / aspect;
+        open += step(1.0, textureLod(depthtex0, sc + o, 0.0).r) * step(1.0, textureLod(dhDepthTex0, sc + o, 0.0).r);
+    }
+    open = sqrt(open / 17.0);
+    float srcLum = luminance(textureLod(colortex0, sc, 3.0).rgb);
+    float clearSun = smoothstep(30.0, 300.0, srcLum);
+    float e = sd.y;
+    float strength = smoothstep(-0.012, 0.03, e) * mix(1.0, 0.35, smoothstep(0.2, 0.6, e)) * (1.0 - rainStrength);
+    vec3 tint = mix(sunsetLightTint(e), vec3(1.0, 0.95, 0.88), smoothstep(0.06, 0.3, e));
+    veilColor = tint * SUN_VEIL * strength * open * clearSun * onScreen;
+#endif
+}
+
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -32,6 +73,7 @@ void main() {
     // (Starting at 0.08 neutralized most of golden hour's gold.)
     float strength = 0.85 * smoothstep(0.25, 0.6, sd.y);
     sunsetGrade = sunsetWindow(sd.y);
+    computeVeil(sd);
     whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
     whiteBalance /= luminance(whiteBalance);
 }
@@ -111,6 +153,8 @@ vec3 sunStreaks(vec2 uv) {
 in vec2 texcoord;
 flat in vec3 whiteBalance;
 flat in float sunsetGrade;
+flat in vec3 veilColor;
+flat in vec2 veilUV;
 layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -245,6 +289,13 @@ void main() {
     col = mix(col, texture(colortex7, texcoord).rgb, BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
+    // A blinding sun veils the view around it: a smooth analytic glare (no mip blockiness), added after the
+    // exposure meter so looking toward the sun does not make the exposure lurch.
+    if (veilColor.r + veilColor.g + veilColor.b > 0.0) {
+        float d = length((texcoord - veilUV) * vec2(viewWidth / viewHeight, 1.0));
+        float veil = 0.55 * exp(-d / 0.035) + 0.3 * exp(-d / 0.14) + 0.12 / (1.0 + sqr(d / 0.06));
+        col += veilColor * veil;
+    }
 
     // Eye adaptation (see taa.glsl): expose so the adapted scene brightness maps to a mid tone.
     float adaptedLog = texelFetch(colortex5, ivec2(0), 0).a;

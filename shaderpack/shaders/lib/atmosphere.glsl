@@ -145,7 +145,7 @@ vec3 netherHaze(vec3 rd, float y) {
 
 // 0 outside the sunset/sunrise window, 1 through its heart (from well before sunset to the end of afterglow).
 float sunsetWindow(float e) {
-    return smoothstep(-0.20, -0.04, e) * (1.0 - smoothstep(0.10, 0.34, e));
+    return smoothstep(-0.14, -0.03, e) * (1.0 - smoothstep(0.10, 0.34, e));
 }
 
 // Colour of the sunlight reaching clouds and the land as the sun sinks: gold, then orange, coral pink,
@@ -154,8 +154,8 @@ vec3 sunsetLightTint(float e) {
     const vec3 gold    = vec3(1.00, 0.66, 0.30);
     const vec3 orange  = vec3(1.00, 0.44, 0.15);
     const vec3 coral   = vec3(1.00, 0.33, 0.30);
-    const vec3 magenta = vec3(0.92, 0.22, 0.48);
-    const vec3 crimson = vec3(0.60, 0.10, 0.30);
+    const vec3 magenta = vec3(1.00, 0.28, 0.36);
+    const vec3 crimson = vec3(0.80, 0.14, 0.16);
     vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.07, e));
     c = mix(c, coral, smoothstep(-0.07, -0.015, e));
     c = mix(c, orange, smoothstep(-0.015, 0.05, e));
@@ -170,7 +170,7 @@ vec3 cloudSunsetLight(vec3 sunDir) {
     float e = sunDir.y;
     vec3 tPhys = sunTransmittance(normalize(vec3(sunDir.x, max(e, 0.015), sunDir.z)));
     float lum = max(luminance(tPhys), 0.02);
-    float lit = smoothstep(-0.16, -0.02, e);
+    float lit = smoothstep(-0.14, -0.03, e);
     return sunsetLightTint(e) * lum * 2.2 * lit * SUN_ILLUMINANCE;
 }
 
@@ -182,7 +182,7 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     vec3 flatS = normalize(vec3(sunDir.x, 0.0, sunDir.z) + vec3(1e-5));
     float az = dot(flatV, flatS);                     // 1 toward the sun, -1 away
     float up = max(rd.y, 0.0);
-    float toward = max(az * 0.5 + 0.5, 0.0);
+    float toward = saturate(az * 0.5 + 0.5);
     float away = 1.0 - toward;
     // How far past sunset: 0 while the sun is up, 1 in late afterglow.
     float dusk = smoothstep(0.03, -0.12, e);
@@ -190,18 +190,18 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
 
     // Deep red band hugging the horizon under the sunset point, widening as the sun sets.
     float band = exp(-up / mix(0.035, 0.06, dusk)) * pow(toward, 1.3);
-    col += vec3(1.0, 0.16, 0.05) * band * 0.55;
+    col += vec3(1.0, 0.20, 0.06) * band * mix(0.75, 0.55, dusk);
     // Golden-orange glow around the sun while it is up and just after.
     float nearSun = exp(-acos(clamp(dot(rd, sunDir), -1.0, 1.0)) / 0.32) * (1.0 - dusk * 0.6);
-    col += vec3(1.0, 0.52, 0.16) * nearSun * 0.45;
+    col += vec3(1.0, 0.52, 0.16) * nearSun * 0.7;
     // Pink streaks: a broad rose layer across most of the sky (strongest toward the sun, still present
     // opposite it), broken into long bands by a slow noise so it reads as light through high haze.
     float streak = 0.65 + 0.35 * valueNoise(vec2(flatV.x * 2.4 + up * 5.0, flatV.z * 2.4 + up * 11.0 + 3.1));
     float rose = exp(-sqr((up - mix(0.10, 0.16, dusk)) / 0.16)) * (0.35 + 0.65 * pow(toward, 0.8));
-    col += vec3(1.0, 0.30, 0.52) * rose * streak * mix(0.42, 0.46, dusk);
+    col += vec3(1.0, 0.40, 0.46) * rose * streak * mix(0.42, 0.46, dusk);
     // Magenta and violet higher up as the sun sinks.
     float mag = exp(-sqr((up - 0.33) / 0.24)) * (0.3 + 0.7 * toward);
-    col += vec3(0.72, 0.22, 0.72) * mag * mix(0.06, 0.16, dusk);
+    col += vec3(0.62, 0.26, 0.62) * mag * mix(0.03, 0.07, dusk);
     // Belt of Venus: pink over the opposite horizon, above the rising blue of Earth's shadow.
     float shadowTop = mix(0.0, 0.14, dusk);
     float belt = exp(-sqr((up - shadowTop - 0.07) / 0.07)) * pow(away, 1.5);
@@ -368,17 +368,14 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
     // while it is geometrically "below the horizon": the ball keeps a deep red colour down to about -6 degrees
     // and is drawn into the below-horizon haze too (deferred), where the land occludes it naturally.
     float low = 1.0 - smoothstep(0.03, 0.32, sunDir.y);
-    float set = smoothstep(-0.105, -0.03, sunDir.y);
+    float set = smoothstep(-0.065, -0.012, sunDir.y);
     if (low > 0.0 && set > 0.0) {
         vec3 tl = sunTransmittance(normalize(vec3(sunDir.x, max(sunDir.y, 0.004), sunDir.z)));
         // Past the geometric horizon the path gets longer still: redden further.
         tl *= exp(-vec3(0.0, 3.0, 9.0) * saturate(-sunDir.y / 0.1));
         float tMax = max(tl.r, max(tl.g, tl.b));
         if (tMax > 1e-6) {
-            // Refraction flattens the low sun a little.
-            vec3 d = rd - sunDir;
-            d.y *= 1.0 + 0.2 * low;
-            float sd = length(d);
+            float sd = length(rd - sunDir);
             float r = SUN_DISC_RADIUS * (1.0 + 0.35 * low);
             float edge = 1.0 - smoothstep(r * 0.92, r, sd);
             float limb = sqrt(max(1.0 - sqr(sd / r), 0.0));
@@ -386,7 +383,7 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
             // moments right at the horizon leave a dimmer red ball.
             float hot = smoothstep(-0.015, 0.06, sunDir.y);
             vec3 hue = mix(tl / tMax, vec3(1.0, 0.92, 0.78), hot * 0.75 * smoothstep(0.2, 0.9, limb));
-            disc += hue * edge * mix(0.45, 1.0, limb) * mix(600.0, SUN_LOW_RADIANCE, hot) * low * set * (1.0 - rainStrength);
+            disc += hue * edge * mix(0.45, 1.0, limb) * mix(1500.0, SUN_LOW_RADIANCE, hot) * low * set * (1.0 - rainStrength);
             // Its own close glow, which the aureole no longer provides once the sun is below the true horizon.
             disc += hue * exp(-max(sd - r, 0.0) / (r * 1.6)) * (1.0 - edge) * 18.0 * low * set * (1.0 - rainStrength);
         }

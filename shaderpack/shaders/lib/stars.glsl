@@ -71,8 +71,11 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     }
     // Let the band emerge as the last twilight drains away. It stays restrained near the horizon,
     // where atmospheric glow is strongest, and reaches full contrast in a genuinely dark sky.
-    float darkSky = 1.0 - smoothstep(-0.30, -0.06, sunDir.y);
-    vec3 col = mw * MILKYWAY_BRIGHTNESS * mix(0.58, 1.0, darkSky);
+    // The band needs a truly dark sky: bright stars show first while twilight drains away, then the Milky Way
+    // emerges slowly, a faint glow that deepens into the full band well after sunset (sun 7 to 30 degrees below).
+    float darkSky = smoothstep(-0.12, -0.5, sunDir.y);
+    darkSky *= darkSky;
+    vec3 col = mw * MILKYWAY_BRIGHTNESS * darkSky;
 
     // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
     // density follows the galaxy's brightness (dense in the band, sparse elsewhere). Cells are fixed on the
@@ -82,7 +85,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
         vec3 sp = cs / pixelAngle / 2.2;
         vec3 cell = floor(sp);
         float hsh = hash12(cell.xy * 0.713 + cell.z * 1.37);
-        float density = 0.006 + 0.42 * smoothstep(0.02, 0.4, luminance(mw));
+        float density = (0.006 + 0.42 * smoothstep(0.02, 0.4, luminance(mw))) * mix(0.25, 1.0, darkSky);
         if (hsh < density) {
             vec3 f = fract(sp) - 0.5;
             float core = exp(-dot(f, f) * 9.0);

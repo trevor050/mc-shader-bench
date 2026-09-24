@@ -29,6 +29,7 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
+flat out vec3 sunsetLight;
 
 void main() {
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -54,6 +55,8 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+    // Sunset palette light for the sun's path on the water and the clouds reflected in it (same as clouds_march).
+    sunsetLight = sunDir.y > -0.16 ? cloudSunsetLight(sunDir) * sunsetWindow(sunDir.y) : vec3(0.0);
 }
 #endif
 
@@ -122,6 +125,7 @@ flat in int mat;
 flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
+flat in vec3 sunsetLight;
 flat in vec3 envAmbient;
 
 /* RENDERTARGETS: 0 */
@@ -299,7 +303,9 @@ void main() {
         vec3 skyRefl = vec3(0.0);
         if (skyVis != 0.0) {
             skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
-            skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, envLightDir, envDirect,
+            bool sunsetClouds = sunsetLight.r + sunsetLight.g + sunsetLight.b > 0.0;
+            skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, sunsetClouds ? sunDir : envLightDir,
+                                      sunsetClouds ? mix(envDirect, sunsetLight, sunsetWindow(sunDir.y)) : envDirect,
                                       skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
         }
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
@@ -320,7 +326,10 @@ void main() {
         float NdotV = max(dot(n, -rd), 0.15);
         float Fh = fresnelSchlick(dot(h, -rd), 0.02);
         float spec = D * Fh / (4.0 * NdotV) * saturate(dot(n, envLightDir));
-        col += envDirect * shadow * spec * skyVis;
+        // Near the horizon the physical direct light fades out (its shadow-direction swap); the golden sun path on
+        // water is exactly then at its best, so the glitter takes the sunset palette light while the disc is up.
+        vec3 glitterLight = mix(envDirect, sunsetLight * 3.5, saturate(sunsetWindow(sunDir.y) * 1.5) * smoothstep(-0.015, 0.012, sunDir.y));
+        col += glitterLight * shadow * spec * skyVis;
 
         outColor = vec4(applyCloudsInFront(col, uv), 1.0);
         return;

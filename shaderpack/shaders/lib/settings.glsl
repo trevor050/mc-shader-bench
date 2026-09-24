@@ -9,8 +9,8 @@
 #define WAVE_STRENGTH 1.0
 
 #define SUN_ILLUMINANCE 16.0
-#define SUNSET_VIVIDNESS 1.4     // strength of the sunset sky palette (red band, gold, pinks, magenta)
-#define SUN_LOW_RADIANCE 6000.0   // low sun's disc radiance once above the horizon (blinding)
+#define SUNSET_VIVIDNESS 1.25    // strength of the sunset sky palette (red band, gold, pinks, magenta)
+#define SUN_LOW_RADIANCE 3000.0   // low sun's disc radiance once above the horizon (blinding)
 #define SUN_DISC_RADIUS 0.0125    // angular radius (radians) of the low sun's visible disc
 #define MOON_ILLUMINANCE 0.02
 #define BLOCKLIGHT_COLOR vec3(1.0, 0.62, 0.32)
@@ -65,7 +65,8 @@
 
 #define BLOOM_STRENGTH 0.13
 #define GLARE_STRENGTH 0.08
-#define LOW_SUN_GLARE 1.5        // extra wide glare for a low (sunrise/sunset) sun
+#define LOW_SUN_GLARE 0.25
+#define SUN_VEIL 6.0              // analytic veiling glare around a visible sun (final.glsl), strongest when low       // extra wide glare for a low (sunrise/sunset) sun
 #define SUN_RAYS_STRENGTH 0.006
 #define SUN_STREAK_STRENGTH 0.0 // starburst streaks: Trevor rejected them twice as tacky; the low sun blinds through glare instead
 #define EXPOSURE_KEY 0.42
