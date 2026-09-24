@@ -53,7 +53,8 @@ void main() {
 #elif defined PROG_DH
     mat = MAT_LOD;
     if (dhMaterialId == DH_BLOCK_LEAVES) mat = MAT_LEAVES;
-    if (dhMaterialId == DH_BLOCK_ILLUMINATED || dhMaterialId == DH_BLOCK_LAVA) mat = MAT_EMISSIVE;
+    if (dhMaterialId == DH_BLOCK_ILLUMINATED) mat = MAT_EMISSIVE;
+    if (dhMaterialId == DH_BLOCK_LAVA) mat = MAT_LAVA;
     gl_Position = gl_ProjectionMatrix * vec4(viewPos, 1.0);
 #else
   #ifdef PROG_ENTITIES

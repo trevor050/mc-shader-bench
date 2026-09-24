@@ -55,6 +55,7 @@ uniform float viewHeight;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
 #include "/lib/stars.glsl"
+#include "/lib/lava.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -222,6 +223,7 @@ void main() {
         float reaching = saturate(luminance(shadow) * 8.0);
         if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
+        if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter);
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
 
         if (wet > 0.0 && !isLod) {
