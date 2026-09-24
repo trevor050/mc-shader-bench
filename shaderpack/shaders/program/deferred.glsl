@@ -10,6 +10,19 @@ uniform float rainStrength;
 uniform float frameTimeCounter;
 #include "/lib/atmosphere.glsl"
 #include "/lib/end_portal.glsl"
+#if defined FRAGMENT && defined LIGHT_FIELD
+#define VOXEL_READ
+#define FIELD_SHADING
+uniform sampler3D lightFieldSamplerA;
+uniform sampler3D lightFieldSamplerB;
+uniform vec3 cameraPositionFract;
+#endif
+#ifdef FRAGMENT
+uniform int frameCounter;
+#endif
+#ifdef LIGHT_FIELD
+#include "/lib/voxel.glsl"
+#endif
 #include "/lib/lighting.glsl"
 
 #ifdef VERTEX
@@ -31,7 +44,6 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
-uniform int frameCounter;
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
@@ -271,9 +283,28 @@ void main() {
 #else
         vec2 lm = nl.zw;
 #endif
+        float fieldWeight = 0.0;
+#ifdef FIELD_SHADING
+        surfaceField.weight = 0.0;
+        if (!isHand && !isLod) surfaceField = sampleLightField(playerPos, n);
+        fieldWeight = surfaceField.weight;
+#endif
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
 #ifdef DIM_NETHER
-        if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao) / PI;
+        if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao, fieldWeight) / PI;
+#endif
+#ifdef FIELD_SHADING
+        // Block light glints off surfaces: a broad sheen on everything and a tight highlight on dark glassy stone
+        // (obsidian, blackstone, basalt), which is how lava and portals read as reflecting off nearby blocks.
+        if (fieldWeight > 0.0 && surfaceField.focus > 0.05 && mat != MAT_LAVA && mat != MAT_EMISSIVE) {
+            vec3 h = normalize(surfaceField.dir - rd);
+            float nh = saturate(dot(n, h));
+            float nl = saturate(dot(n, surfaceField.dir));
+            float fres = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, h)), 5.0);
+            float glassy = 1.0 - smoothstep(0.02, 0.09, luminance(gAlbedo.rgb));
+            float lobe = mix(pow(nh, 24.0) * 3.2, pow(nh, 160.0) * 22.0, glassy);
+            col += surfaceField.radiance * surfaceField.focus * nl * fres * lobe * mix(0.35, 1.0, glassy) * ao * fieldWeight;
+        }
 #endif
 #if !defined DIM_NETHER && !defined DIM_END
         // Snow glitter: tiny ice crystals, each tilted its own way, flash when one happens to mirror the sun
@@ -375,8 +406,14 @@ const int colortex12Format = R32F;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */
+#if defined DIM_NETHER || defined DIM_END
+// Voxelization only: the shadow map is never sampled here, and the distance just has to cover the light field.
+const int shadowMapResolution = 256;
+const float shadowDistance = 80.0;
+#else
 const int shadowMapResolution = 3072;
 const float shadowDistance = 192.0;
+#endif
 const float shadowDistanceRenderMul = 1.0;
 const float sunPathRotation = -25.0;
 const bool shadowHardwareFiltering = false;

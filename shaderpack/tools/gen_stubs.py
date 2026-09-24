@@ -43,6 +43,11 @@ PROGRAMS = {
     "final": ("final.glsl", ""),
 }
 
+# Compute programs (program name -> shared source).
+COMPUTE = {
+    "shadowcomp": "shadowcomp.glsl",
+}
+
 # Iris dimension folders: root is the overworld.
 DIMENSIONS = {"": "", "world-1": "DIM_NETHER", "world1": "DIM_END"}
 
@@ -52,13 +57,16 @@ def main():
     for folder, dim_define in DIMENSIONS.items():
         out = SHADERS / folder
         out.mkdir(exist_ok=True)
-        for name, (source, define) in PROGRAMS.items():
-            # Keep shadow rendering in the Overworld only. Dimension variants compile out all
-            # shadow samplers, so these entry points would otherwise only request empty targets.
-            if folder and name == "shadow":
-                continue
+        programs = dict(PROGRAMS)
+        # The Nether and End sample no shadow map, but their shadow pass still voxelizes terrain for the light
+        # field. VOXEL_ONLY clips every vertex after voxelizing, so nothing is rasterized there.
+        if folder:
+            programs["shadow"] = ("shadow.glsl", "VOXEL_ONLY")
+        for name, (source, define) in programs.items():
+            # Image stores from the shadow vertex stage need GLSL 4.20+.
+            version = "#version 430 compatibility" if name == "shadow" else "#version 330 compatibility"
             for ext, stage in (("vsh", "VERTEX"), ("fsh", "FRAGMENT")):
-                lines = ["#version 330 compatibility", f"#define {stage}"]
+                lines = [version, f"#define {stage}"]
                 if dim_define:
                     lines.append(f"#define {dim_define}")
                 if define:
@@ -66,6 +74,13 @@ def main():
                 lines.append(f'#include "/program/{source}"')
                 (out / f"{name}.{ext}").write_text("\n".join(lines) + "\n", newline="\n")
                 count += 1
+        for name, source in COMPUTE.items():
+            lines = ["#version 430 compatibility", "#define COMPUTE"]
+            if dim_define:
+                lines.append(f"#define {dim_define}")
+            lines.append(f'#include "/program/{source}"')
+            (out / f"{name}.csh").write_text("\n".join(lines) + "\n", newline="\n")
+            count += 1
     print(f"wrote {count} stubs")
 
 

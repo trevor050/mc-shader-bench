@@ -60,7 +60,8 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     }
     if (count < 0.5) return vec3(1.0);
     blocker /= count;
-    float penumbra = clamp((ds.z - blocker) * 320.0, 0.6, 7.0) * SHADOW_SOFTNESS;
+    // Wider contact hardening: crisp at contact, soft and diffuse further out, never a hard binary edge.
+    float penumbra = clamp((ds.z - blocker) * 440.0, 0.9, 11.0) * SHADOW_SOFTNESS;
 
     vec3 vis = vec3(0.0);
     for (int i = 0; i < SHADOW_SAMPLES; i++) {

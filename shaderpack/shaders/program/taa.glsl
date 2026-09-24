@@ -156,7 +156,12 @@ void main() {
         // The measurement is center-weighted, so looking at something bright (the sun) darkens the view.
         float whole = textureLod(colortex6, vec2(0.5), 11.0).r;
         float center = textureLod(colortex6, vec2(0.5), 7.0).r;
+#if defined DIM_NETHER || defined DIM_END
+        // composite meters log2(luminance) + 24 here, so the mip chain is already a log average.
+        float target = mix(whole, center, 0.25) - 24.0;
+#else
         float target = log2(max(mix(whole, center, 0.25), 1e-5));
+#endif
         float prev = texelFetch(colortex5, ivec2(0), 0).a;
         // Adapt faster toward bright scenes than dark ones, like eyes do.
         float rate = target > prev ? 3.0 : 1.2;

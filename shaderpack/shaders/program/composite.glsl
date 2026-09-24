@@ -49,6 +49,15 @@ flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
 
+// Eye adaptation input. The Overworld keeps its calibrated arithmetic mean (capped so the sun counts as bright
+// but not overwhelming). The Nether and End meter a log average instead: there a lava sea is both the brightest
+// thing and a large part of the frame, and an arithmetic mean let it expose every other surface to black.
+#if defined DIM_NETHER || defined DIM_END
+vec4 adaptMeter(vec3 c) { return vec4(log2(max(luminance(c), 1e-6)) + 24.0); }
+#else
+vec4 adaptMeter(vec3 c) { return vec4(min(luminance(c), 4.0)); }
+#endif
+
 /* RENDERTARGETS: 0,6 */
 layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
@@ -90,7 +99,7 @@ void main() {
     // absorption, and half-resolution light shafts from tinting it with the scene behind.
     if (depth < 0.56) {
         outColor = vec4(col, 1.0);
-        outAdaptLum = vec4(min(luminance(col), 4.0));
+        outAdaptLum = adaptMeter(col);
         return;
     }
     bool sky = false;
@@ -118,13 +127,13 @@ void main() {
         float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
         vec3 medium = vec3(0.02, 0.10, 0.12) * (envAmbient / PI * 0.8 + envDirect * 0.06) * (0.2 + 0.8 * skyExposure);
         col = col * trans + medium * (1.0 - trans);
-        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));
+        outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);
         return;
     }
     if (isEyeInWater > 1) {
         vec3 fogCol = isEyeInWater == 2 ? vec3(2.0, 0.4, 0.05) : vec3(0.6, 0.65, 0.7);
         col = mix(col, fogCol, 1.0 - exp(-dist * 0.8));
-        outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));
+        outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);
         return;
     }
 
@@ -200,5 +209,5 @@ void main() {
 #endif
 #endif
 
-    outColor = vec4(col, 1.0); outAdaptLum = vec4(min(luminance(col), 4.0));}
+    outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);}
 #endif

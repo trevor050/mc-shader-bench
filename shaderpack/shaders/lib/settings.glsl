@@ -14,6 +14,15 @@
 #define BLOCKLIGHT_STRENGTH 3.2
 #define MIN_LIGHT 0.006
 
+// Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the
+// camera. Must match the image sizes in shaders.properties.
+#define LIGHT_FIELD
+#define VOXEL_EXTENT 128          // horizontal blocks (multiple of 8)
+#define VOXEL_EXTENT_Y 64         // vertical blocks (multiple of 8)
+#define LIGHT_FIELD_SOURCE 24.0   // radiance injected by a level-15 emitter
+#define LIGHT_FIELD_KEEP 0.992    // per-step energy kept while diffusing; lower = shorter reach
+#define LIGHT_FIELD_GAIN 0.45     // surface response; 0.45 matches vanilla torch brightness at 1..8 blocks
+
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
 #define CLOUD_COVERAGE 0.34
@@ -44,6 +53,8 @@
 #define EXPOSURE_KEY 0.42
 #define EXPOSURE_MIN 0.02
 #define EXPOSURE_MAX 20.0
+#define EXPOSURE_MAX_CAVE 5.0       // exposure ceiling underground and in the Nether/End
+#define EXPOSURE_KEY_OTHERWORLD 0.55 // Nether/End key (log-average metering there)
 //#define EXPOSURE_DEBUG
 #define SATURATION 1.08
 #define GRADE_CONTRAST 0.28

@@ -46,6 +46,7 @@ uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
+uniform ivec2 eyeBrightnessSmooth;
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -191,7 +192,13 @@ void main() {
     const float refLog = -0.75;
     float slope = adaptedLog > refLog ? 0.45 : 0.36;
     float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
-    exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
+#if !defined DIM_NETHER && !defined DIM_END
+    // Underground the eye may not open all the way: dark caves must stay dark, torch-lit ones stay readable.
+    float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
+    exposure = clamp(exposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
+#else
+    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN, EXPOSURE_MAX_CAVE);
+#endif
     col *= exposure;
 #if !defined DIM_NETHER && !defined DIM_END
     col *= whiteBalance;

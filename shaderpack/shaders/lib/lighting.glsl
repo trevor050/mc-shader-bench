@@ -38,6 +38,12 @@ LightEnv makeLightEnv(vec3 sunDir) {
     e.skyAmbient = (up * 2.2 + side * 1.1) * PI * 0.5 + vec3(0.0015, 0.002, 0.003);
     e.skyAmbient *= mix(1.0, 0.80, nightBlend);
     e.skyAmbient = mix(e.skyAmbient, vec3(luminance(e.skyAmbient)) * 0.8, rainStrength * 0.6);
+    // Under a clear sky, skylight on a horizontal surface is roughly a fifth of the direct sun. Below that ratio
+    // shadows read as black holes (Trevor: shadowed blue ice and snow crushed to near black). Raise the fill to
+    // that floor, keeping the sky's own hue so shade stays cool.
+    float ambientLum = luminance(e.skyAmbient);
+    float floorLum = 0.22 * luminance(e.directLight); // both terms are divided by PI in shadeSurface
+    e.skyAmbient *= max(1.0, floorLum / max(ambientLum, 1e-5));
     return e;
 }
 
@@ -47,6 +53,27 @@ vec3 blockLight(float lmBlock) {
     float falloff = l / (1.0 + (1.0 - lmBlock) * 22.0);
     return BLOCKLIGHT_COLOR * BLOCKLIGHT_STRENGTH * falloff;
 }
+
+#ifdef FIELD_SHADING
+// Set by the caller (sampleLightField) before shadeSurface; lets the same entry point serve passes that do
+// not read the voxel field.
+FieldLight surfaceField;
+
+// Block light from the voxel field. The field was read in the open cell in front of the surface, so faces
+// turned away from a source are already darker; the gradient adds a wrap-lit directional term on top.
+// Vanilla's lightmap guards against light the grid cannot see (sources outside it, stale frames).
+vec3 fieldBlockLight(FieldLight f, vec3 n, float lmBlock, float ao) {
+    float facing = f.focus > 0.0 ? dot(n, f.dir) : 0.0;
+    float directional = mix(1.0, saturate(facing * 0.65 + 0.55) * 1.35, f.focus);
+#ifdef DIM_NETHER
+    // Lava seas outshine Minecraft's 15-block light range; trust the field alone here.
+    float guard = 1.0;
+#else
+    float guard = smoothstep(0.0, 0.12, lmBlock);
+#endif
+    return f.radiance * directional * guard * mix(ao, 1.0, 0.35);
+}
+#endif
 
 // albedo is linear. shadow is the filtered visibility for the light (1 = lit).
 vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, float ao, int mat, vec3 shadow, float emissive) {
@@ -74,9 +101,13 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     vec3 bounce = env.directLight * vec3(0.30, 0.26, 0.20) * 0.18 * (1.0 - 0.6 * n.y);
     vec3 ambient = (skyAmb * skyFacing + bounce) * skyVis * ao;
 #if defined DIM_NETHER
-    // Lava-lit ambient: upward faces catch more of the warm fill, while undersides stay dark enough to read
-    // against the smoke. The small neutral ash floor is added only for genuinely dark stone below.
-    ambient = vec3(1.8, 0.68, 0.28) * (0.62 + 0.38 * n.y) * ao;
+    // Smog fill: dim, lit from below by the lava seas, tinted by the biome's own air (crimson red, warped
+    // teal-grey, soul sand valley cold grey, basalt ash). Hue only, partly desaturated, so blocks keep their own
+    // colours: the old constant orange multiplier turned grey soul sand red. Local warmth comes from the light
+    // field and netherUplight, not from here.
+    vec3 biomeAir = toLinear(fogColor);
+    biomeAir = mix(vec3(luminance(biomeAir)), biomeAir, 0.55) / max(luminance(biomeAir), 1e-3);
+    ambient = mix(vec3(0.36, 0.29, 0.25), biomeAir * 0.30, 0.6) * 1.6 * (0.8 - 0.3 * n.y) * ao;
 #elif defined DIM_END
     // Dim violet ambient plus a soft light from the storm overhead, so pillars and islands keep their shape.
     const vec3 endLightDir = vec3(0.37, 0.83, 0.42);
@@ -84,11 +115,17 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
             + vec3(0.9, 0.55, 1.5) * saturate(dot(n, endLightDir) * 0.8 + 0.2) * 0.55 * ao;
 #endif
     vec3 torch = blockLight(lm.x) * mix(ao, 1.0, 0.4);
+#ifdef FIELD_SHADING
+    if (surfaceField.weight > 0.0 && mat != MAT_HAND)
+        torch = mix(torch, fieldBlockLight(surfaceField, n, lm.x, ao), surfaceField.weight);
+#endif
 #if defined DIM_NETHER
     // Keep the Nether's residual fill warm-neutral instead of the cool blue floor used elsewhere.
     vec3 minLight = vec3(MIN_LIGHT) * vec3(0.95, 0.72, 0.48) * ao;
 #else
-    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao;
+    // The floor only exists near open sky (moonless night, deep overhangs). Sealed caves get almost none, so an
+    // unlit cave is dark and only its light sources reveal it.
+    vec3 minLight = vec3(MIN_LIGHT) * vec3(0.7, 0.8, 1.0) * ao * mix(0.06, 1.0, smoothstep(0.0, 0.5, lm.y));
 #endif
 
     vec3 col = albedo * (direct / PI + ambient / PI + torch + minLight);
@@ -145,9 +182,11 @@ vec3 netherStoneReflection(vec3 rayDir) {
 
 // Heat rising off the lava seas: surfaces low down and facing down (ceilings, overhangs, cliff undersides)
 // catch warm light from below.
-vec3 netherUplight(vec3 wp, vec3 n, float ao) {
+// This is the far-field stand-in for the light field: beyond the voxel grid (or with the sea below it) the
+// lava level is the only source of heat. fieldWeight fades it out where the grid sees the actual lava.
+vec3 netherUplight(vec3 wp, vec3 n, float ao, float fieldWeight) {
     float nearLava = exp(-max(wp.y - 31.0, 0.0) / 54.0);
     float facing = saturate(0.55 - n.y * 0.45);
-    return vec3(3.4, 0.82, 0.12) * nearLava * facing * mix(ao, 1.0, 0.3);
+    return vec3(3.4, 0.82, 0.12) * 0.45 * nearLava * facing * mix(ao, 1.0, 0.3) * (1.0 - 0.75 * fieldWeight);
 }
 #endif
