@@ -1,5 +1,19 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 06:38 EDT Codex accepted second buffer reuse
+
+Art now includes `2aa0e70` plus proof correction `0ca7f64`: the later VL/smog
+scene distance reuses `colortex8.r` after all cloud-distance consumers finish,
+eliminating half-resolution `colortex12`. Independent pass-order review covered
+Overworld, Nether, and End; all 183 stages compiled. Guarded Iris runtime
+captures at RD12 showed the same scene and effects as Art in the Nether,
+Overworld, End, and after an End-to-Overworld transition, aside from expected
+cloud/portal/dragon animation. The source-derived storage reduction is
+**15.82 MiB at 4K UHD** for Iris main+alternate R32F textures (8.98 MiB at
+3440×1369); no measured FPS gain is claimed. The player was returned to the
+original Nether portal pose, creative mode and HUD restored. The game is
+closed, original Iris/options hashes restored, and monitors off.
+
 ## 2026-09-24 06:23 EDT Codex profiler smoke and buffer candidate
 
 Main bench harness now has an optional Iris 1.11.4 per-pass GL timer profiler
@@ -19,8 +33,8 @@ An independent source review accepted the isolated `colortex12` to
 `colortex8.r` lifetime alias candidate `b31954e` as statically sound across
 all three dimensions. It removes one half-resolution R32F target, estimated
 15.82 MiB at 4K with Iris main+alt storage, and all 183 stages compile. It
-is **not merged**: Iris runtime binding and visual checks in Overworld,
-Nether, and End are still required. Candidate worktree:
+was **not yet merged at this note**; the runtime check and acceptance are
+recorded above. Candidate worktree:
 `C:\Users\Trevor\codeprojects\mc-shader-bench-art-colortex12-alias`.
 
 ## 2026-09-24 05:43 EDT Codex register-tile runtime result

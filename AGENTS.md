@@ -27,6 +27,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Stars: raSun pinned (fract(day/3650+0.44)) so the Milky Way is up at midnight, not behind the full moon.
 
 ## V4 systems (claude/v4-art)
+- Half-resolution transient targets are deliberately reused by pass lifetime: `colortex7` holds cloud radiance, then VL radiance, then bloom; `colortex8.r` holds cloud distance through `deferred2`, then VL/smog scene distance through `composite2`. Persistent histories `colortex9` and `colortex11` remain separate. Do not reintroduce removed `colortex10`/`colortex12` without a pass-order reason. See `docs/framebuffer-alias-colortex12-to-8.md` and the coordination notes for Iris runtime evidence.
 - Light field: shadow pass voxelizes (lib/voxel.glsl; r32ui voxelImg 128x64x128, type|level|extra2|rgb8) -> shadowcomp.csh diffuses rgba16f lightFieldA/B (ping-pong by frameCounter parity; readers use B on even frames). rgb = colour ENERGY (sources stored c*c, read back with sqrt), a = extra-light energy (class 3 lava, 2 portal, 1 fire-like). Surfaces: brightness from vanilla lm.x (blockLightLevel, gentle curve), hue + direction + extra reach from the field (fieldBlockLight). Never let the field alone decide brightness (black pockets where it has not spread).
 - Emitter colour: auto from sprite (l^8 * saturation weighted, 6x6 taps); lava/portal fixed colours.
 - Nether/End have voxel-only shadow stubs (VOXEL_ONLY clips all vertices; map 256, dist 80). gen_stubs writes shadow/shadowcomp at #version 430. shadow.enabled=true required.
