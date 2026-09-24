@@ -1,5 +1,56 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 05:12 EDT Codex overnight result
+
+Art now includes `fdd1023` (source candidate `bc586ca`): reuse half-resolution
+`colortex7` after cloud/VL temporal reads for the late bloom pass, eliminating
+`colortex10`. Iris's main+alt target allocation implies about 31.64 MiB saved
+at 4K, plus a redundant clear. An independent pass-order review covered all
+three dimensions; all 183 stages compiled; a guarded Iris runtime smoke in the
+Nether and Overworld showed portal, sky, sun, and bloom present. No matched GPU
+timing was captured, so this is a memory optimization, not a proven FPS gain.
+
+The separate exact stack and shared-tile candidates were **not** adopted: in
+short monitor-off RD32 portal captures, Art was 10.35 ms median frame-start
+gap, exact 10.58 ms, and shared-tile 10.75 ms. Those small, non-paired samples
+do not support an improvement. The intermittent 1-12 s whole-PC stall remains
+unexplained; a prior 0-1 FPS Art trace began before any scripted camera turn
+with ~7.7/12.3 GiB VRAM used. There is no GC log or GPU Busy trace at the
+stall. Main harness commit `3f8e736` adds client-only `look`, passive
+PresentMon/telemetry capture, offline analysis, and a safety watchdog. The
+watchdog initially failed to compile in a fresh PowerShell process; that was
+fixed, and arm/cancel plus deadline shader-disable behavior were then tested.
+Verify `guard armed` and empty stderr before any risky run.
+
+An isolated Art-only postprocess candidate `d9e0209` hoists frame-constant sun
+visibility and average-luminance samples to fullscreen vertices. It compiled
+and Iris smoke images looked plausible, but a matched warm A/B/A and visual
+sun check remain before promotion. Do not merge it solely from the static
+70M-sample estimate. Minecraft is closed, shader setting is off, original
+Iris/options hashes were restored, and the monitors were sent off again.
+
+## 2026-09-24 Codex overnight stability test and quiet mode
+
+Trevor asked for physical quiet and dark monitors until 4:00 a.m. EDT. Minecraft was gracefully closed at ~3:05; shaders were off and the original DH config restored before exit. Please do not launch Minecraft, wake the monitors, or run heavy compiles/profiles before 4:00. Codex is doing source review and preparing candidates offline.
+
+Guarded DH test: backed up `DistantHorizons.toml`, set only `ignoredDimensionCsv="minecraft:the_nether"`, restarted, and enabled current V4Art `13d1375`. A 35-second telemetry trace with V4Art at the **stationary portal view** (03:00:53-03:01:27) showed 0-1 FPS on five successful BenchCam reads; 18 reads timed out waiting on the render thread. The first scripted `/tp` view-angle command occurred only at 03:01:27, **after** this trace, so camera turns did not cause the measured 0-1 FPS. Shader-off control immediately beforehand was 1379-1610 FPS. During V4Art trace, Minecraft dedicated GPU memory was only 6140-6351 MiB and global VRAM 7533-7747/12282 MiB; this sample does not support a VRAM-exhaustion explanation for that particular stall. Disabling Nether DH *rendering* did not prevent the stationary slowdown, but its config does not disable DH world-generation queues or the vanilla 32-chunk load. The exact cause is still open. Raw CSVs and images are under `C:\Users\Trevor\codeprojects\mc-shader-bench\harness\out\dh-nether-ab-20260924-0257`; the prior run log is `logs\2026-09-24-4.log.gz` in the Prism instance. We restored `ignoredDimensionCsv=""` byte-for-byte and Iris `enableShaders=false` before exiting. Next probe should capture PresentMon GPU/CPU frame times plus per-process telemetry and use client-only camera rotation instead of server `/tp`.
+
+## 2026-09-24 Codex follow-up: memory attribution and candidate status
+
+Shader-off Minecraft currently owns about 6.4 GiB dedicated GPU memory, stable over a short 15-second passive sample. The V4 shader's declared buffers/textures appear to total roughly 0.4-0.6 GiB, so the observed 3.5 GiB VRAM swing is not directly explained by SSR's buffers (SSR adds none). Heavy shader work interacting with Iris/DH rendering or chunk uploads remains a plausible mechanism; no stall-time per-process trace exists and no leak is proven. Current settings are vanilla render distance 32, DH radius 512 chunks, VERY_HIGH vertical/EXTREME horizontal detail, eight full-duty DH workers. We are preparing a reversible visual/performance comparison for those settings and a passive per-process VRAM logger. The exact Nether shader candidate is now `c8c13fb` in `C:\Users\Trevor\codeprojects\mc-shader-bench-v4-nether-safety-candidate`, still **not accepted or merged**. Live Iris remains `enableShaders=false`; please avoid reloading V4Art during art work until a coordinated guarded test.
+
+## 2026-09-24 Codex guarded portal tests, shaders now off
+
+Trevor freed the camera briefly. I built `ClaudeBenchV4NoSSR` (same current art at `13d1375`, only new glossy SSR disabled) and `ClaudeBenchV4NetherOpt` (same art plus isolated exact SSR/smog/haze/far-fog/lava/lighting optimizations). Both passed 183-stage compile. At the Nether portal, several 90-180-degree teleport view changes in **NoSSR** did not reproduce the long freeze: GPU memory held around 8.6 GiB, settled FPS ~80s. A shorter guarded check of **NetherOpt** also completed four view changes without a long stall, ~8.5 GiB VRAM; it had one ~1-second command latency and transient FPS=0 on a teleport, so it is not certified stable. This does **not** prove SSR alone caused Trevor's earlier 10-12-second stalls or that NetherOpt fixes them. I restored Trevor's starting view and `ClaudeBenchV4Art` selection with `enableShaders=false`; please leave it off unless coordinating another bounded test. The candidate is in `C:\Users\Trevor\codeprojects\mc-shader-bench-v4-nether-safety-candidate`, commit `0eb4397` at this note. No optimization has been merged into your art branch. Your latest art design is preserved.
+
+## 2026-09-24 Codex controlled safety check at Nether portal
+
+At the portal, Trevor had repeated 1-12-second whole-PC stalls specifically when turning his view with `ClaudeBenchV4Art` enabled. I used BenchCam `shaders off` (no camera move); Iris now records `enableShaders=false`. Trevor then turned around the *same portal* for ~10 seconds and reported **no freezes, silky smooth**. BenchCam FPS increased from a sampled 79 with V4Art to 125 after disabling. NVIDIA VRAM fell from ~8.7 GiB to ~5.8 GiB immediately, then settled around 7.8 GiB while moving/loading. This strongly isolates the symptom to the shader pipeline or its interaction with Iris/DH, but it does not yet isolate SSR vs smog vs heat haze, and VRAM amount alone is not a proven cause. Please keep shaders off in the live game until we have a controlled diagnostic variant; do not automatically reload current V4Art. Codex is building isolated candidate packs from current art, preserving the visual design. Trevor still owns camera control.
+
+## 2026-09-24 Codex live resource evidence, urgent
+
+At 02:23:25-02:23:48 EDT, a passive `nvidia-smi` sample during your relaunched game showed VRAM climb **7,748 → 11,248 MiB of 12,282 MiB** while GPU utilization rose to 77-79%; VRAM then fell to 10,042 MiB. `javaw` working set stayed ~7.10-7.18 GiB. Trevor has already had **two near whole-PC stalls** that cleared when quitting Minecraft. This is consistent with dangerous VRAM pressure, although it does not identify leak vs DH chunk loading vs allocation churn. Please pause repeated live reloads of `ClaudeBenchV4Art`; for further work use shader-disabled or a pre-SSR control until we can measure safely. The exact latest SSR adds up to 28+6 full-resolution depth checks on glossy pixels. Separate agents have isolated compile-tested optimizations for smog, lava, heat haze, far fog; none is live accepted. Codex is preparing safe A/B captures, and will not move the camera while you are using it.
+
 ## 2026-09-24 Claude #16: V4 art pass 2 (lighting rebuild, Nether, reflections)
 
 Trevor gave me the camera; I relaunched the game after it closed at 02:14 and used it for captures (views/v5*..v7*).
