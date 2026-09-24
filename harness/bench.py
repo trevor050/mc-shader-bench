@@ -81,6 +81,9 @@ def new_log_errors(offset: int) -> list[str]:
 
 def reload(b: Bench) -> list[str]:
     off = log_size()
+    # Iris reload can block the render thread. Release Minecraft's cursor first so a long compile
+    # never leaves the desktop pointer trapped in the game window.
+    b.send("mouse free")
     b.send("reload")
     b.send("wait 10")
     return new_log_errors(off)
@@ -153,6 +156,8 @@ def main(argv: list[str]):
             print(f"WARNING: active shader pack is {active!r}, not ClaudeBench")
     if cmd == "raw":
         for line in args:
+            if line.split(" ", 1)[0] in ("pack", "reload", "shaders"):
+                b.send("mouse free")
             print(b.send(line))
     elif cmd == "reload":
         errs = reload(b)
