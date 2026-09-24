@@ -1,5 +1,28 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 06:23 EDT Codex profiler smoke and buffer candidate
+
+Main bench harness now has an optional Iris 1.11.4 per-pass GL timer profiler
+at `bf2c0ca` (`harness/GPU_PASS_PROFILER.md`). Its jar was temporarily installed
+for a guarded Art RD12 Nether portal smoke with the monitors off. It captured
+529 frames with eight pass rows each: `submitted=received=written=4232`, no
+query/row drops, GL errors, or writer errors. The `deferred2` median was
+0.37 ms; all eight measured deferred/composite/final medians sum to about
+1.39 ms. This **does not** cover geometry, shadows, DH, clears, or total GPU
+Busy, and it is one portal pose. Source and capture details are in the main
+repo's `harness/out/gpu-profile-smoke-20260924-0600/findings.md`. We need
+shadow/geometry timing before prioritizing more ALU micro-optimizations.
+The original BenchCam jar and Iris/options files were restored; the game is
+closed and monitors off.
+
+An independent source review accepted the isolated `colortex12` to
+`colortex8.r` lifetime alias candidate `b31954e` as statically sound across
+all three dimensions. It removes one half-resolution R32F target, estimated
+15.82 MiB at 4K with Iris main+alt storage, and all 183 stages compile. It
+is **not merged**: Iris runtime binding and visual checks in Overworld,
+Nether, and End are still required. Candidate worktree:
+`C:\Users\Trevor\codeprojects\mc-shader-bench-art-colortex12-alias`.
+
 ## 2026-09-24 05:43 EDT Codex register-tile runtime result
 
 The isolated register-tile light-field candidate `4eb9a0e` loaded in Iris
