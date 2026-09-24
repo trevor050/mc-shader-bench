@@ -139,7 +139,6 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
 }
 
-#ifdef DIM_END
 float endFbm(vec2 p) {
     float n = 0.0, amp = 0.5;
     for (int i = 0; i < 5; i++) { n += valueNoise(p) * amp; p = p * 2.03 + vec2(11.3, 7.7); amp *= 0.5; }
@@ -169,7 +168,6 @@ vec3 endSky(vec3 rd) {
     col += vec3(0.10, 0.04, 0.16) * exp(-abs(rd.y) * 7.0) * 0.55;           // void haze at the horizon
     return col;
 }
-#endif
 
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {

@@ -284,6 +284,34 @@ void main() {
             col += env * fr * darkness * ao * 0.8;
         }
         if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter);
+        if (mat == MAT_ENDPORTAL) {
+            // End portal: a window into deep space. Star and nebula layers sit at increasing depths behind the
+            // surface; each is sampled where the view ray would reach it, so they slide past one another with
+            // parallax as the camera moves, and the portal reads as a bottomless hole instead of a sticker.
+            vec3 wp = playerPos + cameraPosition;
+            vec3 pn = abs(n);
+            vec2 base = pn.y > 0.5 ? wp.xz : (pn.x > 0.5 ? wp.zy : wp.xy);
+            vec2 dir2 = pn.y > 0.5 ? rd.xz : (pn.x > 0.5 ? rd.zy : rd.xy);
+            float into = max(abs(dot(rd, n)), 0.08);
+            vec3 space = vec3(0.004, 0.001, 0.012);
+            for (int layer = 0; layer < 4; layer++) {
+                float depth = 6.0 + float(layer * layer) * 14.0;
+                vec2 uv = base + dir2 / into * depth + frameTimeCounter * 0.08 * vec2(1.0, 0.6) * (1.0 + float(layer));
+                float neb = endFbm(uv * 0.06 + float(layer) * 3.7);
+                space += vec3(0.30, 0.07, 0.45) * smoothstep(0.45, 0.9, neb) * 0.05 / (1.0 + float(layer));
+                space += vec3(0.04, 0.22, 0.26) * smoothstep(0.6, 0.95, neb) * 0.03;
+                vec2 sc = uv * (1.6 - float(layer) * 0.25);
+                vec2 cell = floor(sc);
+                float h = hash12(cell + float(layer) * 19.1);
+                if (h > 0.93) {
+                    vec2 f = fract(sc) - 0.5;
+                    float tw = 0.7 + 0.3 * sin(frameTimeCounter * 3.0 + h * 50.0);
+                    space += mix(vec3(0.7, 0.8, 1.0), vec3(0.9, 0.7, 1.0), hash12(cell + 5.0)) * exp(-dot(f, f) * 60.0) * tw
+                           * 1.2 / (1.0 + float(layer) * 0.8);
+                }
+            }
+            col = space * 4.0;
+        }
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
         {

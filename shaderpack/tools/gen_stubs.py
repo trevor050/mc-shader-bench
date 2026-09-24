@@ -19,7 +19,7 @@ PROGRAMS = {
     "gbuffers_beaconbeam": ("gbuffers_solid.glsl", "PROG_TEXTURED"),
     "gbuffers_terrain": ("gbuffers_solid.glsl", "PROG_TERRAIN"),
     "gbuffers_damagedblock": ("gbuffers_solid.glsl", ""),
-    "gbuffers_block": ("gbuffers_solid.glsl", ""),
+    "gbuffers_block": ("gbuffers_solid.glsl", "PROG_BLOCK"),
     "gbuffers_entities": ("gbuffers_solid.glsl", "PROG_ENTITIES"),
     "dh_terrain": ("gbuffers_solid.glsl", "PROG_DH"),
     "gbuffers_water": ("gbuffers_translucent.glsl", "PROG_WATER"),

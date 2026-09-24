@@ -19,6 +19,9 @@ uniform float rainStrength;
 uniform mat4 gbufferModelView;
 uniform mat4 gbufferModelViewInverse;
 uniform vec3 cameraPosition;
+#ifdef PROG_BLOCK
+uniform int blockEntityId;
+#endif
 
 out vec2 texcoord;
 out vec2 lmcoord;
@@ -62,6 +65,9 @@ void main() {
   #endif
   #ifdef PROG_HAND
     mat = MAT_HAND;
+  #endif
+  #ifdef PROG_BLOCK
+    mat = blockEntityId - 10000 == MAT_ENDPORTAL ? MAT_ENDPORTAL : MAT_NONE;
   #endif
     gl_Position = ftransform();
 #endif
