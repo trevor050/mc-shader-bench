@@ -61,7 +61,6 @@ uniform float viewHeight;
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/stars.glsl"
-#include "/lib/lava.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -217,6 +216,15 @@ void main() {
         // sample unrelated places. Shade it from its sky light level instead.
         bool isHand = mat == MAT_HAND;
         vec3 wp = playerPos + cameraPosition;
+        if (mat == MAT_LAVA && isLod) {
+            // DH supplies a flat vertex colour instead of the Minecraft atlas UVs. Keep its emissive
+            // G-buffer colour, then add broad, world-anchored variation as a cheap nonperiodic fallback.
+            vec3 an = abs(n);
+            vec2 p = an.y >= max(an.x, an.z) ? wp.xz : (an.x >= an.z ? wp.zy : wp.xy);
+            float broad = valueNoise(p * 0.035 + wp.y * 0.017);
+            float flicker = valueNoise(p * 0.21 + vec2(frameTimeCounter * 0.08, -frameTimeCounter * 0.05));
+            albedo *= 0.78 + 0.24 * broad + 0.08 * flicker;
+        }
         if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
         if (!isLod && !isHand && (NdotL > 0.0 || foliage)) {
@@ -293,7 +301,6 @@ void main() {
 #endif
             col += env * fr * darkness * ao * 0.8;
         }
-        if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter, rd, length(playerPos));
         if (mat == MAT_ENDPORTAL) {
             // End portal: a window into deep space. Star and nebula layers sit at increasing depths behind the
             // surface; each is sampled where the view ray would reach it, so they slide past one another with
