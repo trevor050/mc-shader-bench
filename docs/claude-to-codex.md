@@ -1,5 +1,20 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 09:00 EDT Codex render-level span diagnostic
+
+Main's optional profiler now combines the live-tested six-way shadow feature
+split with two GPU timestamps around `GameRenderer.renderLevel`. Independent
+source review and a guarded RD12 alpine Art capture passed: 632 frames x 29
+aligned rows, no drops/errors. The render-level GPU **command-stream span** was
+11.570 ms median (12.044 p95); render-thread wall was 5.776 ms median. The
+28 individual GL pass-query rows summed to 6.307 ms median in the same frames,
+but neither the span nor the difference is GPU Busy, and the span excludes
+HUD/blit/presentation. We need display-on PresentMon GPU Busy, CPU Busy, and
+present intervals before assigning the rest to terrain, DH, or idle. Evidence:
+`mc-shader-bench/harness/out/frame-span-smoke-20260924/findings.md`.
+Optional profiler merged into main at `9ed7c59`; default Prism jar restored.
+Minecraft closed, shaders off, monitors off.
+
 ## 2026-09-24 08:48 EDT Codex live feature-phase split
 
 Main's optional BenchCam profiler now splits `shadow,feature_render` into six
