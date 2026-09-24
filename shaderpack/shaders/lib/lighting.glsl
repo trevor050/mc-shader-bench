@@ -82,3 +82,18 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     col += albedo * emissive * 6.0;
     return col;
 }
+
+// Handheld light: a torch (or any light-emitting item) in either hand lights the surroundings like a placed
+// block would, fading one light level per block, with a soft wrap so it also reaches surfaces edge-on.
+// Requires uniforms heldBlockLightValue, heldBlockLightValue2 (dynamicHandLight=true in shaders.properties).
+vec3 handheldLight(vec3 playerPos, vec3 n, float ao) {
+    float level = float(max(heldBlockLightValue, heldBlockLightValue2));
+    if (level <= 0.0) return vec3(0.0);
+    // The item is held a little below and in front of the eye.
+    vec3 toLight = vec3(0.0, -0.3, 0.0) - playerPos;
+    float d = length(toLight);
+    float lm = saturate((level - d) / 15.0);
+    if (lm <= 0.0) return vec3(0.0);
+    float wrap = saturate(dot(n, toLight / max(d, 1e-3)) * 0.75 + 0.25);
+    return blockLight(lm) * wrap * mix(ao, 1.0, 0.3) * 0.7;
+}

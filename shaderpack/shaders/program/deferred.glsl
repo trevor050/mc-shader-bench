@@ -46,6 +46,8 @@ uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 uniform vec3 cameraPosition;
 uniform float wetness;
+uniform int heldBlockLightValue;
+uniform int heldBlockLightValue2;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
 uniform sampler2D colortex8;
@@ -222,6 +224,7 @@ void main() {
         float reaching = saturate(luminance(shadow) * 8.0);
         if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
+        if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
 
         if (wet > 0.0 && !isLod) {
             vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));

@@ -74,6 +74,8 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
+uniform int heldBlockLightValue;
+uniform int heldBlockLightValue2;
 uniform sampler2D colortex9;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"
@@ -292,6 +294,9 @@ void main() {
     vec3 shadow = sampleShadow(playerPos, n, saturate(dot(n, envLightDir)), dither);
 #endif
     vec3 col = shadeSurface(env, toLinear(albedo.rgb), n, -rd, lmcoord, 1.0, mat, shadow, 0.0);
+#ifndef PROG_HAND
+    col += toLinear(albedo.rgb) * handheldLight(playerPos, n, 1.0);
+#endif
 #ifdef PROG_HAND
     // Arms and held items are opaque: no glass-style reflection, and never blend with the scene behind.
     outColor = vec4(col, 1.0);
