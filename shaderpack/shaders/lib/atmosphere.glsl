@@ -182,9 +182,12 @@ float endSkyFbm(vec2 p) {
 // putting a bright centre or a hard circular silhouette in the sky.
 vec3 endSky(vec3 rd) {
     float t = frameTimeCounter * 0.018;
+    // The storm wraps the whole sphere: below the horizon (the void) it continues on its own mirrored dome with a
+    // different seed, darker and more magenta, so the islands float inside it instead of over a black floor.
+    bool below = rd.y < 0.0;
     // Dome projection gives the sky a broad canvas. An offset, decaying twist puts movement through the
     // cloud shapes but leaves the middle of the view free of a bullseye.
-    vec2 p = rd.xz / (max(rd.y, 0.0) + 0.52);
+    vec2 p = rd.xz / (abs(rd.y) + 0.52) + (below ? vec2(7.3, -4.1) : vec2(0.0));
     p = mat2(0.9063, -0.4226, 0.4226, 0.9063) * p;
     p *= vec2(0.86, 1.08);
     vec2 anchor = vec2(-0.72, 0.16);
@@ -208,7 +211,8 @@ vec3 endSky(vec3 rd) {
     float edge = (1.0 - smoothstep(0.055, 0.19, abs(field - 0.57))) * smoothstep(0.34, 0.56, detail);
     float strands = smoothstep(0.68, 0.86, detail) * smoothstep(0.44, 0.64, broad);
     float filament = exp(-sqr(bend / 0.16)) * smoothstep(0.47, 0.72, detail) * smoothstep(0.38, 0.62, broad);
-    float highSky = smoothstep(-0.04, 0.38, rd.y);
+    // A thin darker belt at the horizon separates sky from void; both hemispheres carry the storm.
+    float highSky = smoothstep(0.02, 0.38, abs(rd.y)) * (below ? 0.55 : 1.0);
 
     vec3 col = vec3(0.0045, 0.0022, 0.012);
     col += vec3(0.095, 0.022, 0.20) * cloud * (0.42 + 0.58 * detail) * highSky;
@@ -218,7 +222,12 @@ vec3 endSky(vec3 rd) {
     // A very restrained cold fringe separates some cloud banks from the purple body.
     col += vec3(0.026, 0.050, 0.14) * strands * 0.18 * highSky;
     // Keep the far terrain legible as silhouettes against a low, dim violet haze.
-    col += vec3(0.045, 0.010, 0.085) * exp(-max(rd.y, 0.0) * 8.0) * 0.20;
+    col += vec3(0.045, 0.010, 0.085) * exp(-abs(rd.y) * 8.0) * 0.20;
+    if (below) {
+        // The void: the storm's underside shifts toward magenta, over a faint glowing abyss straight down.
+        col *= vec3(1.25, 0.7, 0.95);
+        col += vec3(0.09, 0.012, 0.075) * pow(saturate(-rd.y), 2.5) * (0.6 + 0.4 * broad);
+    }
     return col;
 }
 
@@ -275,6 +284,10 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
 }
 
 vec3 hazeColor(vec3 rd, vec3 sunDir) {
+#ifdef DIM_END
+    // The End has no ground haze: below the horizon is the void, which carries the storm too.
+    return endSky(rd);
+#endif
     vec3 dir = normalize(vec3(rd.x, max(rd.y, 0.0), rd.z));
     vec3 h = skyRadiance(dir, sunDir, 8) + sunAureole(dir, sunDir);
     return h * mix(1.0, 0.5, smoothstep(-0.1, -0.4, rd.y));

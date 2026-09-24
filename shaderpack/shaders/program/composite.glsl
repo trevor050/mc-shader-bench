@@ -71,7 +71,7 @@ layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
 
-#if !defined DIM_END
+#if 1
 uniform sampler2D colortex11;
 uniform sampler2D colortex8;
 uniform float viewWidth;
@@ -260,6 +260,14 @@ void main() {
         }
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;
+    }
+#endif
+
+#if defined DIM_END
+    // End storm from the half-resolution march (vl_march + temporal accumulation).
+    {
+        vec4 storm = upsampleVL(texcoord, sky ? 1e6 : dist);
+        col = col * storm.a + storm.rgb;
     }
 #endif
 

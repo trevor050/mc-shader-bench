@@ -53,6 +53,9 @@ uniform ivec2 eyeBrightnessSmooth;
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/mist.glsl"
+#ifdef DIM_END
+#include "/lib/end_atmosphere.glsl"
+#endif
 #if defined DIM_NETHER
 #include "/lib/nether_atmosphere.glsl"
 #ifdef LIGHT_FIELD
@@ -153,7 +156,34 @@ void main() {
     }
     outScatter = vec4(scatter, trans);
     return;
-#elif defined DIM_END || !defined VOLUMETRIC_LIGHT
+#elif defined DIM_END
+    // End storm march (lib/end_atmosphere.glsl): exponential spacing out to 384 blocks, clear near the camera.
+    if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
+    float rayEnd = min(dist, 384.0);
+    vec3 scatter = vec3(0.0);
+    float trans = 1.0;
+    const int STEPS = 16;
+    const float expFactor = 11.0;
+    float tPrev = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        float x0 = (pow(expFactor, float(i) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float x1 = (pow(expFactor, float(i + 1) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float xm = (pow(expFactor, (float(i) + dither) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float stepLen = (x1 - x0) * rayEnd;
+        float tm = xm * rayEnd;
+        vec3 wp = rd * tm + cameraPosition;
+        vec2 storm = endStorm(wp, frameTimeCounter);
+        // Clear bubble around the camera, so you fly through the storm rather than into a wall.
+        float sigma = storm.x * mix(0.08, 1.0, smoothstep(6.0, 60.0, tm));
+        vec3 light = endStormLight(wp, frameTimeCounter, storm.y);
+        float stepT = exp(-sigma * stepLen);
+        scatter += trans * light * 0.8 * (1.0 - stepT);
+        trans *= stepT;
+    }
+    outScatter = vec4(scatter, trans);
+    return;
+#elif !defined VOLUMETRIC_LIGHT
     outScatter = vec4(0.0, 0.0, 0.0, 1.0);
     return;
 #else

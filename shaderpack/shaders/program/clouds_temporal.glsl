@@ -38,7 +38,7 @@ uniform vec3 previousCameraPosition;
 layout(location = 0) out vec4 outHistory;
 
 void main() {
-#if defined DIM_END || (defined DIM_NETHER && !defined TEMPORAL_VL)
+#if (defined DIM_END || defined DIM_NETHER) && !defined TEMPORAL_VL
     // The Nether uses the VL history for its smog; clouds (and everything in the End) stay off.
     // Keep the persistent half-resolution history invalid while the passes that produce these effects are off.
     // This prevents a stale Overworld frame from being blended after a dimension transition.
