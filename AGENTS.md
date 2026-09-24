@@ -28,6 +28,8 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 
 ## Hazards
 - ALWAYS confirm the active Iris pack is ClaudeBench before judging captures (Trevor switches packs; bench.py warns). A whole hour of V3 tests once ran on Bliss.
+- Performance A/B results and capture caveats are in `docs/perf-v3.md`. BenchCam `chunks=true` does not mean Distant Horizons generation/loading has stopped.
+- In Nether/End, `program.<dimension>/shadow.enabled=false` alone does not suppress Iris shadows. Omit dimension shadow stubs and compile out every active shadow sampler; keep Overworld shadow references.
 - Iris resets frameTimeCounter on reload: captures at the same delay after a reload show identical clouds (not a bug).
 - RDP session => no NVIDIA OpenGL. Game must run on the console session.
 - MC grabs + ClipCursor()s the mouse; BenchCam mixin blocks it unless `mouse grab`. Stale clip after a kill: user32 ClipCursor(NULL).
