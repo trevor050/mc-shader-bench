@@ -22,9 +22,9 @@ The local Windows installation was PresentMon 2.4.1 at `%LOCALAPPDATA%\Microsoft
 
 ### Capture one run
 
-Use one deliberate capture per A/B/A step. Do not automate pack reload loops: shader reloads can block Iris's render thread, and a previous parallel reload coincided with a prolonged input lock. Keep Minecraft on the console session, select the intended pack and fixed scene, wait at least 200 game ticks after each pack change, confirm the pack in `latest.log`, and let the same DH scene settle before each capture. PresentMon only observes the process; it does not control Minecraft or verify its active pack, pose, resolution, or background DH work.
+Use one deliberate capture per A/B/A step. Do not automate pack reload loops: shader reloads can block Iris's render thread, and a previous parallel reload coincided with a prolonged input lock. Keep Minecraft on the console session, select the intended pack and fixed scene, wait at least 200 game ticks after each pack change, confirm the pack in `latest.log`, and let the same DH scene settle before each capture. PresentMon does not control Minecraft. The `perf_capture.py` helper passively reads Iris' selected pack and asks BenchCam for `status` (position, view angles, and world time); it does not alter game state. Resolution, scene label, pack revision, and environment remain operator-provided metadata, and BenchCam status does not establish that DH queues are idle.
 
-From PowerShell, identify Minecraft's `javaw.exe` PID, then start a timed capture while the game is already at the stable scene:
+From PowerShell, identify Minecraft's `javaw.exe` PID, prepare a non-empty environment JSON object, then start the capture while the game is already at the stable scene. The helper gives PresentMon a unique ETW session name, terminates after the requested duration, refuses to overwrite an old CSV, requires target-PID Java frame rows, and writes a `.capture.json` sidecar with the observed pack and pose. It fails if Iris config/log disagree or BenchCam cannot return a live pose.
 
 ```powershell
 Get-Process javaw | Select-Object Id, StartTime, Path
@@ -32,8 +32,13 @@ $gameProcessId = 12345 # replace with the Minecraft process ID shown above
 $presentMon = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\presentmon.exe"
 $captureDir = "harness\out\perf-YYYYMMDD"
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
-& $presentMon --process_id $gameProcessId --output_file "$captureDir\A1.csv" --timed 60 --terminate_after_timed --v2_metrics --no_console_stats
+@'
+{"game_version":"MC 26.2","gpu":"NVIDIA GeForce RTX 4070","driver_version":"<driver-version>","render_distance":32,"dh_radius_chunks":512,"vsync":false,"fps_limit":"unlimited"}
+'@ | Set-Content -Encoding utf8 "$captureDir\environment.json"
+py harness\perf_capture.py --presentmon $presentMon --pid $gameProcessId --output "$captureDir\A1.csv" --seconds 60 --capture-id A1 --variant A --pack ClaudeBench --pack-revision "<commit-or-settings-fingerprint>" --scene-id overworld-vista --width 1920 --height 1080 --environment "$captureDir\environment.json"
 ```
+
+The sidecar's `scene` field records the live position, yaw, pitch, and world time; set a meaningful stable scene identifier and verify these fields before using the CSV. Copy the sidecar's pack, scene, resolution, and environment fields into the corresponding `perf-runs.json` entry. Run the helper separately for each A/B/A capture.
 
 Repeat as `B1.csv`, then restore A and record `A2.csv`. Keep the same window resolution, scene pose/time/weather, game and driver, render distance, DH radius, shader options unrelated to the experiment, VSync, and frame limit. Capture at least one minute after the 200-tick settle; repeat the B capture too for a stronger conclusion. Avoid running other GPU-heavy work during captures. Keep an eye on DH generation/loading: `chunks=true` does not prove its worker queues have gone idle.
 

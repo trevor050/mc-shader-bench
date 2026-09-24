@@ -11,6 +11,7 @@ Iris shaderpack written from scratch as an AI benchmark + automated screenshot h
 - harness/benchcam/ : Fabric client mod, TCP 127.0.0.1:25599 (ping/status/cmd/hud/closescreen/wait/waitchunks/shot/reload/shaders on|off/mouse grab|free/window x y). Forces inactivityFpsLimit=MINIMIZED (AFK limiter caps 30fps otherwise).
 - harness/bench.py : `launch|reload|shots [--vanilla] [scene..]|sheet <dir>|raw "<cmd>"...`. Writes out/<ts>/ + sheet.jpg contact sheet (review the sheet, crop full-res only when needed).
 - harness/perf_analysis.py : offline PresentMon CSV analyzer; requires a metadata-complete A/B/A manifest and reports GPU Busy, CPU Busy, or Present Interval distributions. `harness/perf-runs.example.json` is the schema example. No game/Prism control.
+- harness/perf_capture.py : bounded PresentMon runner; unique ETW session, verifies Java PID frame rows, passively reads Iris pack plus BenchCam status, saves metadata sidecar. Tests: `py -m unittest test_perf_capture test_perf_analysis` from `harness/`.
 - harness/merge_dh.py : merge a pregenerated DistantHorizons.sqlite into the client world (game closed).
 
 ## World
