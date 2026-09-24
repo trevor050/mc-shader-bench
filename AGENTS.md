@@ -39,6 +39,10 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - MAT_ICE 11 (translucent, gbuffers_translucent branch). Portal: lib/portal.glsl + portalFrameEdge (voxel).
 - Offline gate: `py shaderpack/tools/check_compile.py [filter]` (glslang in ~/tools/glslang/bin). Compile-only.
 - Coordination with Codex: docs/claude-to-codex.md. Reference notes: ../refpacks/notes-*.md (Complementary lighting, Bliss/Solas/Photon Nether, ice, perf). Licenses: ideas only for Complementary/Bliss/Solas; Photon portions OK off Modrinth/CurseForge.
+- Lighting core = port of Complementary DoLighting (lighting.glsl shadeSurface: sqrt light mix in gamma space, ^2.2 at end); tonemap = Hejl 2015 + hue-preserving blend + Complementary dark lift (final.glsl).
+- End: lib/end_atmosphere.glsl storm (vortex, eye wall, maelstrom; vl_march DIM_END) + island lit through storm (deferred) + camera effects only in final.glsl endStormCamera (roll/zoom, refraction, gust smear, dust fronts, dust streams, fringe). NO geometry/particles in front of the lens (Trevor rejected streaks, gust sheets, grit) and NO full-screen flares (End HDR ~0.02-0.05: +0.02 doubled the image = "pink frame").
+- ClaudeBench Ambience mod (ambience/, Fabric, ./gradlew build -> mods/): End storm sound (synth ogg via ambience/tools/synth_sounds.py + AmbientSounds layers), gust events, trauma sway, shove. Talks to shader via End weather: rain = 0.2+0.8*intensity; thunder = (dir*32 + gust31 + flash)/256 (MC multiplies thunder by rain). Mod changes need a game restart; weather.glsl discards in the End.
+- Motion testing: harness/rec.py <secs> <out.mp4> screen-records the game window (region hardcoded; window often on the 2nd monitor, focus it with Alt+SetForegroundWindow first) and saves .npy for brightness/flicker analysis.
 - Capture helper: harness/cap_v4.py <dim> x y z yaw pitch time name [settle] (tp via execute in <dim>).
 
 ## Hazards

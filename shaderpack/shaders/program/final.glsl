@@ -254,7 +254,7 @@ vec3 endStormCamera(vec2 uv) {
     vec2 nrm = vec2(-d.y, d.x);
 
     // 1. Roll and zoom surge.
-    float roll = (sin(t * 1.9 + 1.3) * 0.5 + sin(t * 3.7 + 0.4) * 0.3 + sin(t * 7.1) * 0.2) * radians(1.6) * shake;
+    float roll = (sin(t * 1.9 + 1.3) * 0.5 + sin(t * 3.7 + 0.4) * 0.3 + sin(t * 7.1) * 0.2) * radians(2.4) * shake;
     float zoom = 1.0 - 0.014 * gust * gust * I;
     vec2 c = (uv - 0.5) * vec2(aspect, 1.0);
     c = mat2(cos(roll), -sin(roll), sin(roll), cos(roll)) * c * zoom;
@@ -267,7 +267,7 @@ vec3 endStormCamera(vec2 uv) {
     float n1 = valueNoise(vec2(along * 2.5 - t * speed, across * 16.0));
     float n2 = valueNoise(vec2(along * 5.0 - t * speed * 1.6 + 5.0, across * 29.0 + 3.0));
     float flow = (n1 - 0.5) * 0.7 + (n2 - 0.5) * 0.3;
-    vec2 refr = (nrm * flow * 0.006 + d * (n1 - 0.5) * 0.003) * (0.25 + 0.75 * gust) * I;
+    vec2 refr = (nrm * flow * 0.011 + d * (n1 - 0.5) * 0.005) * (0.3 + 0.7 * gust) * I;
     refr.x /= aspect;
     uv += refr;
 
@@ -294,9 +294,16 @@ vec3 endStormCamera(vec2 uv) {
     // 4. Dust fronts: large soft blotches of dusty haze streaming across with the wind.
     float dust = valueNoise(vec2(along * 1.1 - t * speed * 0.55, across * 2.2 + 11.0)) * 0.6
                + valueNoise(vec2(along * 2.3 - t * speed * 0.8 + 3.0, across * 4.5)) * 0.4;
-    float haze = smoothstep(0.45, 0.85, dust) * gust * I;
-    vec3 dustCol = vec3(luminance(col)) * 1.35 + vec3(0.006, 0.0035, 0.009);
-    col = mix(col, dustCol, haze * 0.45);
+    float haze = smoothstep(0.4, 0.8, dust) * (0.2 + 0.8 * gust) * I;
+    vec3 dustCol = vec3(luminance(col)) * 1.5 + vec3(0.008, 0.005, 0.012);
+    col = mix(col, dustCol, haze * 0.6);
+    // Dust streams: fine, long, faint streaks of lit dust racing along the wind (blowing sand in a gale). Two
+    // layers at different speeds give depth; they show the wind's direction and speed at a glance.
+    float s1 = valueNoise(vec2(along * 3.0 - t * speed * 1.8, across * 55.0));
+    float s2 = valueNoise(vec2(along * 5.0 - t * speed * 2.6 + 7.0, across * 90.0 + 5.0));
+    float streams = smoothstep(0.62, 0.95, s1) * 0.6 + smoothstep(0.68, 0.97, s2) * 0.4;
+    streams *= smoothstep(0.3, 0.7, valueNoise(vec2(along * 0.8 - t * speed * 0.7, across * 3.0 + 2.0)));
+    col = mix(col, col * 1.9 + vec3(0.01, 0.006, 0.014), streams * (0.15 + 0.35 * gust) * I);
     // Dust in the air flattens colour a little during gusts.
     col = mix(col, vec3(luminance(col)), 0.18 * gust * I);
     return col;

@@ -1,5 +1,216 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 17:41 EDT bounded-memory recorder ready
+
+The original `mc-shader-bench/harness/rec.py` is untouched. Main harness
+commit `0a3ccf1` adds `harness/rec_stream.py`, a streaming MP4 recorder for
+your same secondary-monitor rectangle and 766x430 output. Example:
+`py harness/rec_stream.py 10 harness/out/storm.mp4 --fps 30`. It defaults to
+MP4 only; add `--npy` when exact RGB frames are needed. That option uses a
+temporary raw file and chunked disk copy instead of a frame list and
+`np.stack()`. The real MP4 codec + NPY reader smoke tests pass 2/2. I have
+not run it on your live camera or modified your current game state. Please
+use this instead of `rec.py` for long motion recordings; see
+`harness/REC_STREAM.md`.
+
+Read-only one-second live smoke subsequently captured five frames at 5 FPS,
+decoded at 766x430, and showed the End view on the intended second monitor.
+It did not move the camera or change Minecraft settings. Video and first-frame
+PNG are under `harness/out/rec-stream-smoke-20260924.*`.
+
+## 2026-09-24 17:37 EDT urgent screen-recorder memory risk
+
+I found `mc-shader-bench/harness/rec.py` and `rec_dbg.py`, written just now.
+`rec.py` appends every 766x430 RGB frame to a Python list, then `np.stack`s
+the entire recording after `imageio.mimwrite`. At 60 FPS, 60 seconds is about
+3.6 GiB per copy, over 7 GiB for the list plus stack before encoder buffers.
+Windows currently has ~8.7 GiB available. Please do **not** run long captures
+with that script while Minecraft is active. No `rec.py` Python process was
+running when I checked. I am preparing a streaming replacement without
+touching your untracked scripts; use it for longer videos once verified.
+
+## 2026-09-24 17:34 EDT CPU and display-cadence performance gates
+
+Main harness commit `c61e826` adds an explicit primary metric to the A/B/A
+gate: GPU Busy (default), CPU Busy, or Present Interval. The Overworld DH64
+flight was CPU Busy ~16.38 ms vs GPU Busy ~12.01 ms, so a real render-thread/DH
+win can now PASS on CPU Busy without falsely claiming FPS increased; use
+Present Interval as primary when the displayed cadence itself must improve.
+All three metrics still require stable controls and reject >3% median/p95
+regressions. `harness/campaign_review.py` accepts `performance_primary` per
+scene. Forty-four focused offline tests pass. No game interaction.
+
+## 2026-09-24 17:27 EDT water and shadow candidate review
+
+I reviewed the isolated water SSR gate and found that its first commit changed
+underwater Fresnel from the existing fixed 0.15 and allowed SSR traces there.
+Follow-up `768d292` restores both underwater behaviors; the nine actual water
+fragment stages compile. This is **not live** and still needs moving-water,
+underwater-hand, and GPU Busy A/B/A acceptance.
+
+The isolated shadow candidate is now committed as two separable changes:
+`9f4bd28` fewer blocker probes with center fallback, then `0a9f44f` cloud
+shadow TAA-jitter correction. Six deferred/composite stages compile. The
+shadow filter changes penumbra sampling, so it requires full-resolution
+terrain/foliage edge review before any promotion. I have not touched your Art
+branch shader source or Minecraft.
+
+Follow-up review caught four wrong base-3 Halton offsets in `0a9f44f`.
+Commit `f52800d` corrects the table against `lib/jitter.glsl::taaOffset()`;
+the six affected stages compile again. Use `f52800d` or later, never the
+unfixed cloud-jitter commit alone.
+
+## 2026-09-24 17:24 EDT second isolated End optimization
+
+Branch `codex/end-support-prune-20260924`, commit `e08e704` (base Art
+`08c25e0`) skips cloud-noise reads only when their existing height/radius/eye
+masks are zero; shadow-only callers also skip the unused colour-variation
+channel. `composite.fsh` and `deferred.fsh` compile 6/6. No live files/game
+changed. This and the separate dense-ray early-exit candidate `16701b7`
+must both pass Art/candidate/Art visual and GPU Busy checks before merge. The
+pruning patch edits `end_atmosphere.glsl` and three calls in `deferred.glsl`,
+so I will rebase against your latest End design when the game is free.
+
+## 2026-09-24 17:19 EDT End storm work reduction, isolated
+
+Your new End storm has a heavy but artistically important hot path: 16
+half-resolution march samples, each evaluating `endStorm` three times (density
+plus two self-shadow samples). I made an isolated candidate based on your
+`beb4907`, branch `codex/end-march-opt-20260924`, commit `16701b7`. It
+hoists uniform intensity/pulse and the fractional exponential, advances ray
+positions by multiplication, and stops only below 1e-6 transmittance.
+`composite.fsh` and `deferred.fsh` compile 6/6. No live shader or game changes,
+no FPS claim. I will test near/away lightning, eye wall, and outer islands
+against Art after the game is free. Please keep making visual changes; I will
+rebase the candidate when it is time to test.
+
+Compiler correction: `check_compile.py` filters stub filenames, so the
+`vl_march` filter matched **zero** stages. The earlier exact-work candidate
+also passed a separate `composite.fsh` 3/3 compile; its current branch head is
+`edd7f31` (shader change `6a8f592`).
+
+## 2026-09-24 17:12 EDT offline performance campaign harness integrated
+
+Main harness commit `25120d7` adds `harness/campaign_review.py` and
+`harness/CAMPAIGN_REVIEW.md`. It joins exact Iris pack hashes, full-resolution
+A/B/A screenshots, PresentMon GPU/CPU/present times, multi-second stall counts,
+and VRAM/physical-memory bounds across Overworld, Nether, and End scenes.
+Forty focused offline tests pass. This is measurement plumbing only; no game
+reload, shader change, or performance claim. The existing perf PASS gate is
+GPU-oriented and requires a repeatable 5% GPU Busy improvement, so a valid
+CPU/DH win may remain inconclusive and needs separate interpretation.
+This gate limitation was fixed by the later `c61e826` note above.
+
+The isolated exact-work shader candidate has since been rebased onto your Art
+commit `9572e34`; its current commit is `6a8f592`. The same affected-stage
+compiler gate passed 18/18 again. It remains outside the live pack and awaits
+game-free visual and A/B/A timing checks.
+
+## 2026-09-24 17:07 EDT exact-work optimization candidate compiled, isolated
+
+I assembled three no-art-direction work reductions against your then-current
+`2871da9` Art commit in isolated worktree
+`C:\Users\Trevor\codeprojects\mc-shader-bench-v4-exact-hoists-20260924`, branch
+`codex/v4-exact-hoists-20260924`, commit `da024de`: frame-uniform cloud weather
+in the vertex stage, one `netherSeaGlow()` calculation per VL ray sample, and
+skip sky light-path integration where the existing soft terminator is exactly
+zero. The affected offline compiler gate passed 18/18. This is **not** in your
+live pack; Iris link, visual parity, and A/B/A timing remain untested until
+Trevor says the game is free and RAM headroom is safe. You can continue your
+visual work without merging these; I will own their runtime evaluation.
+
+## 2026-09-24 17:10 EDT second RAMMap snapshot confirms ongoing pressure
+
+Over 664.7 seconds, ProcessList gained 2,269 records and active Page Table
+grew 81.35 MiB while active Unused grew 68.90 MiB. Active Process Private
+rose only 42.07 MiB, and Mapped File fell 459.55 MiB. This is a continuing
+system memory growth pattern, approximately 150 MiB per 11 minutes in the two
+unattributed active buckets, closely paired with short-lived process counts.
+It supports retained process-exit resources; a specific driver remains
+unproven. Please stop broad shader compile matrices for now, or run only the
+few stages needed for immediate decisions. Trevor approved a future AMD iGPU
+driver update and reboot **after the game is free**; do not interrupt his
+current session. Details: `mc-shader-bench/docs/windows-memory-pressure-20260924.md`.
+
+## 2026-09-24 17:00 EDT process-churn lead, avoid broad compile matrices
+
+The RAMMap snapshot contains 106,195 process records but only 374 with
+resident PFNs. Largest historical names: `glslang.exe` 29,815,
+`python.exe` 14,578, `conda.exe` 13,128, `git.exe` 12,885. The 3.522 GiB
+active Page Table and 3.512 GiB active Unused buckets each amount to about
+35 KiB per old process record. This strongly resembles retained exited process
+objects/page tables, a Windows or driver cleanup defect amplified by very high
+short-lived process churn. It is **not proof** of the specific retaining driver
+or which launchers generated each historical process. Please avoid broad
+multi-process glslang/conda/build loops while we diagnose; keep new tests
+bounded and compile only after RAM headroom recovers. A reboot would likely
+relieve the accumulated pages temporarily, but do not restart during our work.
+
+## 2026-09-24 17:00 EDT RAMMap diagnosis, do not attribute all RAM to shader
+
+Trevor approved a read-only elevated Microsoft RAMMap snapshot while the game
+remained running. It showed 31.157 GiB usable physical RAM, 28.849 GiB active,
+2.001 GiB standby, 3.522 GiB **active Page Table**, and 3.512 GiB **active
+Unused** pages. Those two active system buckets are real RAM pressure and are
+not explained by Minecraft's roughly 9 GiB resident working set. Paged and
+nonpaged pools were 1.134 and 1.897 GiB active. This is not merely a benign
+standby cache. The physical owner of the anomalous Page Table/Unused pages is
+not yet proven. This PC's AMD Radeon integrated GPU is driving the 2560x1440
+second monitor and uses an old 2024 driver (31.0.24033.1003); a driver issue is
+a lead, not a confirmed cause. Do not disable it or install graphics drivers
+while Trevor and you are using the displays/game. Snapshot is at
+`C:\Users\Trevor\AppData\Local\Temp\codex-ram-diagnosis\live-20260924.rmp`.
+I am pursuing read-only attribution. Continue avoiding concurrent heavy builds
+until available physical RAM has durable headroom.
+
+## 2026-09-24 16:40 EDT urgent live-memory and temporary RD24 note
+
+Windows available RAM fell to **0.84 GiB** while Minecraft Java's resident
+working set was 9.31 GiB; process private commit was about 17 GiB. I turned
+shaders off via BenchCam and temporarily used `rdtrial 24` (vanilla render
+distance 32 -> 24) to reduce immediate pressure without closing the world.
+Those changes did not immediately recover much physical RAM. Iris currently
+shows Art enabled again and available memory about 2.6 GiB; I will leave
+your game/shader state alone while you work. **RD24 remains an active session
+trial** and auto-restores on normal client shutdown; please do not judge
+long-distance visual parity as RD32 while it is active. I am diagnosing RAM
+owners with read-only OS counters, including pools and mapped/shared memory.
+
+Architecture audit also spotted two concrete code issues for your review:
+`lighting.glsl` mixes block brightness toward voxel output using only edge
+fade, even when an in-bounds field cell contains no light; this can replace
+vanilla brightness with a dim floor and cause black pockets. Preserve vanilla
+lm.x luminance when field confidence is absent. `final.glsl`'s descending
+`smoothstep(0.1, 0.0, x)` has undefined GLSL behavior; use
+`1.0 - smoothstep(0.0, 0.1, x)` if that dark-lift design survives same-pose
+cave review. The repo AGENTS says ideas-only for Complementary/Bliss/Solas;
+the direct Complementary formulas/palette in lighting should be redesigned
+before any public release. No agent has edited these live files.
+
+## 2026-09-24 16:30 EDT Codex architecture/performance fleet
+
+Trevor asked me to fan out architecture-level performance and design work while
+you continue V4 art. Twelve agents are auditing isolated worktrees or read-only
+sources: render graph/buffer precision, lighting and temporal behavior, clouds,
+shadows, water/SSR, volumetrics, sky/exposure, material encoding, voxel field,
+DH/Sodium CPU, quality tiers, and benchmark gates. **None owns your live shader
+checkout or Minecraft camera.** I'll review and compile candidates before
+proposing any integration; your uncommitted `nether_atmosphere.glsl`,
+`deferred.glsl`, `final.glsl`, and `gbuffers_solid.glsl` edits are untouched.
+
+We returned to the original DH instance after Trevor rejected the Voxy trial's
+broken sky/lighting. Saved DH radius is 64 globally, workers 4, generation
+requests 10/s. In a 45-second moving Overworld Art sample, displayed median
+was 16.42 ms (~61 FPS), CPU Busy 16.38 ms, GPU Busy 12.01 ms, CPUWait
+0.12 ms; no multi-second stall, but that does not clear the old freeze. A
+later short Bliss-on-DH64 segment also had no long freeze. The next opt-in DH
+CPU phase profiler is isolated and built, not installed while Trevor plays.
+Evidence: `mc-shader-bench/docs/dh64-stability-and-voxy-trial-20260924.md`.
+
+Please keep making the visual calls. I'll hand you architecture candidates
+with measured costs, visual comparisons, and exact merge boundaries rather
+than modify your active files.
+
 ## 2026-09-24 09:00 EDT Codex render-level span diagnostic
 
 Main's optional profiler now combines the live-tested six-way shadow feature
