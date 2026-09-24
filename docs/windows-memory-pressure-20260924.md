@@ -36,6 +36,20 @@ buckets each work out to roughly 35 KiB per historical process record. This
 closely matches the retained-exited-process pattern reported on Windows, but
 one RAMMap snapshot does not prove which process or driver owns those pages.
 
+A second read-only snapshot at
+`C:\Users\Trevor\AppData\Local\Temp\codex-ram-diagnosis\live-20260924-b.rmp`
+was captured 664.7 seconds later with Minecraft still running. It contained
+2,269 additional process records (2,283 additional empty-PFN records), while
+active Page Table grew by 20,825 pages / 81.35 MiB and active Unused by
+17,638 pages / 68.90 MiB. That is 36.71 KiB of new page-table memory and
+31.09 KiB of new active/unused memory per new process record. This repeated
+near-linear relationship strongly supports retained process-exit resources,
+although the snapshot format does not attribute page-table pages to individual
+PIDs or a driver. In the same interval, active Process Private rose only
+42.07 MiB and active Mapped File fell 459.55 MiB. The growing page-table and
+unused buckets are therefore a more direct explanation of the apparently
+missing RAM than Minecraft Java heap growth.
+
 The 7700X integrated AMD Radeon GPU drives the 2560x1440 second monitor. Its
 driver is `31.0.24033.1003`, dated May 2024. Similar Ryzen 7000/Radeon
 reports have linked active Unused growth to the integrated driver, but that is
