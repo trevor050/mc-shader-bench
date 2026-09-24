@@ -91,6 +91,40 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
 uniform vec3 fogColor;
 #endif
 
+// Twilight effects that single scattering misses, shaped by eye from photographs:
+//  - afterglow: after sunset a warm glow over the sunset point that climbs and turns rose/magenta as the
+//    sun sinks (light scattered twice, through the high stratosphere),
+//  - belt of Venus: a pink band above the opposite horizon, lit by the last reddened sunlight,
+//  - Earth's shadow: the darker blue band under it, rising as the sun sets.
+vec3 twilightGlow(vec3 rd, vec3 sunDir) {
+    float e = sunDir.y;                               // sine of sun elevation
+    if (e > 0.12 || e < -0.25) return vec3(0.0);
+    vec3 flatV = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
+    vec3 flatS = normalize(vec3(sunDir.x, 0.0, sunDir.z) + vec3(1e-5));
+    float az = dot(flatV, flatS);                     // 1 toward the sun, -1 away
+    float up = max(rd.y, 0.0);
+    vec3 col = vec3(0.0);
+
+    // Afterglow: strongest a few degrees below the horizon, spreading wide along the sunset side.
+    float glowT = smoothstep(0.1, 0.0, e) * smoothstep(-0.22, -0.04, e);
+    float toward = pow(az * 0.5 + 0.5, 3.0);
+    float height = mix(0.22, 0.09, smoothstep(0.05, -0.15, e));       // rises into a dome, then sinks
+    float band = exp(-up / height);
+    // Orange-gold at the horizon, rose above it, violet at the top of the glow.
+    float k = up / height;
+    vec3 warm = mix(vec3(1.0, 0.5, 0.16), vec3(0.95, 0.38, 0.42), smoothstep(0.2, 1.2, k));
+    warm = mix(warm, vec3(0.55, 0.32, 0.75), smoothstep(1.2, 2.5, k));
+    col += warm * band * toward * glowT * 0.55;
+
+    // Belt of Venus over the anti-solar horizon, above Earth's shadow.
+    float beltT = smoothstep(0.08, 0.0, e) * smoothstep(-0.14, -0.02, e);
+    float away = pow(-az * 0.5 + 0.5, 2.0);
+    float shadowTop = mix(0.0, 0.14, smoothstep(0.02, -0.12, e));
+    float belt = exp(-sqr((up - shadowTop - 0.07) / 0.06));
+    col += vec3(1.0, 0.55, 0.62) * belt * away * beltT * 0.012;
+    return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
+}
+
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
@@ -109,7 +143,7 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
     vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.4;
-    vec3 col = day + night + vec3(0.0003, 0.00045, 0.0008);
+    vec3 col = day + night + vec3(0.0003, 0.00045, 0.0008) + twilightGlow(rd, sunDir);
     // Overcast: collapse toward a grey dome during rain.
     float overcast = rainStrength * 0.85;
     if (overcast == 0.0) return col;
