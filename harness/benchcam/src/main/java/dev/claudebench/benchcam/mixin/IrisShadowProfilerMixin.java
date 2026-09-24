@@ -39,7 +39,7 @@ public abstract class IrisShadowProfilerMixin {
 
 	/** After shadow frustum/terrain CPU setup, immediately before the opaque terrain draw path. */
 	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
-		target = "Lcom/mojang/blaze3d/opengl/GlStateManager;_disableCull()V", remap = false), remap = false)
+		target = "Lcom/mojang/blaze3d/opengl/GlStateManager;_disableCull()V", remap = false), remap = false, require = 1)
 	private void benchcam$beginShadowDraw(LevelRendererAccessor levelRenderer, Camera playerCamera,
 			CameraRenderState renderState, CallbackInfo ci) {
 		benchcam$shadowPhaseToken = GpuPassProfiler.begin("shadow", "terrain_opaque_callbacks");
@@ -139,7 +139,7 @@ public abstract class IrisShadowProfilerMixin {
 
 	/** Iris has one shadowcomp group after shadow map mipmap generation. */
 	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
-		target = "Lnet/irisshaders/iris/gl/GLDebug;pushGroup(ILjava/lang/String;)V", remap = false), remap = false)
+		target = "Lnet/irisshaders/iris/gl/GLDebug;pushGroup(ILjava/lang/String;)V", remap = false), remap = false, require = 1)
 	private void benchcam$beginShadowComposite(LevelRendererAccessor levelRenderer, Camera playerCamera,
 			CameraRenderState renderState, CallbackInfo ci) {
 		GpuPassProfiler.end(benchcam$shadowPhaseToken);
@@ -148,7 +148,7 @@ public abstract class IrisShadowProfilerMixin {
 	}
 
 	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
-		target = "Lnet/irisshaders/iris/gl/GLDebug;popGroup()V", remap = false), remap = false)
+		target = "Lnet/irisshaders/iris/gl/GLDebug;popGroup()V", remap = false), remap = false, require = 1)
 	private void benchcam$endShadowComposite(LevelRendererAccessor levelRenderer, Camera playerCamera,
 			CameraRenderState renderState, CallbackInfo ci) {
 		GpuPassProfiler.end(benchcam$shadowCompositeToken);
