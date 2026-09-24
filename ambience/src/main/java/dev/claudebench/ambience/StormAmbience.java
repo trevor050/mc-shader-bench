@@ -73,8 +73,8 @@ public final class StormAmbience implements ClientModInitializer {
 		}
 		double altitude = Math.max(player.getY() - 60.0, 0.0);
 		double speed = player.getDeltaMovement().length() * 20.0;
-		float target = 0.45F + (dragon ? 0.45F : 0.0F) + (float) Math.min(altitude / 400.0, 0.15) + (float) Math.min(speed / 60.0, 0.2);
-		target = Math.min(target, 1.2F);
+		float target = 0.5F + (dragon ? 0.5F : 0.0F) + (float) Math.min(altitude / 400.0, 0.1) + (float) Math.min(speed / 60.0, 0.15);
+		target = Math.min(target, 1.0F);
 		intensity += (target - intensity) * 0.02F;
 
 		// Gusts: slow random swells on top of the intensity.
@@ -86,12 +86,28 @@ public final class StormAmbience implements ClientModInitializer {
 		}
 
 		updateLightning(mc, level, player, dragon);
+		buffet(player, gust);
+	}
+
+	/** The gale shoves you: gusts push along the vortex's spin and jolt your view, harder while the dragon lives. */
+	private void buffet(Player player, float gust) {
+		if (player.isSpectator()) return;
+		Vec3 rel = player.position().subtract(VORTEX);
+		Vec3 tangent = new Vec3(-rel.z, 0.0, rel.x);
+		if (tangent.lengthSqr() < 1e-6) tangent = new Vec3(1.0, 0.0, 0.0);
+		tangent = tangent.normalize();
+		float strength = intensity * intensity * (0.35F + 0.65F * gust);
+		double push = 0.012 * strength;
+		player.setDeltaMovement(player.getDeltaMovement().add(tangent.x * push, (random.nextFloat() - 0.45F) * push * 0.6, tangent.z * push));
+		float jolt = 0.9F * strength * (random.nextFloat() < 0.08F + 0.2F * gust ? 1.0F : 0.15F);
+		player.setYRot(player.getYRot() + (random.nextFloat() - 0.5F) * jolt);
+		player.setXRot(Math.max(-90.0F, Math.min(90.0F, player.getXRot() + (random.nextFloat() - 0.5F) * jolt * 0.6F)));
 	}
 
 	private void updateLightning(Minecraft mc, ClientLevel level, Player player, boolean dragon) {
-		if (boltAge < 0 && random.nextFloat() < 0.008F + 0.03F * intensity * (dragon ? 1.4F : 1.0F)) {
+		if (boltAge < 0 && random.nextFloat() < 0.01F + 0.06F * intensity * intensity * (dragon ? 1.5F : 1.0F)) {
 			boltAge = 0;
-			boltCode = random.nextFloat();
+			boltCode = random.nextInt(64) / 64.0F;
 			boltSeed = random.nextFloat() * 10.0F;
 			Vec3 pos = boltPosition(boltCode);
 			double distance = pos.distanceTo(player.position());
@@ -106,8 +122,10 @@ public final class StormAmbience implements ClientModInitializer {
 			flash = Math.max(flash, 0.0F);
 			if (++boltAge > 14) boltAge = -1;
 		}
-		// Encode for the shader: rain level 0.2..1.0 carries the bolt direction, thunder level the flash.
-		level.setRainLevel(0.2F + 0.8F * boltCode);
+		// Encode for the shader: rain = 0.2 + 0.8 * (direction + intensity) / 64 (see endStormIntensity() in the
+		// shaderpack's lib/end_atmosphere.glsl), thunder level = flash.
+		float packed = (boltCode * 64.0F + Math.min(intensity, 0.999F)) / 64.0F;
+		level.setRainLevel(0.2F + 0.8F * packed);
 		level.setThunderLevel(flash);
 
 		pending.removeIf(p -> {
@@ -115,7 +133,7 @@ public final class StormAmbience implements ClientModInitializer {
 			Vec3 dir = p.pos().subtract(player.getEyePosition()).normalize();
 			Vec3 at = player.getEyePosition().add(dir.scale(10.0));
 			boolean near = p.distance < 220.0;
-			float vol = (float) Math.max(0.35, Math.min(1.6, 380.0 / (p.distance + 60.0))) * (0.7F + 0.5F * intensity);
+			float vol = (float) Math.max(0.5, Math.min(2.0, 420.0 / (p.distance + 60.0))) * (0.8F + 0.8F * intensity);
 			mc.getSoundManager().play(new SimpleSoundInstance(event("claudebench_ambience", near ? "end.thunder_near" : "end.thunder_far"),
 				SoundSource.WEATHER, vol, 0.85F + random.nextFloat() * 0.25F, random, at.x, at.y, at.z));
 			return true;
@@ -133,14 +151,16 @@ public final class StormAmbience implements ClientModInitializer {
 
 	private void startAll(Minecraft mc) {
 		loops.clear();
-		loops.add(new Loop(event("claudebench_ambience", "end.wind_drone"), 0.35F, 0.55F, 0.0F, false));
-		loops.add(new Loop(event("claudebench_ambience", "end.wind_howl"), 0.1F, 0.7F, 1.0F, true));
-		loops.add(new Loop(event("claudebench_ambience", "end.rumble"), 0.3F, 0.45F, 0.0F, false));
-		loops.add(new Loop(event("claudebench_ambience", "end.alien_choir"), 0.18F, 0.22F, 0.0F, false));
+		loops.add(new Loop(event("claudebench_ambience", "end.wind_drone"), 0.2F, 1.1F, 0.3F, false, 1.0F));
+		loops.add(new Loop(event("claudebench_ambience", "end.wind_howl"), 0.1F, 1.3F, 1.0F, true, 1.0F));
+		// The same howl an octave down: a groaning wind that sounds wrong.
+		loops.add(new Loop(event("claudebench_ambience", "end.wind_howl"), 0.0F, 0.9F, 1.0F, true, 0.5F));
+		loops.add(new Loop(event("claudebench_ambience", "end.rumble"), 0.2F, 0.9F, 0.0F, false, 1.0F));
+		loops.add(new Loop(event("claudebench_ambience", "end.alien_choir"), 0.12F, 0.4F, 0.0F, false, 1.0F));
 		if (FabricLoader.getInstance().isModLoaded("ambientsounds")) {
-			loops.add(new Loop(event("ambientsounds", "wind.heavy-wind"), 0.1F, 0.6F, 0.6F, true));
-			loops.add(new Loop(event("ambientsounds", "weather.storm-close"), 0.0F, 0.45F, 0.0F, false));
-			loops.add(new Loop(event("ambientsounds", "wind.howling-wind"), 0.05F, 0.35F, 1.0F, true));
+			loops.add(new Loop(event("ambientsounds", "wind.heavy-wind"), 0.1F, 1.2F, 0.6F, true, 1.0F));
+			loops.add(new Loop(event("ambientsounds", "weather.storm-close"), 0.0F, 1.0F, 0.2F, false, 0.85F));
+			loops.add(new Loop(event("ambientsounds", "wind.howling-wind"), 0.05F, 0.9F, 1.0F, true, 0.8F));
 		}
 		for (Loop l : loops) mc.getSoundManager().play(l);
 		intensity = 0.3F;
@@ -159,13 +179,15 @@ public final class StormAmbience implements ClientModInitializer {
 		private final float base, span, gustAmount;
 		private final boolean circles;
 		private final float phase;
+		private final float pitchBase;
 
-		Loop(SoundEvent event, float base, float span, float gustAmount, boolean circles) {
+		Loop(SoundEvent event, float base, float span, float gustAmount, boolean circles, float pitchBase) {
 			super(event, SoundSource.AMBIENT, RandomSource.create());
 			this.base = base;
 			this.span = span;
 			this.gustAmount = gustAmount;
 			this.circles = circles;
+			this.pitchBase = pitchBase;
 			this.phase = (float) (Math.random() * Math.PI * 2.0);
 			this.looping = true;
 			this.delay = 0;
@@ -177,7 +199,7 @@ public final class StormAmbience implements ClientModInitializer {
 		void update(float intensity, float gust, float angle) {
 			float g = 1.0F - gustAmount + gustAmount * gust * 1.6F;
 			this.volume = Math.max(0.0F, (base + span * intensity) * g);
-			this.pitch = 0.92F + 0.12F * intensity;
+			this.pitch = pitchBase * (0.9F + 0.15F * intensity + 0.05F * gust);
 			if (circles) {
 				// Gusts sweep around the player with the vortex.
 				double a = angle + phase;

@@ -48,6 +48,9 @@ uniform float dhFarPlane;
 #include "/lib/nether_atmosphere.glsl"
 #endif
 #include "/lib/reflections.glsl"
+#ifdef DIM_END
+#include "/lib/end_atmosphere.glsl"
+#endif
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -268,6 +271,22 @@ void main() {
     {
         vec4 storm = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * storm.a + storm.rgb;
+        // Being inside it: lightning blinds for an instant (the whole view flares violet with a colour split),
+        // gusts shudder the image, and the edges of vision close in as the storm rages.
+        float I = endStormIntensity();
+        vec4 bolt = endLightning(frameTimeCounter);
+        float gust = 0.5 + 0.5 * sin(frameTimeCounter * 1.7) * sin(frameTimeCounter * 0.63 + 1.1);
+        vec2 shake = (vec2(valueNoise(vec2(frameTimeCounter * 23.0, 1.0)), valueNoise(vec2(3.0, frameTimeCounter * 19.0))) - 0.5)
+                   * (0.0012 * I * gust + 0.004 * bolt.w);
+        float split = 0.0025 * bolt.w + 0.0008 * I * gust;
+        if (split > 1e-4) {
+            vec3 r = texture(colortex0, texcoord + shake + vec2(split, 0.0)).rgb;
+            vec3 b = texture(colortex0, texcoord + shake - vec2(split, 0.0)).rgb;
+            col = vec3(mix(col.r, r.r, 0.6), col.g, mix(col.b, b.b, 0.6));
+        }
+        col += vec3(0.7, 0.35, 1.0) * bolt.w * (0.25 + 0.5 * I);
+        vec2 vc = texcoord - 0.5;
+        col *= 1.0 - saturate(dot(vc, vc) * (0.8 + 1.8 * I));
     }
 #endif
 

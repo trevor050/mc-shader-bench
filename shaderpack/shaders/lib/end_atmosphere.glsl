@@ -19,6 +19,24 @@ const vec3 END_VORTEX_CENTRE = vec3(0.0, 100.0, 0.0);
 const vec3 END_CORE_LIGHT = vec3(0.0, 260.0, 0.0);
 const float END_EYE_RADIUS = 250.0;
 
+// Storm state from the ClaudeBench Ambience mod, packed into the End's unused rain level:
+// rain = 0.2 + 0.8 * (direction + intensity) / 64, direction an integer 0..63 (the current bolt), intensity 0..1
+// (0.5 in the eye at rest, 1.0 during the dragon fight). Without the mod: a fixed, moderate storm.
+float endStormIntensity() {
+    if (rainStrength < 0.1) return 0.55;
+    return saturate(fract((rainStrength - 0.2) / 0.8 * 64.0) * 1.01);
+}
+float endBoltCode() {
+    return floor((rainStrength - 0.2) / 0.8 * 64.0 + 1e-3) / 64.0;
+}
+
+// Wind at a point: a fast tangential gale around the vortex axis with an updraft, faster when the storm rages.
+vec3 endWind(vec3 p, float intensity) {
+    vec3 rel = p - END_VORTEX_CENTRE;
+    vec3 tangent = normalize(vec3(-rel.z, 0.0, rel.x) + vec3(1e-3, 0.0, 0.0));
+    return tangent * (18.0 + 42.0 * intensity) + vec3(0.0, 4.0 + 6.0 * intensity, 0.0);
+}
+
 // x = extinction per block, y = colour variation 0..1.
 vec2 endStorm(vec3 p, float t) {
     vec3 rel = p - END_VORTEX_CENTRE;
@@ -43,6 +61,16 @@ vec2 endStorm(vec3 p, float t) {
     float band = smoothstep(-60.0, 20.0, p.y) * (1.0 - smoothstep(300.0, 420.0, p.y));
     float voidMist = exp(-max(p.y + 10.0, 0.0) / 30.0);
     float sigma = clump * band * eye * (0.026 + 0.085 * wall) + voidMist * 0.007 + 0.0005;
+
+    // Maelstrom: fast, turbulent storm filling everything, the eye included, thicker the harder the storm rages.
+    // At full intensity visibility drops to a few dozen blocks.
+    float I = endStormIntensity();
+    vec3 w = endWind(p, I);
+    vec3 m = p - w * t;
+    float churn = cloudTex(vec3(m.x * 0.011, m.y * 0.017, m.z * 0.011) + 0.23).r * 0.65
+                + cloudTex(vec3(m.z * 0.034, m.y * 0.05, -m.x * 0.034) + 0.61).g * 0.35;
+    float maelstrom = smoothstep(0.3, 0.75, churn) * smoothstep(-20.0, 40.0, p.y) * (1.0 - smoothstep(260.0, 380.0, p.y));
+    sigma += maelstrom * (0.004 + 0.05 * I * I) + (0.002 + 0.012 * I * I);
 
     // The storm reaches into the eye, so it is not only a wall around you (Trevor: from the island it read as a
     // backdrop). Everything here moves fast enough to show parallax against the wall behind it.
@@ -78,7 +106,7 @@ vec4 endLightning(float t) {
     // and hands them over through the End's otherwise unused weather: rain = bolt direction code (0.2..1.0),
     // thunder (which Minecraft reports multiplied by rain) = flash brightness. Mirrors StormAmbience.boltPosition.
     if (rainStrength > 0.1) {
-        float code = saturate((rainStrength - 0.2) / 0.8);
+        float code = endBoltCode();
         float flash = thunderStrength / max(rainStrength, 1e-3);
         float ang = code * TAU;
         float y = 90.0 + 170.0 * fract(code * 7.31);
@@ -110,6 +138,8 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
     ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
     vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.7 + 0.8 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
-    vec3 flash = vec3(0.9, 0.5, 1.0) * 16.0 * bolt.w * exp(-length(p - bolt.xyz) / 70.0);
+    // Flashes light the storm near the bolt hard, and everything else a little (the whole storm lights up).
+    float bd = length(p - bolt.xyz);
+    vec3 flash = vec3(0.9, 0.5, 1.0) * bolt.w * (16.0 * exp(-bd / 70.0) + 1.2 * exp(-bd / 400.0));
     return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
