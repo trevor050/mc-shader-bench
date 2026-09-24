@@ -19,6 +19,7 @@ LightEnv makeLightEnv(vec3 sunDir) {
     return e;
 #endif
     bool day = sunDir.y > -0.05;
+    float nightBlend = 1.0 - smoothstep(-0.22, -0.05, sunDir.y);
     e.lightDir = day ? sunDir : -sunDir;
     // Only the active shadow caster needs a ground transmittance estimate.
     // Keep the original per-branch radiance scaling while avoiding four unused optical-depth samples.
@@ -27,12 +28,15 @@ LightEnv makeLightEnv(vec3 sunDir) {
         : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 1.45 * vec3(0.55, 0.75, 1.25);
     // Fade across the horizon swap so the shadow direction change is not a pop.
     float fade = smoothstep(0.0, 0.08, abs(sunDir.y + 0.02));
-    e.directLight = directT * fade * (1.0 - rainStrength * 0.9);
+    // Moonlight should shape the landscape without washing it silver. Keep a readable directional
+    // cue at night; the permanent minimum light and block lights still carry playability in deep shade.
+    e.directLight = directT * fade * mix(1.0, 0.72, nightBlend) * (1.0 - rainStrength * 0.9);
 
     vec3 up = scatter(vec3(0.0, 1.0, 0.0), sunDir, SUN_ILLUMINANCE, 6)
             + scatter(vec3(0.0, 1.0, 0.0), -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, 4) * vec3(0.6, 0.8, 1.3);
     vec3 side = scatter(normalize(vec3(sunDir.x, 0.25, sunDir.z)), sunDir, SUN_ILLUMINANCE, 6);
     e.skyAmbient = (up * 2.2 + side * 1.1) * PI * 0.5 + vec3(0.0015, 0.002, 0.003);
+    e.skyAmbient *= mix(1.0, 0.64, nightBlend);
     e.skyAmbient = mix(e.skyAmbient, vec3(luminance(e.skyAmbient)) * 0.8, rainStrength * 0.6);
     return e;
 }

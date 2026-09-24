@@ -144,23 +144,24 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     float up = max(rd.y, 0.0);
     vec3 col = vec3(0.0);
 
-    // Afterglow: strongest a few degrees below the horizon, spreading wide along the sunset side.
-    float glowT = smoothstep(0.1, 0.0, e) * smoothstep(-0.22, -0.04, e);
-    float toward = pow(az * 0.5 + 0.5, 3.0);
-    float height = mix(0.22, 0.09, smoothstep(0.05, -0.15, e));       // rises into a dome, then sinks
-    float band = exp(-up / height);
-    // Orange-gold at the horizon, rose above it, violet at the top of the glow.
-    float k = up / height;
-    vec3 warm = mix(vec3(1.0, 0.5, 0.16), vec3(0.95, 0.38, 0.42), smoothstep(0.2, 1.2, k));
-    warm = mix(warm, vec3(0.55, 0.32, 0.75), smoothstep(1.2, 2.5, k));
-    col += warm * band * toward * glowT * 0.55;
+    // The afterglow peaks as the sun reaches the horizon, then lingers while the last direct light
+    // travels through the upper atmosphere. Separate angular layers make the progression legible:
+    // amber at the horizon, rose above it, then a cool violet shoulder.
+    float glowT = smoothstep(-0.22, -0.02, e) * (1.0 - smoothstep(0.03, 0.15, e));
+    float toward = pow(max(az * 0.5 + 0.5, 0.0), 1.8);
+    float gold = exp(-sqr((up - 0.018) / 0.047));
+    float rose = exp(-sqr((up - 0.105) / 0.095));
+    float violet = exp(-sqr((up - 0.24) / 0.19));
+    col += vec3(1.00, 0.30, 0.075) * gold * toward * glowT * 0.39;
+    col += vec3(0.96, 0.20, 0.34) * rose * toward * glowT * 0.24;
+    col += vec3(0.34, 0.24, 0.68) * violet * toward * glowT * 0.095;
 
     // Belt of Venus over the anti-solar horizon, above Earth's shadow.
     float beltT = smoothstep(0.08, 0.0, e) * smoothstep(-0.14, -0.02, e);
     float away = pow(-az * 0.5 + 0.5, 2.0);
     float shadowTop = mix(0.0, 0.14, smoothstep(0.02, -0.12, e));
     float belt = exp(-sqr((up - shadowTop - 0.07) / 0.06));
-    col += vec3(1.0, 0.55, 0.62) * belt * away * beltT * 0.012;
+    col += vec3(1.0, 0.48, 0.62) * belt * away * beltT * 0.018;
     return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
 }
 

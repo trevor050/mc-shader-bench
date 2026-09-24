@@ -12,7 +12,7 @@ uniform sampler2D milkyway;
 
 const vec3 CELESTIAL_NORTH = vec3(0.0, 0.42262, -0.90631);
 #define STAR_BRIGHTNESS 3.0e-5
-#define MILKYWAY_BRIGHTNESS 0.15
+#define MILKYWAY_BRIGHTNESS 0.28
 
 vec3 starColor(float bv) {
     // B-V colour index -> temperature (Ballesteros 2012) -> approximate blackbody colour.
@@ -51,7 +51,10 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     mw = pow(mw, vec3(1.25)) * 1.2;
     // Starlight is only faintly warm to the eye: pull the dusty core toward cream.
     mw = mix(vec3(luminance(mw)), mw, 0.45) * vec3(0.95, 0.97, 1.05);
-    vec3 col = mw * MILKYWAY_BRIGHTNESS;
+    // Let the band emerge as the last twilight drains away. It stays restrained near the horizon,
+    // where atmospheric glow is strongest, and reaches full contrast in a genuinely dark sky.
+    float darkSky = 1.0 - smoothstep(-0.30, -0.06, sunDir.y);
+    vec3 col = mw * MILKYWAY_BRIGHTNESS * mix(0.58, 1.0, darkSky);
 
     // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
     // density follows the galaxy's brightness (dense in the band, sparse elsewhere). Cells are fixed on the
