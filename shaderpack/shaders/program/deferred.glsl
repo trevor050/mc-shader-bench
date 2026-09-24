@@ -90,6 +90,9 @@ uniform float viewHeight;
 #include "/lib/shadows.glsl"
 #endif
 #include "/lib/clouds.glsl"
+#ifdef DIM_END
+#include "/lib/end_atmosphere.glsl"
+#endif
 #include "/lib/stars.glsl"
 
 in vec2 texcoord;
@@ -288,6 +291,18 @@ void main() {
         }
 #endif
 
+#ifdef DIM_END
+        // The islands are lit from the vortex core overhead, through the storm: its clumps cast soft shadows that
+        // sweep across the ground as the vortex turns.
+        if (!isHand && !isLod) {
+            vec3 toCore = normalize(END_CORE_LIGHT - wp);
+            env.lightDir = toCore;
+            float occ = endStorm(wp + toCore * 25.0, frameTimeCounter).x * 30.0
+                      + endStorm(wp + toCore * 70.0, frameTimeCounter).x * 60.0
+                      + endStorm(wp + toCore * 150.0, frameTimeCounter).x * 100.0;
+            shadow = vec3(exp(-occ * 1.2));
+        }
+#endif
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
         float wet = isHand ? 0.0 : wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
         float puddle = 0.0;

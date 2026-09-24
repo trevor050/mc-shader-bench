@@ -116,7 +116,8 @@ void cuLightAndAmbient(CuTime t, LightEnv env, out vec3 lightColor, out vec3 amb
 #elif defined DIM_END
     const vec3 endLightColor = vec3(0.68, 0.51, 1.07);
     float endLightBalancer = 0.2 * t.vsBrightness;
-    lightColor = endLightColor * (0.35 - endLightBalancer);
+    // Brighter than Complementary's so the storm's moving cloud shadows read on the islands.
+    lightColor = endLightColor * (0.35 - endLightBalancer) * 1.8;
     ambientColor = endLightColor * (0.2 + endLightBalancer);
 #else
     vec3 noonClearLightColor = vec3(0.65, 0.55, 0.375) * 2.05;

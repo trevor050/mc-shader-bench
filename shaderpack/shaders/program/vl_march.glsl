@@ -160,7 +160,8 @@ void main() {
     // End storm march (lib/end_atmosphere.glsl): exponential spacing out to 384 blocks, clear near the camera.
     if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
-    float rayEnd = min(dist, 384.0);
+    float rayEnd = min(dist, 480.0);
+    vec4 bolt = endLightning(frameTimeCounter);
     vec3 scatter = vec3(0.0);
     float trans = 1.0;
     const int STEPS = 16;
@@ -176,7 +177,7 @@ void main() {
         vec2 storm = endStorm(wp, frameTimeCounter);
         // Clear bubble around the camera, so you fly through the storm rather than into a wall.
         float sigma = storm.x * mix(0.08, 1.0, smoothstep(6.0, 60.0, tm));
-        vec3 light = endStormLight(wp, frameTimeCounter, storm.y);
+        vec3 light = endStormLight(wp, frameTimeCounter, storm.y, bolt);
         float stepT = exp(-sigma * stepLen);
         scatter += trans * light * 0.8 * (1.0 - stepT);
         trans *= stepT;
