@@ -99,8 +99,8 @@ vec3 netherHaze(vec3 rd, float y) {
     vec3 smoke = vec3(0.07, 0.028, 0.02) * mix(vec3(1.0), tint, 0.5);
     float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
     // Looking down toward the lava sea the haze glows; looking up into the smoke it goes dark.
-    float look = saturate(0.35 - rd.y * 0.65);
-    vec3 ember = vec3(1.0, 0.3, 0.06) * (0.12 + 0.55 * nearLava) * look;
+    float look = min(saturate(0.35 - rd.y * 0.65), 0.55);
+    vec3 ember = vec3(1.0, 0.3, 0.06) * (0.08 + 0.3 * nearLava) * look;
     return smoke + ember * mix(vec3(1.0), tint, 0.2);
 }
 #endif
