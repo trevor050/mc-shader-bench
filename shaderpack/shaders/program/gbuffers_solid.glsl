@@ -135,12 +135,16 @@ vec2 lavaTransform(vec2 p, float turn, vec2 flip) {
     return r * flip;
 }
 
-vec3 sampleLavaVariant(vec2 p, vec2 pDx, vec2 pDy, float textureScale, vec2 latticeId) {
-    float h = hash12(latticeId + vec2(19.17, 43.71));
-    float turn = floor(h * 4.0);
-    vec2 flip = vec2(hash12(latticeId + vec2(7.1, 13.7)) < 0.5 ? -1.0 : 1.0,
-                     hash12(latticeId + vec2(29.3, 3.9)) < 0.5 ? -1.0 : 1.0);
-    vec2 offset = vec2(hash12(latticeId + vec2(31.7, 11.9)), hash12(latticeId + vec2(5.3, 67.1)));
+vec3 sampleLavaVariant(vec2 p, vec2 pDx, vec2 pDy, float textureScale, vec2 latticeId,
+                       vec2 halfExtent, vec2 safeHalf) {
+    // Two hashes provide enough stable pseudo-random bits for this atlas transform. Reusing their
+    // fractional parts avoids four extra hash evaluations per lattice vertex.
+    float h0 = hash12(latticeId + vec2(19.17, 43.71));
+    float h1 = hash12(latticeId + vec2(7.1, 13.7));
+    float turn = floor(h0 * 4.0);
+    vec2 flip = vec2(fract(h1 * 13.71) < 0.5 ? -1.0 : 1.0,
+                     fract(h0 * 17.13) < 0.5 ? -1.0 : 1.0);
+    vec2 offset = vec2(fract(h1 * 11.9), fract(h0 * 31.7));
     // Each cell samples its own rotated and phase-shifted view of the source sprite. p is world-projected,
     // so the source image cannot restart at every chunk quad the way vanilla atlas UVs do.
     vec2 localRaw = lavaTransform(p / textureScale, turn, flip) + offset;
@@ -148,10 +152,6 @@ vec3 sampleLavaVariant(vec2 p, vec2 pDx, vec2 pDy, float textureScale, vec2 latt
     vec2 localDy = lavaTransform(pDy / textureScale, turn, flip);
     vec2 local = fract(localRaw);
 
-    vec2 halfExtent = max(lavaSpriteHalfExtent, vec2(0.0));
-    vec2 texel = 1.0 / vec2(textureSize(gtexture, 0));
-    // Stay a texel inside this quad's atlas rectangle, including under linear filtering/mip selection.
-    vec2 safeHalf = max(halfExtent - texel, vec2(0.0));
     vec2 uv = clamp(lavaSpriteMid + (local * 2.0 - 1.0) * halfExtent,
                     lavaSpriteMid - safeHalf, lavaSpriteMid + safeHalf);
     return textureGrad(gtexture, uv, localDx * (2.0 * halfExtent), localDy * (2.0 * halfExtent)).rgb;
@@ -168,6 +168,10 @@ vec3 stochasticLavaAlbedo(vec3 wp, vec3 pDx3, vec3 pDy3, vec3 n) {
     vec2 p = lavaPlane(wp, n);
     vec2 pDx = lavaPlane(pDx3, n);
     vec2 pDy = lavaPlane(pDy3, n);
+    vec2 halfExtent = max(lavaSpriteHalfExtent, vec2(0.0));
+    vec2 texel = 1.0 / vec2(textureSize(gtexture, 0));
+    // Stay a texel inside this quad's atlas rectangle, including under linear filtering/mip selection.
+    vec2 safeHalf = max(halfExtent - texel, vec2(0.0));
     const float textureScale = 2.5;
     const float cellSize = 2.5;
     vec2 lattice = vec2(p.x / cellSize - p.y / (cellSize * 1.7320508),
@@ -189,17 +193,15 @@ vec3 stochasticLavaAlbedo(vec3 wp, vec3 pDx3, vec3 pDy3, vec3 n) {
         weight = vec3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
     }
 
-    vec3 lava = sampleLavaVariant(p, pDx, pDy, textureScale, id0) * weight.x
-              + sampleLavaVariant(p, pDx, pDy, textureScale, id1) * weight.y
-              + sampleLavaVariant(p, pDx, pDy, textureScale, id2) * weight.z;
+    vec3 lava = sampleLavaVariant(p, pDx, pDy, textureScale, id0, halfExtent, safeHalf) * weight.x
+              + sampleLavaVariant(p, pDx, pDy, textureScale, id1, halfExtent, safeHalf) * weight.y
+              + sampleLavaVariant(p, pDx, pDy, textureScale, id2, halfExtent, safeHalf) * weight.z;
 
     // Broad, slowly flowing heat swirls change the large-scale brightness while the atlas pixels
     // supply Minecraft's animated color and fine detail. Quantized levels keep the result blocky.
     float time = frameTimeCounter;
-    vec2 flow = vec2(valueNoise(p * 0.045 + vec2(time * 0.012, -time * 0.008) + 4.7),
-                     valueNoise(p * 0.045 + vec2(17.3, -8.1) + vec2(-time * 0.009, time * 0.011))) - 0.5;
-    float broad = valueNoise(p * 0.13 + flow * 1.8 + vec2(time * 0.009, -time * 0.006));
-    float breakup = valueNoise(p * 0.31 - flow * 0.7 + vec2(-time * 0.017, time * 0.013));
+    float broad = valueNoise(p * 0.13 + vec2(time * 0.009, -time * 0.006));
+    float breakup = valueNoise(p * 0.31 + vec2(-time * 0.017, time * 0.013));
     float heat = floor((broad * 0.72 + breakup * 0.28) * 7.0 + 0.5) / 7.0;
     float brightness = mix(0.62, 1.48, heat);
     return lava * brightness;
