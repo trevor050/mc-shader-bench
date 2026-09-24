@@ -124,6 +124,32 @@ flat in vec2 lavaSpriteHalfExtent;
 #if defined PROG_TERRAIN || defined PROG_DH
 #include "/lib/lava.glsl"
 #endif
+#if defined PROG_TERRAIN && defined LIGHT_FIELD
+#include "/lib/voxel.glsl"
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+
+// 1 where a lava surface touches a solid block beside it, falling to 0 about 1.3 blocks away. Reads the voxel
+// grid the shadow pass wrote this frame; outside the grid there is no shore detail.
+float lavaShore(vec3 wp, vec3 n) {
+    ivec3 block = ivec3(floor(wp - n * 0.05));
+    ivec3 v = worldBlockToVoxel(block, cameraPositionInt);
+    if (!voxelInside(v - 1) || !voxelInside(v + 1)) return 0.0;
+    vec2 f = fract(wp.xz);
+    float d = 8.0;
+    for (int z = -1; z <= 1; z++) {
+        for (int x = -1; x <= 1; x++) {
+            if (x == 0 && z == 0) continue;
+            if (voxelType(texelFetch(voxelSampler, v + ivec3(x, 0, z), 0).r) != VOXEL_SOLID) continue;
+            // Distance from this point to the neighbour's footprint.
+            vec2 lo = vec2(x, z), hi = lo + 1.0;
+            vec2 q = max(max(lo - f, f - hi), vec2(0.0));
+            d = min(d, length(q));
+        }
+    }
+    return 1.0 - smoothstep(0.0, 1.3, d);
+}
+#endif
 
 /* RENDERTARGETS: 0,1,2 */
 layout(location = 0) out vec4 outAlbedo;
@@ -143,11 +169,24 @@ void main() {
     vec4 albedo = glcolor;
 #elif defined PROG_TERRAIN
     vec4 albedo;
-    if (mat == MAT_LAVA && abs(worldNormal.y) > 0.5) {
-        // Pool UVs are world anchored; falls and every other block keep their native atlas UVs.
-        albedo = vec4(lavaSpriteAlbedo(relPos + cameraPosition, relPosDx, relPosDy,
-                                      normalize(worldNormal), lavaSpriteMid,
-                                      lavaSpriteHalfExtent, frameTimeCounter) * glcolor.rgb, 1.0);
+    float lavaEmit = 1.0;
+    if (mat == MAT_LAVA) {
+        vec3 lavaN = normalize(worldNormal);
+        vec3 lavaWp = relPos + cameraPosition;
+        vec4 lava;
+        if (abs(lavaN.y) > 0.5) {
+            // Pool UVs are world anchored; falls keep their native flowing sprite and UVs.
+            float shore = 0.0;
+#ifdef LIGHT_FIELD
+            shore = lavaShore(lavaWp, lavaN);
+#endif
+            lava = lavaSurface(lavaWp, relPosDx, relPosDy, lavaN, lavaSpriteMid, lavaSpriteHalfExtent,
+                               frameTimeCounter, shore);
+        } else {
+            lava = lavaFall(texture(gtexture, texcoord).rgb, lavaWp, frameTimeCounter);
+        }
+        albedo = vec4(lava.rgb, 1.0);
+        lavaEmit = lava.a;
     } else {
         vec4 texel = texture(gtexture, texcoord);
         albedo = vec4(texel.rgb * glcolor.rgb, texel.a);
@@ -195,7 +234,12 @@ void main() {
 
     float emissive = 0.0;
     if (mat == MAT_EMISSIVE) emissive = smoothstep(0.45, 0.85, max(albedo.r, max(albedo.g, albedo.b)));
-    if (mat == MAT_LAVA) emissive = 1.0;
+#ifdef PROG_TERRAIN
+    if (mat == MAT_LAVA) emissive = lavaEmit;
+#else
+    // LOD lava: the molten-body level of the near pools (lighting squares this).
+    if (mat == MAT_LAVA) emissive = 0.6;
+#endif
 #ifdef PROG_BASIC
     emissive = 0.4;
 #endif

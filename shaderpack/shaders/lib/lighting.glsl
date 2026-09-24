@@ -137,7 +137,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
         : 0.0;
     col += vec3(0.035, 0.025, 0.017) * darkRock * ao * (0.72 + 0.28 * n.y);
 #endif
-    col += albedo * emissive * 6.0;
+    // Lava stores its heat-dependent emission here and is far brighter than other emitters: seams glow dull
+    // red, the molten body is bright, white-hot upwellings are blinding and bloom.
+    col += albedo * (mat == MAT_LAVA ? emissive * emissive * 20.0 : emissive * 6.0);
 #if defined DIM_END
     // Near-black obsidian and unclassified terrain otherwise collapse into flat cutouts. A restrained violet
     // bounce lifts only dark terrain/LOD texels; AO and storm-facing direction keep it shaped and localized.
