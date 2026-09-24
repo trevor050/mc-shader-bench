@@ -250,15 +250,34 @@ void main() {
         // the sun's aureole in it, cannot reach them: fogging cave walls with it drew a glowing patch on the rock
         // wherever the sun stood behind it. LOD terrain is always open land.
         float open = depth < 1.0 ? smoothstep(0.03, 0.5, texture(colortex1, texcoord).w) : 1.0;
+        vec3 haze = open > 0.0 ? hazeColor(rd, sunDir) : vec3(0.0);
+        if (inSnowy > 0.001 && open > 0.0) {
+            // Snow biome whiteout: a bright ice haze, dense enough in snowfall to swallow everything past a few
+            // dozen blocks. The far fog whitens by the same share as the sky's horizon (below) so they still meet.
+            vec3 white = snowWhiteout(haze);
+            float wDensity = 0.0019 + 0.028 * rainStrength;
+            col = mix(col, white, (1.0 - exp(-dist * wDensity)) * inSnowy * open);
+            haze = mix(haze, white, inSnowy * snowHorizonShare());
+        }
         if (open < 1.0) {
             float caveAmt = 1.0 - exp(-dist * caveFogDensity());
-            vec3 fogCol = open > 0.0 ? mix(caveAirColor(), hazeColor(rd, sunDir), open) : caveAirColor();
+            vec3 fogCol = mix(caveAirColor(), haze, open);
             col = mix(col, fogCol, saturate(mix(caveAmt, fogAmt, open)));
         } else
-#endif
+            col = mix(col, haze, saturate(fogAmt));
+#else
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
+#endif
 
     }
+#if !defined DIM_NETHER && !defined DIM_END
+    else if (inSnowy > 0.001) {
+        // The whiteout also swallows the sky's lower band, matching the far fog's whitening at the horizon.
+        vec3 viewDir = normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0));
+        float band = exp(-max(viewDir.y, 0.0) * 7.0);
+        col = mix(col, snowWhiteout(col), inSnowy * snowHorizonShare() * band);
+    }
+#endif
 
 #if defined DIM_NETHER
     // Smog. Past the marched range the medium continues analytically, lit like the smoke at mid height above

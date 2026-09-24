@@ -55,6 +55,16 @@ FieldLight surfaceField;
 
 uniform vec3 skyColor;
 uniform float screenBrightness;
+uniform float inSnowy; // custom uniform: smoothed 1 in biomes where it snows
+
+// Snowfields: fresh snow reflects most of the light it receives, so shade is lifted by a strong, cool bounce
+// and the air holds a bright ice haze that whites out the distance (composite).
+vec3 snowWhiteout(vec3 haze) {
+    float l = luminance(haze);
+    return mix(haze, vec3(l) * vec3(0.96, 1.0, 1.07) * 1.45, 0.75);
+}
+// How far the horizon (sky and far fog alike) whitens: partly in clear weather, fully in snowfall.
+float snowHorizonShare() { return 0.55 + 0.45 * rainStrength; }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Surface lighting, ported from Complementary Unbound r5.9.3 (EminGT; lib/lighting/mainLighting.glsl DoLighting,
@@ -158,6 +168,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     CuTime t = cuTime(env.sunDir);
     vec3 lightColorM, ambientColorM;
     cuLightAndAmbient(t, env, lightColorM, ambientColorM);
+#if !defined DIM_NETHER && !defined DIM_END
+    ambientColorM *= 1.0 + inSnowy * (0.6 * t.sunVisibility2 + 0.2) * (1.0 - 0.5 * t.rainFactor);
+#endif
     vec3 gammaAlbedo = pow(max(albedo, vec3(0.0)), vec3(1.0 / 2.2));
 
     bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
