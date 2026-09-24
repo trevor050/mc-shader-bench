@@ -97,7 +97,10 @@ void main() {
     vec3 shadowViewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     vec3 playerPos = (shadowModelViewInverse * vec4(shadowViewPos, 1.0)).xyz;
 #ifdef LIGHT_FIELD
-    voxelize(mat, playerPos + cameraPosition, normalize(mat3(shadowModelViewInverse) * (gl_NormalMatrix * gl_Normal)));
+    // One vertex per quad is enough: all four land in the same block (as in Complementary), so this cuts
+    // image writes and emitter-colour reads by four.
+    if (gl_VertexID % 4 == 0)
+        voxelize(mat, playerPos + cameraPosition, normalize(mat3(shadowModelViewInverse) * (gl_NormalMatrix * gl_Normal)));
 #endif
 #ifdef VOXEL_ONLY
     gl_Position = vec4(-10.0, -10.0, -10.0, 1.0);
