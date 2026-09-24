@@ -63,7 +63,7 @@ PortalSurface shadePortal(vec2 q, vec2 viewPlane, float spriteLum, float edge, f
 
     // Energy rim along the obsidian frame, crackling.
     float crackle = valueNoise(q * 6.0 + vec2(time * 2.3, -time * 1.7));
-    col += vec3(0.95, 0.35, 1.0) * pow(edge, 3.0) * (0.8 + 2.6 * crackle * crackle);
+    col += vec3(0.85, 0.25, 1.0) * pow(edge, 3.0) * (0.45 + 1.5 * crackle * crackle);
 
     // Grazing views see more of the glowing surface film.
     col += vec3(0.30, 0.05, 0.36) * grazing;
