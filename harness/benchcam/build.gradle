@@ -9,6 +9,9 @@ dependencies {
 	def irisJar = System.getenv('BENCHCAM_IRIS_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/iris-fabric-1.11.4+mc26.2.jar"
 	if (!file(irisJar).isFile()) throw new GradleException("Set BENCHCAM_IRIS_JAR to the installed Iris 1.11.4+mc26.2 jar")
 	compileOnly files(irisJar)
+	def dhJar = System.getenv('BENCHCAM_DH_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/DistantHorizons-3.3.2-26.2-fabric-neoforge.jar"
+	if (!file(dhJar).isFile()) throw new GradleException("Set BENCHCAM_DH_JAR to the DH 3.3.2 jar")
+	compileOnly files(dhJar)
 }
 
 processResources {

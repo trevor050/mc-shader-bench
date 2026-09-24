@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import org.slf4j.Logger;
@@ -43,6 +45,7 @@ public final class BenchCam implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			DhNetherRadiusTrial.update(mc);
 			if (tick == 0) {
 				// The default AFK limiter drops to 30 fps whenever nobody touches the input, which is always, here.
 				mc.options.inactivityFpsLimit().set(net.minecraft.client.InactivityFpsLimit.MINIMIZED);
@@ -67,6 +70,9 @@ public final class BenchCam implements ClientModInitializer {
 				}
 			}
 		});
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> DhNetherRadiusTrial.disconnect());
+		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> DhNetherRadiusTrial.join());
+		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> DhNetherRadiusTrial.clear());
 
 		int port = Integer.getInteger("benchcam.port", DEFAULT_PORT);
 		Thread server = new Thread(() -> serve(port), "BenchCam-Server");
@@ -118,6 +124,8 @@ public final class BenchCam implements ClientModInitializer {
 
 		return switch (verb) {
 			case "ping" -> CompletableFuture.completedFuture("ok pong");
+			case "dhstatus" -> onRenderThread(() -> DhNetherRadiusTrial.status(mc));
+			case "dhtrial" -> onRenderThread(() -> DhNetherRadiusTrial.command(arg, mc));
 			case "framestats" -> CompletableFuture.completedFuture(FrameTimeStats.summarizeRecent(arg));
 			case "gpuprof" -> gpuProfileCommand(arg);
 			case "status" -> onRenderThread(() -> {
