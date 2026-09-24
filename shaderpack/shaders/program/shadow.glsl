@@ -67,7 +67,7 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
         data = packVoxel(VOXEL_TINT, 0u, vec3(0.55, 0.80, 0.85));
     } else if (mat == MAT_LEAVES) {
         data = packVoxel(VOXEL_TINT, 0u, vec3(0.42, 0.50, 0.30));
-    } else if (mat == MAT_TRANSLUCENT) {
+    } else if (mat == MAT_TRANSLUCENT || mat == MAT_ICE) {
         // Glass and ice colour the light that passes; the vertex colour carries stained-glass tint poorly, so
         // read the sprite centre instead.
         vec2 mid = (gl_TextureMatrix[0] * vec4(mc_midTexCoord, 0.0, 1.0)).xy;

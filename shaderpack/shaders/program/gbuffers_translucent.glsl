@@ -83,6 +83,7 @@ uniform sampler2D colortex9;
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
 #include "/lib/portal.glsl"
+#include "/lib/ice.glsl"
 #if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
 #include "/lib/voxel.glsl"
 uniform usampler3D voxelSampler;
@@ -321,6 +322,49 @@ void main() {
     }
 
 #ifndef PROG_DH
+    if (mat == MAT_ICE) {
+        // Clear ice: refracted body with cyan absorption and faint frost, under a smooth, silky reflection.
+        vec3 wp = playerPos + cameraPosition;
+        vec3 n0 = normalize(worldNormal);
+        vec3 n = iceNormal(wp, n0);
+        float behind = texture(depthtex1, uv).r;
+        float behindDist = behind >= 1.0 ? dist + 4.0 : length(viewFromDepth(uv, behind));
+        float thickness = clamp(behindDist - dist, 0.0, 6.0);
+        vec3 viewN = mat3(gbufferModelView) * n;
+        vec2 refrUV = uv + viewN.xy * 0.025 * saturate(thickness);
+        if (texture(depthtex1, refrUV).r < gl_FragCoord.z) refrUV = uv;
+        vec3 refracted = texture(colortex4, refrUV).rgb;
+
+        vec3 shadow = vec3(1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+        shadow = sampleShadow(playerPos, n0, saturate(dot(n0, envLightDir)), dither);
+#endif
+        // Vanilla's white streaks become frost suspended in the ice, lit like snow.
+        vec4 tex = texture(gtexture, texcoord) * glcolor;
+        float frost = smoothstep(0.62, 0.92, luminance(tex.rgb)) * 0.3;
+        vec3 frostLit = shadeSurface(env, vec3(0.78, 0.88, 1.0), n0, -rd, lmcoord, 1.0, mat, shadow, 0.0);
+        vec3 body = mix(refracted * iceTransmit(thickness), frostLit, frost);
+
+        bool below = isEyeInWater == 1 || dot(n0, rd) > 0.0;
+        float skyVis = lmcoord.y * lmcoord.y;
+        vec3 r = reflect(rd, n);
+        vec3 refl = skyVis > 0.0 && r.y > 0.0 ? (skyRadiance(r, sunDir, 6) + sunAureole(r, sunDir)) * skyVis : body * 0.4;
+        vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
+        vec4 ssr = traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
+        refl = mix(refl, ssr.rgb, ssr.a);
+        // Seen from below (or from inside water) ice is nearly index-matched: no mirror, it just lets light in.
+        float F = iceFresnel(abs(dot(-rd, n))) * (below ? 0.15 : 1.0);
+        vec3 col = mix(body, refl, F);
+
+        // A tight sun highlight: polished, not glittery.
+        vec3 h = normalize(envLightDir - rd);
+        float nh = saturate(dot(n, h));
+        const float a2 = 0.0016;
+        float dd = nh * nh * (a2 - 1.0) + 1.0;
+        col += envDirect * shadow * a2 / (PI * dd * dd) * iceFresnel(dot(h, -rd)) * saturate(dot(n, envLightDir)) * 0.25 * skyVis;
+        outColor = vec4(applyCloudsInFront(col, uv), 1.0);
+        return;
+    }
     if (mat == MAT_PORTAL) {
         // Keep the animated sheet continuous across the portal's blocks. A broad
         // lavender current, modest emitted light, and grazing tint supply motion/depth
