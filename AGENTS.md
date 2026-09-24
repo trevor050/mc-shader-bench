@@ -26,7 +26,18 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Lightning must be applied after cloud temporal accumulation (in deferred) or history averages it away.
 - Stars: raSun pinned (fract(day/3650+0.44)) so the Milky Way is up at midnight, not behind the full moon.
 
+## V4 systems (claude/v4-art)
+- Light field: shadow pass voxelizes (lib/voxel.glsl; r32ui voxelImg 128x64x128, type|level|rgb8) -> shadowcomp.csh diffuses into rgba16f lightFieldA/B (ping-pong by frameCounter parity; readers use B on even frames). Emitters = at_midBlock.w (Iris block emission byte) + brightness-weighted sprite colour. KEEP 0.992 ~= vanilla torch falloff (numpy-calibrated); ~1 block/frame spread.
+- Nether/End have voxel-only shadow stubs (VOXEL_ONLY clips all vertices; map 256, dist 80). gen_stubs writes shadow/shadowcomp at #version 430.
+- Nether smog = vl_march (DIM_NETHER branch) + TEMPORAL_VL + composite upsample; lib/nether_atmosphere.glsl. Nether/End eye adaptation meters log2(lum)+24 (composite) decoded in taa.glsl.
+- Lava: lib/lava.glsl heat palette; emissive channel = heat emission, lighting squares it (x20). Shore rim reads voxelSampler in gbuffers_terrain.
+- MAT_ICE 11 (translucent, gbuffers_translucent branch), MAT_ICE_SOLID 12 (deferred gloss). Portal: lib/portal.glsl + portalFrameEdge (voxel).
+- Offline gate: `py shaderpack/tools/check_compile.py [filter]` (glslang in ~/tools/glslang/bin). Compile-only.
+- Coordination with Codex: docs/claude-to-codex.md (AgentBridge does not work). Codex owns the live game.
+
 ## Hazards
+- Python `open(p,'w')` on Windows writes CRLF; use newline='' (string matches with 
+ fail on CRLF files).
 - ALWAYS confirm the active Iris pack is ClaudeBench before judging captures (Trevor switches packs; bench.py warns). A whole hour of V3 tests once ran on Bliss.
 - Performance A/B results and capture caveats are in `docs/perf-v3.md`. BenchCam `chunks=true` does not mean Distant Horizons generation/loading has stopped.
 - In Nether/End, `program.<dimension>/shadow.enabled=false` alone does not suppress Iris shadows. Omit dimension shadow stubs and compile out every active shadow sampler; keep Overworld shadow references.
