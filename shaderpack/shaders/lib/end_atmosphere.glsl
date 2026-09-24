@@ -92,11 +92,12 @@ vec3 endStormLight(vec3 p, float t, float variation, vec4 bolt) {
     float occ = endStorm(p + l * 14.0, t).x * 14.0 + endStorm(p + l * 40.0, t).x * 26.0;
     float pulse = endPulse(t);
     // A baleful magenta-violet core (no white: it washed the storm out to grey), swelling with the heartbeat.
-    vec3 core = vec3(0.8, 0.22, 1.0) * (0.8 + 0.6 * pulse) * exp(-d / 170.0) * exp(-occ * 1.8);
+    // Strong and far-reaching, so the storm's sunlit side (toward the core) is bright against dark gaps.
+    vec3 core = vec3(0.85, 0.24, 1.0) * (1.5 + 0.8 * pulse) * exp(-d / 280.0) * exp(-occ * 2.2);
     // Bruised, dark cloud bodies: deep violet and wine, with rare teal.
     vec3 ambient = mix(vec3(0.15, 0.03, 0.30), vec3(0.26, 0.02, 0.18), smoothstep(0.3, 0.7, variation));
     ambient = mix(ambient, vec3(0.04, 0.16, 0.22), smoothstep(0.85, 0.96, variation) * 0.5);
     vec3 voidGlow = vec3(0.6, 0.04, 0.42) * (0.7 + 0.8 * pulse) * exp(-max(p.y + 20.0, 0.0) / 45.0);
     vec3 flash = vec3(0.9, 0.5, 1.0) * 16.0 * bolt.w * exp(-length(p - bolt.xyz) / 70.0);
-    return core + ambient * 0.12 + voidGlow * 0.4 + flash;
+    return core + ambient * 0.06 + voidGlow * 0.4 + flash;
 }
