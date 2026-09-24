@@ -135,6 +135,7 @@ public final class BenchCam implements ClientModInitializer {
 			case "dhtrial" -> onRenderThread(() -> DhNetherRadiusTrial.command(arg, mc));
 			case "dhend" -> onRenderThread(() -> DhNetherRadiusTrial.endCommand(arg, mc));
 			case "framestats" -> CompletableFuture.completedFuture(FrameTimeStats.summarizeRecent(arg));
+			case "memowners" -> onRenderThread(() -> MemoryOwnerSnapshot.command(arg, mc));
 			case "gpuprof" -> gpuProfileCommand(arg);
 			case "status" -> onRenderThread(() -> {
 				var p = mc.player;
