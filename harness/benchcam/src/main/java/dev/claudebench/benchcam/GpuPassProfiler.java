@@ -45,6 +45,10 @@ public final class GpuPassProfiler {
 	private static long dhCpuStartNs;
 	private static long dhFrame;
 	private static String dhPass;
+	private static int mainGroupStartQuery;
+	private static long mainGroupCpuStartNs;
+	private static long mainGroupFrame;
+	private static String mainGroupPass;
 	private static Session session;
 	private static boolean recording;
 	private static long submitted;
@@ -94,7 +98,7 @@ public final class GpuPassProfiler {
 			candidate.discard();
 			return "err GPU query cleanup failed; restart the client before another capture";
 		}
-		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || renderLevelStartQuery != 0 || dhStartQuery != 0 || compositeDepth != 0) {
+		if (recording || (session != null && !session.closed) || !PENDING.isEmpty() || activeQuery != 0 || renderLevelStartQuery != 0 || dhStartQuery != 0 || mainGroupStartQuery != 0 || compositeDepth != 0) {
 			candidate.discard();
 			return "err profiler already active or draining";
 		}
@@ -125,7 +129,7 @@ public final class GpuPassProfiler {
 	public static String stop() {
 		if (!recording) return "err profiler not recording";
 		recording = false;
-		if (PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0) {
+		if (PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0 && mainGroupStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}
@@ -330,6 +334,75 @@ public final class GpuPassProfiler {
 		if (session != null && !session.closed) fail("dh_render_exception");
 	}
 
+	/** Encloses a main-framegraph renderGroup call, including DH HEAD and terrain drawing. */
+	public static void beginMainGroup(String pass) {
+		if (!recording) return;
+		if (mainGroupStartQuery != 0) {
+			fail("overlapping_main_group_span");
+			return;
+		}
+		int query = acquireQuery(true);
+		if (query == 0) return;
+		try { GL33C.glQueryCounter(query, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(query);
+			fail("main_group_start_exception");
+			return;
+		}
+		if (!glOkay("main_group_start")) {
+			deleteQuery(query);
+			return;
+		}
+		mainGroupStartQuery = query;
+		mainGroupCpuStartNs = System.nanoTime();
+		mainGroupFrame = frame;
+		mainGroupPass = pass;
+	}
+
+	public static void endMainGroup() {
+		int start = mainGroupStartQuery;
+		if (start == 0) return;
+		mainGroupStartQuery = 0;
+		if (captureFailure != null) {
+			deleteQuery(start);
+			mainGroupPass = null;
+			return;
+		}
+		int end = acquireQuery(true);
+		if (end == 0) {
+			deleteQuery(start);
+			mainGroupPass = null;
+			return;
+		}
+		try { GL33C.glQueryCounter(end, GL33C.GL_TIMESTAMP); }
+		catch (RuntimeException e) {
+			deleteQuery(start);
+			deleteQuery(end);
+			fail("main_group_end_exception");
+			mainGroupPass = null;
+			return;
+		}
+		if (!glOkay("main_group_end")) {
+			deleteQuery(start);
+			deleteQuery(end);
+			mainGroupPass = null;
+			return;
+		}
+		PENDING.addLast(new Pending(start, end, mainGroupFrame, "world", mainGroupPass,
+			System.nanoTime() - mainGroupCpuStartNs, -1));
+		submitted++;
+		mainGroupPass = null;
+	}
+
+	public static void abortMainGroup() {
+		if (mainGroupStartQuery != 0) {
+			deleteQuery(mainGroupStartQuery);
+			mainGroupStartQuery = 0;
+			mainGroupPass = null;
+		}
+		if (session != null && !session.closed) fail("main_group_render_exception");
+	}
+
 	private static int acquireQuery(boolean timestamp) {
 		ArrayDeque<Integer> pool = timestamp ? FREE_TIMESTAMPS : FREE;
 		int query;
@@ -521,6 +594,11 @@ public final class GpuPassProfiler {
 			dhStartQuery = 0;
 			dhPass = null;
 		}
+		if (mainGroupStartQuery != 0) {
+			deleteQuery(mainGroupStartQuery);
+			mainGroupStartQuery = 0;
+			mainGroupPass = null;
+		}
 		while (!PENDING.isEmpty()) {
 			Pending pending = PENDING.removeFirst();
 			deleteQuery(pending.query);
@@ -583,7 +661,7 @@ public final class GpuPassProfiler {
 			received++;
 			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs + "," + (sample.featureNodes < 0 ? "" : sample.featureNodes))) droppedRows++;
 		}
-		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0) {
+		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0 && renderLevelStartQuery == 0 && dhStartQuery == 0 && mainGroupStartQuery == 0) {
 			retireFreeQueries();
 			session.closeWhenEmpty();
 		}

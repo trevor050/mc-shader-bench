@@ -22,8 +22,22 @@ public abstract class MainTerrainDhScopeMixin {
 			original.call(sections, group, sampler);
 			return;
 		}
+		String pass = group == ChunkSectionLayerGroup.OPAQUE ? "main_opaque_group"
+			: group == ChunkSectionLayerGroup.TRANSLUCENT ? "main_translucent_group" : null;
+		if (pass == null) {
+			original.call(sections, group, sampler);
+			return;
+		}
+		GpuPassProfiler.beginMainGroup(pass);
 		MainTerrainDhScope.enter();
-		try { original.call(sections, group, sampler); }
-		finally { MainTerrainDhScope.exit(); }
+		boolean completed = false;
+		try {
+			original.call(sections, group, sampler);
+			completed = true;
+		} finally {
+			MainTerrainDhScope.exit();
+			if (completed) GpuPassProfiler.endMainGroup();
+			else GpuPassProfiler.abortMainGroup();
+		}
 	}
 }
