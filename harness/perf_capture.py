@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pack_fingerprint import shaderpack_sha256
+
 
 class CaptureError(Exception):
     """Capture could not be trusted as a complete target-process recording."""
@@ -176,6 +178,11 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     pack = read_active_pack(args.iris_properties, args.pack, args.game_log)
+    pack_artifact_sha256 = shaderpack_sha256(args.pack_artifact) if args.pack_artifact else None
+    if args.expected_pack_sha256 and pack_artifact_sha256 != args.expected_pack_sha256.casefold():
+        raise CaptureError(
+            f"shaderpack artifact SHA-256 {pack_artifact_sha256} does not match expected {args.expected_pack_sha256}"
+        )
     pose = read_benchcam_status(args.benchcam_port, args.status_timeout)
     if pose["world_time"] < 0:
         raise CaptureError("BenchCam reports no loaded world clock")
@@ -220,6 +227,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "pack": pack["selected_pack"],
         "pack_observation": pack,
         "pack_revision": args.pack_revision,
+        "pack_sha256": pack_artifact_sha256,
+        "pack_artifact": str(args.pack_artifact.resolve()) if args.pack_artifact else None,
         "scene": {"id": args.scene_id, **pose},
         "resolution": {"width": args.width, "height": args.height},
         "environment": json.loads(args.environment.read_text(encoding="utf-8-sig")),
@@ -242,6 +251,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--variant", required=True, help="pack variant label such as A or B")
     p.add_argument("--pack", required=True, help="expected active Iris shader pack name")
     p.add_argument("--pack-revision", required=True, help="source revision or settings fingerprint")
+    p.add_argument("--pack-artifact", type=Path, help="exact active shaderpack ZIP or directory to fingerprint")
+    p.add_argument("--expected-pack-sha256", help="optional required SHA-256 for --pack-artifact")
     p.add_argument("--scene-id", required=True, help="operator-supplied stable scene identifier")
     p.add_argument("--width", required=True, type=int, help="game render width")
     p.add_argument("--height", required=True, type=int, help="game render height")
@@ -259,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
         parser().error("--pid and --seconds must be positive; --exit-grace must be non-negative")
     if args.width <= 0 or args.height <= 0:
         parser().error("--width and --height must be positive")
+    if args.expected_pack_sha256 and not args.pack_artifact:
+        parser().error("--expected-pack-sha256 requires --pack-artifact")
     if args.environment:
         try:
             environment = json.loads(args.environment.read_text(encoding="utf-8-sig"))

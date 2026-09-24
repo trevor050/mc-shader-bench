@@ -170,7 +170,10 @@ def _frame_summary(path: Path, target_pid: int | None) -> dict[str, Any]:
             out["status"] = "partial"
             return out
         out["present_gaps_ms"] = _stats(gaps)
-        out["gaps_over_ms"] = {str(limit): sum(gap >= limit for gap in gaps) for limit in (50, 100, 250, 1000)}
+        out["gaps_over_ms"] = {
+            str(limit): sum(gap >= limit for gap in gaps)
+            for limit in (50, 100, 250, 1000, 2000, 4000, 8000, 12000)
+        }
         out["timestamps"]["duration_ms"] = times[-1] - times[0]
         out["status"] = "measured"
         out["reason"] = "frame timing describes observed target swapchain presents only; it does not identify stall cause"

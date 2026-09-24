@@ -7,8 +7,9 @@ stall where BenchCam status or a normal pack attestation can hang or fail.
 The helper checks that the supplied PID is a running `java.exe` or `javaw.exe`
 whose command line contains the selected Prism instance path. It then starts a
 new uniquely named PresentMon session filtered to that PID and starts telemetry
-with the same PID. It does not query BenchCam, read Iris state, issue game
-commands, or change game settings.
+with the same PID. It does not query BenchCam, issue game commands, or change
+game settings. Optional `--pack` attestation reads Iris config and latest.log
+once before recording; `--pack-artifact` hashes the supplied pack once.
 
 Example from the repository root, after the game is running and the PID has
 been checked in Task Manager:
@@ -54,3 +55,8 @@ PresentMon ETW session can still defeat cleanup. In that case, inspect the
 metadata's cleanup result and PresentMon logs before another capture. PID
 validation is repeated by `telemetry.ps1` when its sampler starts, but the
 PresentMon launch necessarily has a small interval after the initial PID check.
+
+For dimension-wide comparison and screenshot/performance joins, see
+`CAMPAIGN_REVIEW.md`. `stall_analysis.py` reports cumulative gap counts at
+50/100/250 ms and 1/2/4/8/12 seconds; campaign review bins them into
+1–2/2–4/4–8/8–12/12+ second events.

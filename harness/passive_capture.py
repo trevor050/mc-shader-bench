@@ -21,6 +21,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pack_fingerprint import shaderpack_sha256
+from perf_capture import CaptureError, read_active_pack
+
 
 MAX_SECONDS = 900
 MAX_GRACE = 120
@@ -135,6 +138,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError(f"PresentMon executable does not exist: {pm}")
     if not telemetry.is_file():
         raise RuntimeError(f"telemetry script does not exist: {telemetry}")
+    active_pack_attestation = None
+    if args.pack:
+        pack_observation = read_active_pack(args.iris_properties, args.pack, args.game_log)
+        pack_sha256 = shaderpack_sha256(args.pack_artifact) if args.pack_artifact else None
+        if args.expected_pack_sha256 and pack_sha256 != args.expected_pack_sha256.casefold():
+            raise CaptureError(
+                f"shaderpack artifact SHA-256 {pack_sha256} does not match expected {args.expected_pack_sha256}"
+            )
+        active_pack_attestation = {
+            **pack_observation,
+            "pack_revision": args.pack_revision,
+            "pack_sha256": pack_sha256,
+            "pack_artifact": str(args.pack_artifact.resolve()) if args.pack_artifact else None,
+        }
 
     csv_path = args.output.resolve()
     stem = csv_path.with_suffix("")
@@ -167,6 +184,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "presentmon_timed_out": False, "telemetry_timed_out": False,
         "cleanup": [],
     }
+    if active_pack_attestation is not None:
+        data["active_pack_attestation"] = active_pack_attestation
     pm_proc = telemetry_proc = None
     try:
         os.close(lock_fd)
@@ -246,6 +265,12 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--grace", type=int, default=30, help=f"shutdown grace, 0..{MAX_GRACE} seconds")
     p.add_argument("--telemetry", type=Path, default=Path(__file__).with_name("telemetry.ps1"))
     p.add_argument("--powershell", default=shutil.which("pwsh") or "powershell.exe")
+    p.add_argument("--pack", help="expected active Iris shader pack; records config and latest.log attestation")
+    p.add_argument("--pack-revision", help="source revision or settings fingerprint for this pack")
+    p.add_argument("--pack-artifact", type=Path, help="exact shaderpack ZIP or directory to fingerprint")
+    p.add_argument("--expected-pack-sha256", help="optional required SHA-256 for --pack-artifact")
+    p.add_argument("--iris-properties", type=Path, default=Path.home() / "AppData/Roaming/PrismLauncher/instances/ShaderBench/minecraft/config/iris.properties")
+    p.add_argument("--game-log", type=Path, default=Path.home() / "AppData/Roaming/PrismLauncher/instances/ShaderBench/minecraft/logs/latest.log")
     return p
 
 
@@ -260,9 +285,15 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--interval must be between 1 and min(60, --seconds)")
     if not 0 <= args.grace <= MAX_GRACE:
         p.error(f"--grace must be between 0 and {MAX_GRACE}")
+    if args.pack_artifact and not args.pack:
+        p.error("--pack-artifact requires --pack")
+    if args.expected_pack_sha256 and not args.pack_artifact:
+        p.error("--expected-pack-sha256 requires --pack-artifact")
+    if args.pack and not args.pack_revision:
+        p.error("--pack requires --pack-revision so the capture has source identity")
     try:
         result = run(args)
-    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+    except (CaptureError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"PresentMon CSV: {result['output_csv']} ({result['presentmon_csv_bytes']} bytes)")

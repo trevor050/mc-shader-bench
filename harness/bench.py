@@ -16,8 +16,12 @@ import socket
 import subprocess
 import sys
 import time
+import json
 from datetime import datetime
 from pathlib import Path
+
+from pack_fingerprint import shaderpack_sha256
+from perf_capture import read_active_pack
 
 HERE = Path(__file__).resolve().parent
 PORT = 25599
@@ -96,6 +100,17 @@ def capture(b: Bench, scenes: dict, names: list[str], out_dir: Path):
     b.send("hud off")
     b.send("cmd gamemode spectator")
     for name in names:
+        iris_cfg = GAME_DIR / "config" / "iris.properties"
+        selected = next((line.split("=", 1)[1].strip() for line in iris_cfg.read_text(encoding="utf-8-sig").splitlines()
+                         if line.strip().casefold().startswith("shaderpack=")), "")
+        if selected and selected.casefold() != "off":
+            pack_observation = read_active_pack(iris_cfg, selected, LOG)
+            pack_path = GAME_DIR / "shaderpacks" / selected
+            if not pack_path.exists():
+                pack_path = GAME_DIR / "shaderpacks" / f"{selected}.zip"
+            pack_sha256 = shaderpack_sha256(pack_path) if pack_path.exists() else None
+        else:
+            pack_observation, pack_sha256 = {"selected_pack": selected or "unknown"}, None
         s = scenes[name]
         x, y, z = s["pos"]
         yaw, pitch = s.get("look", [0, 0])
@@ -108,6 +123,16 @@ def capture(b: Bench, scenes: dict, names: list[str], out_dir: Path):
         b.send(f"wait {s.get('settle', 40)}")
         path = out_dir / f"{name}.png"
         b.send(f"shot {path}")
+        metadata = {
+            "schema_version": 1,
+            "scene_id": name,
+            "active_pack_attestation": {
+                **pack_observation,
+                "pack_sha256": pack_sha256,
+                "pack_artifact": str(pack_path.resolve()) if selected and selected.casefold() != "off" and pack_sha256 else None,
+            },
+        }
+        path.with_suffix(".image.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"  {name}: {path}")
     b.send("hud on")
     # Leave the player playable. The mouse stays free (auto-grabbing traps the OS cursor if nobody is at the

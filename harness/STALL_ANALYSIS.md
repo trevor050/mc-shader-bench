@@ -13,6 +13,8 @@ The analyzer reads `<stem>.capture.json` for the target PID and
 It reports per-target-swapchain frame timestamp gaps and available CPU/GPU busy
 distributions. Empty or header-only PresentMon files still produce a report,
 and telemetry can remain useful when PresentMon captured no frame rows.
+The JSON also reports cumulative counts at 1, 2, 4, 8, and 12 seconds so
+`campaign_review.py` can separate progressive multi-second stalls into bands.
 
 It refuses to combine multiple target swapchains or guess which one is the
 Minecraft render chain. Present-event gaps use sorted unique `TimeInMs`
@@ -28,3 +30,4 @@ aggregate either frame or telemetry rows.
 All findings are descriptive. Sparse telemetry and frame gaps do not establish
 whether CPU, GPU, the driver, a shader pass, or memory pressure caused a stall.
 In particular, a VRAM rise or a single busy sample is not evidence of a leak.
+One-second telemetry is only a trend sample and can miss short memory spikes.

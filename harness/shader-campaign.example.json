@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "campaign_id": "art-architecture-vs-current",
+  "scenarios": [
+    {
+      "id": "overworld-alpine",
+      "dimension": "overworld",
+      "scene_id": "overworld-alpine",
+      "perf_manifest": "captures/overworld/perf-aba.json",
+      "passive_csvs": {
+        "A1": "captures/overworld/A1.csv",
+        "B1": "captures/overworld/B1.csv",
+        "A2": "captures/overworld/A2.csv"
+      },
+      "screenshots": {
+        "A1": "captures/overworld/A1.png",
+        "B1": "captures/overworld/B1.png",
+        "A2": "captures/overworld/A2.png"
+      },
+      "visual_gate": {
+        "roi": [0, 0, 1920, 1080],
+        "max_control_mae": 1.0,
+        "max_candidate_mae": 2.0,
+        "max_candidate_p95": 16,
+        "max_candidate_fraction_over_8": 0.05
+      },
+      "stall_gate": {
+        "max_extra_gaps_by_band": {
+          "1-2s": 0,
+          "2-4s": 0,
+          "4-8s": 0,
+          "8-12s": 0,
+          ">=12s": 0
+        }
+      },
+      "memory_gate": {
+        "max_candidate_vram_mib": 11800,
+        "min_candidate_available_physical_bytes": 2147483648
+      }
+    },
+    {
+      "id": "nether-portal",
+      "dimension": "nether",
+      "scene_id": "nether-portal",
+      "perf_manifest": "captures/nether/perf-aba.json",
+      "passive_csvs": {
+        "A1": "captures/nether/A1.csv",
+        "B1": "captures/nether/B1.csv",
+        "A2": "captures/nether/A2.csv"
+      },
+      "screenshots": {
+        "A1": "captures/nether/A1.png",
+        "B1": "captures/nether/B1.png",
+        "A2": "captures/nether/A2.png"
+      },
+      "visual_gate": {
+        "max_control_mae": 1.0,
+        "max_candidate_mae": 2.0,
+        "max_candidate_p95": 16,
+        "max_candidate_fraction_over_8": 0.05
+      },
+      "stall_gate": {
+        "max_extra_gaps_by_band": {
+          "1-2s": 0,
+          "2-4s": 0,
+          "4-8s": 0,
+          "8-12s": 0,
+          ">=12s": 0
+        }
+      },
+      "memory_gate": {
+        "max_candidate_vram_mib": 11800,
+        "min_candidate_available_physical_bytes": 2147483648
+      }
+    },
+    {
+      "id": "end-outer-islands",
+      "dimension": "end",
+      "scene_id": "end-outer-islands",
+      "perf_manifest": "captures/end/perf-aba.json",
+      "passive_csvs": {
+        "A1": "captures/end/A1.csv",
+        "B1": "captures/end/B1.csv",
+        "A2": "captures/end/A2.csv"
+      },
+      "screenshots": {
+        "A1": "captures/end/A1.png",
+        "B1": "captures/end/B1.png",
+        "A2": "captures/end/A2.png"
+      },
+      "visual_gate": {
+        "max_control_mae": 1.0,
+        "max_candidate_mae": 2.0,
+        "max_candidate_p95": 16,
+        "max_candidate_fraction_over_8": 0.05
+      },
+      "stall_gate": {
+        "max_extra_gaps_by_band": {
+          "1-2s": 0,
+          "2-4s": 0,
+          "4-8s": 0,
+          "8-12s": 0,
+          ">=12s": 0
+        }
+      },
+      "memory_gate": {
+        "max_candidate_vram_mib": 11800,
+        "min_candidate_available_physical_bytes": 2147483648
+      }
+    }
+  ]
+}

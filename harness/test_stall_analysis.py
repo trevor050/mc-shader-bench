@@ -54,6 +54,20 @@ class StallAnalysisTests(unittest.TestCase):
             self.assertEqual(frames["timestamps"]["gap_kind"], "present_event_gaps")
             self.assertEqual(frames["present_gaps_ms"]["max"], 110)
 
+    def test_counts_progressive_one_to_twelve_second_gaps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            present = (
+                "Application,ProcessID,SwapChainAddress,TimeInMs,MsGPUBusy,MsCPUBusy\n"
+                "javaw.exe,42,0xabc,0,10,3\n"
+                "javaw.exe,42,0xabc,1500,10,3\n"
+                "javaw.exe,42,0xabc,3500,10,3\n"
+                "javaw.exe,42,0xabc,7500,10,3\n"
+                "javaw.exe,42,0xabc,15500,10,3\n"
+                "javaw.exe,42,0xabc,28000,10,3\n"
+            )
+            gaps = stall_analysis.analyze(self.capture(Path(temp), present))["frames"]["gaps_over_ms"]
+            self.assertEqual([gaps[str(ms)] for ms in (1000, 2000, 4000, 8000, 12000)], [5, 4, 3, 2, 1])
+
     def test_cpu_start_fallback_is_labeled_as_frame_start_gaps(self):
         with tempfile.TemporaryDirectory() as temp:
             present = (
