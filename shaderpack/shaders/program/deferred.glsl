@@ -16,6 +16,10 @@ uniform float frameTimeCounter;
 uniform sampler3D lightFieldSamplerA;
 uniform sampler3D lightFieldSamplerB;
 uniform vec3 cameraPositionFract;
+#ifdef LIGHT_FIELD_DEBUG
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+#endif
 #endif
 #ifdef FRAGMENT
 uniform int frameCounter;
@@ -369,6 +373,21 @@ void main() {
         }
     }
 
+#if defined LIGHT_FIELD_DEBUG && defined FIELD_SHADING
+    // Diagnostics: red/green/blue = raw light field in front of the surface (log-scaled); a cyan tint marks
+    // surfaces whose block is voxelized as solid, magenta marks emitters. Sky stays black.
+    if (depth < 1.0) {
+        vec3 dn = decodeNormal(texture(colortex1, texcoord).xy);
+        vec3 f = lightFieldTap(voxelUVW(playerPos + dn * 0.55, cameraPositionFract));
+        col = log2(1.0 + f) * 0.35;
+        ivec3 vb = worldBlockToVoxel(ivec3(floor(playerPos + cameraPosition - dn * 0.5)), cameraPositionInt);
+        if (voxelInside(vb)) {
+            uint t = voxelType(texelFetch(voxelSampler, vb, 0).r);
+            if (t == VOXEL_SOLID) col += vec3(0.0, 0.25, 0.25);
+            if (t == VOXEL_EMITTER) col += vec3(0.6, 0.0, 0.6);
+        } else col += vec3(0.08);
+    } else col = vec3(0.0);
+#endif
     // Water and glass read this copy for refraction and draw clouds in front of themselves, so it must not
     // already contain the clouds (they would show through twice, or vanish behind the water surface).
     outCopy = vec4(col, 1.0);

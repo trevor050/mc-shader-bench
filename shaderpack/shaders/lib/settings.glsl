@@ -21,6 +21,7 @@
 #define VOXEL_EXTENT_Y 64         // vertical blocks (multiple of 8)
 #define LIGHT_FIELD_SOURCE 24.0   // radiance injected by a level-15 emitter
 #define LIGHT_FIELD_KEEP 0.992    // per-step energy kept while diffusing; lower = shorter reach
+//#define LIGHT_FIELD_DEBUG      // paint the raw field and voxel occupancy instead of shading
 #define LIGHT_FIELD_GAIN 0.45     // surface response; 0.45 matches vanilla torch brightness at 1..8 blocks
 
 #define CLOUDS
