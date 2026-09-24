@@ -19,7 +19,16 @@ DH pregen: dedicated Fabric server in %TEMP%\bench-fabric-server (same mods + DH
 ## Versions (pinned)
 MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0.161.0, Falling Leaves 2.0.7, Terralith 2.6.4, Tectonic 3.0.28, Java 25 Temurin. Loom 1.17-SNAPSHOT, unobfuscated Mojang names. Decompiled source via `gradlew genSources`.
 
+## V3 systems
+- lib/lava.glsl (procedural lava: MAT_LAVA from block 10007 and DH lava), MAT_PORTAL 8 (nether portal vortex, translucent), MAT_SNOW 9 (glitter, deferred), MAT_ENDPORTAL 10 (gbuffers_block via blockEntityId + PROG_BLOCK; parallax space in deferred).
+- atmosphere: netherHaze, endSky (also end portal), twilightGlow. lighting: handheldLight, netherUplight. deferred: rainbow, lightning (cloudFlash), glossy dark stone. weather.glsl: grey rain lit by skyColor.
+- Clouds: one volume y 175..1080; cloudColumn() picks base 185..430 per region/cloud, storm towers (w.cb) with anvils.
+- Lightning must be applied after cloud temporal accumulation (in deferred) or history averages it away.
+- Stars: raSun pinned (fract(day/3650+0.44)) so the Milky Way is up at midnight, not behind the full moon.
+
 ## Hazards
+- ALWAYS confirm the active Iris pack is ClaudeBench before judging captures (Trevor switches packs; bench.py warns). A whole hour of V3 tests once ran on Bliss.
+- Iris resets frameTimeCounter on reload: captures at the same delay after a reload show identical clouds (not a bug).
 - RDP session => no NVIDIA OpenGL. Game must run on the console session.
 - MC grabs + ClipCursor()s the mouse; BenchCam mixin blocks it unless `mouse grab`. Stale clip after a kill: user32 ClipCursor(NULL).
 - Iris fallback programs render pure fog on 26.2: every geometry type needs a program (see gen_stubs table).
