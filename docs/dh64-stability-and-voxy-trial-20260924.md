@@ -96,6 +96,10 @@ confirmed Art active, DH saved/effective radius 64, and loaded chunks. A
 | GPUBusy | 12.01 ms | 13.94 ms | 15.26 ms | 17.06 ms |
 | CPUBusy | 16.38 ms | 22.22 ms | 25.75 ms | 70.32 ms |
 
+CPUWait was only 0.12 ms median (0.21 ms p95) while GPUWait was 4.49 ms
+median (9.16 ms p95). This supports a CPU-side submission bottleneck in the
+sample, without attributing it to DH, Sodium, world generation, or Iris.
+
 DisplayedTime median is roughly 61 FPS in this moving interval. Minecraft
 dedicated GPU allocation ranged 4.24–5.29 GiB, Java private bytes
 12.14–14.61 GiB, and Windows available physical RAM 5.07–5.43 GiB. No
@@ -104,3 +108,12 @@ canceled after the capture, leaving Minecraft running. At 16:16:28 the user
 selected `Pegasus (v 0.4).zip`; DH remained active at 64. The 45-second Art
 result says nothing about Pegasus' frame rate or long-session stability.
 Raw evidence: `harness/out/dh64-return-guard-20260924/`.
+
+The 41 memory samples show transient growth rather than a monotonic leak:
+Java private bytes rose from about 12.25 GiB to 14.61 GiB, then fell to
+13.42 GiB by the end; process dedicated GPU allocation and system commit
+also peaked and declined. A later one-minute sample while Trevor switched
+reference shader packs ranged about 10.78–13.53 GiB Java private and
+2.52–3.23 GiB Windows available RAM. The pack switches make that later sample
+unsuitable for attributing memory to Art or DH. File:
+`harness/out/dh64-return-guard-20260924/post-play-memory.csv`.
