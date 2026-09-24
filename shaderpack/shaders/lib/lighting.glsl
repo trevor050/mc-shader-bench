@@ -24,7 +24,7 @@ LightEnv makeLightEnv(vec3 sunDir) {
     // Keep the original per-branch radiance scaling while avoiding four unused optical-depth samples.
     vec3 directT = day
         ? sunTransmittance(sunDir) * SUN_ILLUMINANCE
-        : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 2.2 * vec3(0.55, 0.75, 1.25);
+        : sunTransmittance(-sunDir) * SUN_ILLUMINANCE * MOON_ILLUMINANCE * 1.0 * vec3(0.55, 0.75, 1.25);
     // Fade across the horizon swap so the shadow direction change is not a pop.
     float fade = smoothstep(0.0, 0.08, abs(sunDir.y + 0.02));
     e.directLight = directT * fade * (1.0 - rainStrength * 0.9);
@@ -82,6 +82,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     col += albedo * emissive * 6.0;
     return col;
 }
+
+uniform int heldBlockLightValue;
+uniform int heldBlockLightValue2;
 
 // Handheld light: a torch (or any light-emitting item) in either hand lights the surroundings like a placed
 // block would, fading one light level per block, with a soft wrap so it also reaches surfaces edge-on.

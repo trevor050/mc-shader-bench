@@ -228,7 +228,7 @@ void main() {
     // Partial adaptation around a daylight reference: bright views (the sun) darken steeply, dark views
     // (night, caves) open up gently so night still reads as night.
     const float refLog = -0.75;
-    float slope = adaptedLog > refLog ? 0.45 : 0.4;
+    float slope = adaptedLog > refLog ? 0.45 : 0.32;
     float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
     exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
     col *= exposure;

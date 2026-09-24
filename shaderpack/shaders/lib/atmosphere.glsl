@@ -107,8 +107,9 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     return vec3(0.006, 0.004, 0.011) + neb * n * 0.25;
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
-    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3);
-    vec3 col = day + night + vec3(0.0006, 0.0009, 0.0016);
+    // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
+    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.4;
+    vec3 col = day + night + vec3(0.0003, 0.00045, 0.0008);
     // Overcast: collapse toward a grey dome during rain.
     float overcast = rainStrength * 0.85;
     if (overcast == 0.0) return col;

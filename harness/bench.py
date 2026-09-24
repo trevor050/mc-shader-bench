@@ -145,6 +145,12 @@ def main(argv: list[str]):
         return
 
     b = wait_for_game(timeout=10)
+    # Guard against judging another pack: Trevor switches packs in-game to compare.
+    iris_cfg = GAME_DIR / "config" / "iris.properties"
+    if cmd in ("view", "shots") and iris_cfg.exists():
+        active = next((l.split("=", 1)[1].strip() for l in iris_cfg.read_text().splitlines() if l.startswith("shaderPack=")), "")
+        if active != "ClaudeBench":
+            print(f"WARNING: active shader pack is {active!r}, not ClaudeBench")
     if cmd == "raw":
         for line in args:
             print(b.send(line))

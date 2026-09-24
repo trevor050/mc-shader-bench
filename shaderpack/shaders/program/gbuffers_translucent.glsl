@@ -74,8 +74,6 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
-uniform int heldBlockLightValue;
-uniform int heldBlockLightValue2;
 uniform sampler2D colortex9;
 #include "/lib/shadows.glsl"
 #include "/lib/clouds.glsl"

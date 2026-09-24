@@ -12,7 +12,7 @@ uniform sampler2D milkyway;
 
 const vec3 CELESTIAL_NORTH = vec3(0.0, 0.42262, -0.90631);
 #define STAR_BRIGHTNESS 3.0e-5
-#define MILKYWAY_BRIGHTNESS 0.006
+#define MILKYWAY_BRIGHTNESS 0.018
 
 vec3 starColor(float bv) {
     // B-V colour index -> temperature (Ballesteros 2012) -> approximate blackbody colour.
@@ -36,15 +36,17 @@ vec2 starToScreen(vec3 dir, mat3 view, vec2 projScale, vec2 res) {
 vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, mat3 view, vec2 projScale, vec2 res) {
     vec3 b1 = normalize(sunDir - dot(sunDir, CELESTIAL_NORTH) * CELESTIAL_NORTH);
     vec3 b2 = cross(CELESTIAL_NORTH, b1);
-    // Sun's right ascension through a 365-day year (day 0 starts in late autumn, rich winter constellations).
-    float raSun = fract(float(worldDay) / 365.0 + 0.62) * TAU;
+    // Sun's right ascension: pinned near the June solstice, when the galactic core (RA 266 deg) crosses the
+    // meridian around midnight, so the brightest part of the Milky Way arcs overhead on every clear night.
+    // A slow drift (one cycle per ten years of game days) keeps the sky from being perfectly static.
+    float raSun = fract(float(worldDay) / 3650.0 + 0.24) * TAU;
 
     float sinDec = clamp(dot(rd, CELESTIAL_NORTH), -1.0, 1.0);
     float dec = asin(sinDec);
     float ra = mod(raSun + atan(dot(rd, b2), dot(rd, b1)), TAU);
     vec2 uv = vec2(ra / TAU, dec / PI + 0.5);
 
-    vec3 col = texture(milkyway, uv).rgb * MILKYWAY_BRIGHTNESS;
+    vec3 col = textureLod(milkyway, uv, 0.0).rgb * MILKYWAY_BRIGHTNESS;
 
     const vec2 size = vec2(2048.0, 1024.0);
     vec2 st = uv * size;

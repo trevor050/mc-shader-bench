@@ -46,8 +46,6 @@ uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 uniform vec3 cameraPosition;
 uniform float wetness;
-uniform int heldBlockLightValue;
-uniform int heldBlockLightValue2;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
 uniform sampler2D colortex8;
