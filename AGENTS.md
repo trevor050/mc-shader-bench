@@ -45,6 +45,17 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Motion testing: harness/rec.py <secs> <out.mp4> screen-records the game window (region hardcoded; window often on the 2nd monitor, focus it with Alt+SetForegroundWindow first) and saves .npy for brightness/flicker analysis.
 - Capture helper: harness/cap_v4.py <dim> x y z yaw pitch time name [settle] (tp via execute in <dim>).
 
+## Overworld V5 pass (2026-09-24)
+- Biome custom uniforms in shaders.properties: inSnowy (biome_precipitation SNOW), inDeepDark, inLushCave, inDripstone.
+- lib/cave.glsl: surfaces with sky lm < ~0.5 fog into cave air (per-biome colour) instead of hazeColor. hazeColor contains the sun aureole; fogging cave walls with it drew a sun blob through rock. vl_march scatters light-field amplitude off cave dust (coloured halos; night outdoors at 0.3x).
+- Emitter colour (shadow.glsl emitterColor): chroma x EMITTER_SATURATION, flames (warm + real green share) forced to fixed fire colour (1,.40,.09). Trevor: torch must be fire-orange, not yellow. shadowcomp partly luminance-normalizes non-lava/portal energy (pure red lum 0.21 -> redstone had no light); flicker only for flames.
+- lighting.glsl: lightmapXM = max(vanilla, field lum * FIELD_BRIGHTNESS) outside the Nether (never darker than vanilla). FIELD_BRIGHTNESS 7 / CAVE_AIR_GLOW 1 washed the test cave out; 3.5 / 0.4 kept contrast.
+- Test cave: sealed deepslate room 2600..2630, -40..-29, 600..630 (torches W, soul lanterns E, crying obsidian+redstone N, sea lantern+glowstone S); view from 2615 -36 615.
+- Clouds: cumulus bases ~190-305 (was 185-430), scud deck y138-188 (scudDensity, regional, more on low/rain days), upper deck more common, slab bottom 132. Night 62% cloud-opacity hack removed (Trevor: Milky Way must not show through clouds).
+- Sun: low-sun crisp limb-darkened disc in sunDisc; aureole core/halo cut at low sun (they blew the region to cream and hid the sun). Reload replays identical clouds, so sunset tests keep hitting the same cloud over the sun; judge the disc with CLOUDS temporarily off.
+- Snow: composite whiteout (0.0019 + 0.028*rain) toward snowWhiteout(haze); far fog and the sky's lower band whiten by the same snowHorizonShare() so the horizon has no seam. Ambient bounce x(1 + inSnowy*...).
+- Locations: snowy_plains 982,-1435; snowy_slopes + deep_dark 2518,-1339 (deep dark air pocket y unknown; -40/-25 are in rock); lush_caves 278,-987. frozen_ocean scene at 1014,-283 is NOT a snow biome (it rains).
+
 ## Hazards
 - Python `open(p,'w')` on Windows writes CRLF; use newline='' (string matches with 
  fail on CRLF files).
