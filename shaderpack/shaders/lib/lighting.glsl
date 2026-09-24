@@ -136,7 +136,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #if defined DIM_NETHER
     // Obsidian, blackstone and basalt have near-zero albedo. Give those opaque stone surfaces a restrained
     // ashen floor so their texture and face-to-face shape survive exposure without lifting foliage or lava.
-    float darkRock = (mat == MAT_NONE || mat == MAT_LOD)
+    float darkRock = (mat == MAT_NONE || mat == MAT_LOD || mat == MAT_POLISHED || mat == MAT_GLASSY)
         ? 1.0 - smoothstep(0.025, 0.16, luminance(albedo))
         : 0.0;
     col += vec3(0.016, 0.011, 0.008) * darkRock * ao * (0.72 + 0.28 * n.y);
@@ -147,7 +147,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #if defined DIM_END
     // Near-black obsidian and unclassified terrain otherwise collapse into flat cutouts. A restrained violet
     // bounce lifts only dark terrain/LOD texels; AO and storm-facing direction keep it shaped and localized.
-    if (mat == MAT_NONE || mat == MAT_LOD) {
+    if (mat == MAT_NONE || mat == MAT_LOD || mat == MAT_GLASSY) {
         float darkSurface = 1.0 - smoothstep(0.012, 0.075, luminance(albedo));
         float textureDetail = 0.62 + 0.38 * sqrt(saturate(luminance(albedo) * 48.0));
         float stormFacing = 0.65 + 0.35 * saturate(dot(n, vec3(0.37, 0.83, 0.42)) * 0.5 + 0.5);

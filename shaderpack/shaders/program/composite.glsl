@@ -29,6 +29,8 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
+uniform sampler2D colortex1;
+uniform sampler2D colortex2;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform mat4 gbufferProjectionInverse;
@@ -121,18 +123,30 @@ void main() {
         dist = length(playerPos);
     }
 #if defined DIM_NETHER
-    // Heat shimmer: air over the lava seas wobbles. Whatever is seen through the hot layer (the lava itself, the
-    // shore, anything low and some distance away) is resampled with a small upward-scrolling offset.
-    {
-        float surfaceY = sky ? cameraPosition.y : playerPos.y + cameraPosition.y;
-        float lowPath = min(surfaceY, cameraPosition.y) - NETHER_LAVA_LEVEL;
-        float heat = exp(-max(lowPath, 0.0) / 9.0) * smoothstep(3.0, 18.0, dist);
-        if (heat > 0.02) {
-            vec2 sp = texcoord * vec2(viewWidth / viewHeight, 1.0) * 55.0;
-            vec2 off = vec2(valueNoise(sp + vec2(0.0, -frameTimeCounter * 3.2)),
-                            valueNoise(sp * 1.3 + vec2(17.0, -frameTimeCounter * 2.6))) - 0.5;
-            vec2 uv2 = texcoord + off * vec2(0.0035, 0.0045) * heat;
-            if (texture(depthtex0, uv2).r >= 0.56) col = texture(colortex0, uv2).rgb;
+    // Heat haze. The lava never moves: what wavers is whatever is seen *through* the hot air layer over the lava
+    // seas (the far shore, pillars, walls across a lake), slowly and mostly vertically, as rising hot air bends
+    // light. Strength follows how much of the ray crosses that layer, so looking across a lake shimmers and
+    // looking down at the lava from a cliff does not. Lava pixels are never displaced or pulled in.
+    if (!sky) {
+        int matHere = int(texture(colortex2, texcoord).r * 255.0 + 0.5);
+        if (matHere != MAT_LAVA) {
+            const float HOT_TOP = NETHER_LAVA_LEVEL + 7.0;
+            float y0 = cameraPosition.y, y1 = playerPos.y + cameraPosition.y;
+            // Length of the segment camera->surface inside the slab [lava level, HOT_TOP].
+            float lo = max(min(y0, y1), NETHER_LAVA_LEVEL), hi = min(max(y0, y1), HOT_TOP);
+            float frac = max(hi - lo, 0.0) / max(abs(y1 - y0), 1e-3);
+            float inHot = abs(y1 - y0) < 1e-3 ? float(y0 < HOT_TOP) * dist : frac * dist;
+            float heat = saturate(inHot / 40.0) * smoothstep(6.0, 24.0, dist);
+            if (heat > 0.01) {
+                vec2 sp = texcoord * vec2(viewWidth / viewHeight, 1.0);
+                float t = frameTimeCounter;
+                float wave = valueNoise(vec2(sp.x * 14.0, sp.y * 26.0 - t * 1.1)) - 0.5
+                           + (valueNoise(vec2(sp.x * 31.0 + 7.0, sp.y * 57.0 - t * 1.7)) - 0.5) * 0.5;
+                float side = valueNoise(vec2(sp.x * 9.0 + 3.0, sp.y * 17.0 - t * 0.6)) - 0.5;
+                vec2 uv2 = texcoord + vec2(side * 0.0006, wave * 0.0022) * heat;
+                int matThere = int(texture(colortex2, uv2).r * 255.0 + 0.5);
+                if (matThere != MAT_LAVA && texture(depthtex0, uv2).r >= 0.56) col = texture(colortex0, uv2).rgb;
+            }
         }
     }
 #endif

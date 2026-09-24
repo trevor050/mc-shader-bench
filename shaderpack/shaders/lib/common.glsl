@@ -17,6 +17,9 @@
 #define MAT_ENDPORTAL 10
 #define MAT_ICE 11          // clear ice (translucent)
 #define MAT_ICE_SOLID 12    // packed and blue ice (opaque, glossy)
+#define MAT_POLISHED 13     // polished/smooth stone, quartz, glazed terracotta, amethyst (screen-space reflections)
+#define MAT_METAL 14        // metal and gem blocks (tinted reflections)
+#define MAT_GLASSY 15       // obsidian: volcanic glass
 #define MAT_ENTITY 20
 #define MAT_HAND 21
 #define MAT_LOD 30

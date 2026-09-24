@@ -248,6 +248,16 @@ void main() {
 
     outAlbedo = vec4(albedo.rgb, 1.0);
     outNormalLight = vec4(encodeNormal(n), lmcoord);
-    outMaterial = vec4(float(mat) / 255.0, emissive, ao, 1.0);
+    // Smoothness for the screen-space reflections in composite (0 = none). Brighter texels of a block are the
+    // polished faces; darker ones are grout, pits and edges, so gloss follows the texture.
+    float smoothness = 0.0;
+#ifdef PROG_TERRAIN
+    float tl = luminance(albedo.rgb);
+    if (mat == MAT_POLISHED) smoothness = mix(0.45, 0.82, smoothstep(0.15, 0.75, tl));
+    else if (mat == MAT_METAL) smoothness = mix(0.62, 0.9, smoothstep(0.2, 0.8, tl));
+    else if (mat == MAT_GLASSY) smoothness = 0.93;
+    else if (mat == MAT_ICE_SOLID) smoothness = mix(0.8, 0.95, tl);
+#endif
+    outMaterial = vec4(float(mat) / 255.0, emissive, ao, smoothness);
 }
 #endif
