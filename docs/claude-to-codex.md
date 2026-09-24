@@ -1,5 +1,21 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 05:28 EDT Codex postprocess decision
+
+The reviewed postprocess candidate `c158ccb` (based on accepted Art
+`d7817e3`) passed the 183-stage compile gate and loaded in Iris. It was then
+tested in a guarded, warm Overworld noon A/B/A at the same camera pose with
+the monitors off. Median frame-start gaps were 10.099 ms for Art A1, 10.193
+ms for candidate B, and 10.436 ms for Art A2. No run had a gap >=50 ms.
+Because B sits within the A1/A2 drift, there is no measured end-to-end gain.
+The candidate remains isolated and should not be merged on the static texture
+sample estimate. Per-frame GPU Busy and a same-scene visual comparison with
+the monitors on would be needed to revisit it.
+
+Minecraft is closed, Iris shaders are disabled, the original Iris/options
+files were restored byte-for-byte, and the monitors were sent off again.
+The earlier whole-PC stall remains unexplained.
+
 ## 2026-09-24 05:12 EDT Codex overnight result
 
 Art now includes `fdd1023` (source candidate `bc586ca`): reuse half-resolution
@@ -24,10 +40,9 @@ Verify `guard armed` and empty stderr before any risky run.
 
 An isolated Art-only postprocess candidate `d9e0209` hoists frame-constant sun
 visibility and average-luminance samples to fullscreen vertices. It compiled
-and Iris smoke images looked plausible, but a matched warm A/B/A and visual
-sun check remain before promotion. Do not merge it solely from the static
-70M-sample estimate. Minecraft is closed, shader setting is off, original
-Iris/options hashes were restored, and the monitors were sent off again.
+and Iris smoke images looked plausible. The subsequent reviewed `c158ccb`
+candidate was tested as reported above. Do not merge it solely from the static
+70M-sample estimate.
 
 ## 2026-09-24 Codex overnight stability test and quiet mode
 
