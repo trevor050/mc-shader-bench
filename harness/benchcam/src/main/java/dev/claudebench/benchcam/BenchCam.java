@@ -119,6 +119,7 @@ public final class BenchCam implements ClientModInitializer {
 		return switch (verb) {
 			case "ping" -> CompletableFuture.completedFuture("ok pong");
 			case "framestats" -> CompletableFuture.completedFuture(FrameTimeStats.summarizeRecent(arg));
+			case "gpuprof" -> gpuProfileCommand(arg);
 			case "status" -> onRenderThread(() -> {
 				var p = mc.player;
 				String pos = p == null ? "none" : String.format("%.2f %.2f %.2f %.1f %.1f", p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot());
@@ -177,6 +178,19 @@ public final class BenchCam implements ClientModInitializer {
 			case "shaders" -> onRenderThread(() -> setShaders(arg.equals("on")));
 			default -> CompletableFuture.completedFuture("err unknown command: " + verb);
 		};
+	}
+
+	private static CompletableFuture<String> gpuProfileCommand(String arg) {
+		if (arg.equals("stop")) return onRenderThread(GpuPassProfiler::stop);
+		if (arg.equals("status")) return onRenderThread(GpuPassProfiler::status);
+		if (!arg.startsWith("start ") || arg.substring(6).isBlank())
+			return CompletableFuture.completedFuture("err usage: gpuprof start <new.csv>|stop|status");
+		try {
+			GpuPassProfiler.Session candidate = GpuPassProfiler.prepare(Path.of(arg.substring(6).strip()));
+			return onRenderThread(() -> GpuPassProfiler.start(candidate));
+		} catch (IOException | RuntimeException e) {
+			return CompletableFuture.completedFuture("err " + e);
+		}
 	}
 
 	private static CompletableFuture<String> onRenderThread(java.util.function.Supplier<String> task) {

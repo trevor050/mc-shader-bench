@@ -6,6 +6,9 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	def irisJar = System.getenv('BENCHCAM_IRIS_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/iris-fabric-1.11.4+mc26.2.jar"
+	if (!file(irisJar).isFile()) throw new GradleException("Set BENCHCAM_IRIS_JAR to the installed Iris 1.11.4+mc26.2 jar")
+	compileOnly files(irisJar)
 }
 
 processResources {
