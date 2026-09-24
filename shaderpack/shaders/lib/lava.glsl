@@ -4,7 +4,7 @@
 // from visibly repeating across a lake, and make it hot enough to hurt. So:
 //  - Pools are cut into irregular patches a few blocks across (a jittered, domain-warped Voronoi evaluated on
 //    the sprite's own texel grid, so patch borders are pixel staircases, never smooth curves). Each patch shows
-//    the sprite with its own 90-degree orientation, texel-aligned offset and slow drift direction. Rotations by
+//    the sprite with its own 90-degree orientation and texel-aligned offset. Rotations by
 //    quarter turns and whole-texel offsets map the 16x16 pixel grid onto itself, so every pixel is a genuine,
 //    crisp lava pixel; neighbouring patches just disagree about which one, which reads as separate currents.
 //  - Large, slow heat zones (tens of blocks) push the palette a little toward deep red or toward yellow-white
@@ -60,10 +60,13 @@ vec2 lavaOrient(vec2 v, int k) {
 // Heat-grade a vanilla lava pixel (sRGB). heat 0..1 from the broad field (0.5 = vanilla).
 vec3 lavaGrade(vec3 s, float heat, float hot) {
     float l = luminance(s);
+    // Richer saturation than the vanilla sprite: the tonemapper desaturates very bright colours, so lava that
+    // should read as hot orange would otherwise come out salmon.
+    s = saturate(mix(vec3(l), s, 1.25));
     // Cooler zones: the darker pixels sink toward deep red, bright blobs stay orange.
     vec3 cool = s * mix(vec3(0.8, 0.42, 0.3), vec3(0.95, 0.78, 0.66), smoothstep(0.45, 0.8, l));
-    // Hotter zones: bright blobs run toward yellow-white.
-    vec3 warm = mix(s, vec3(1.0, 0.86, 0.52), smoothstep(0.5, 0.85, l) * 0.55);
+    // Hotter zones: bright blobs run toward a saturated yellow (Solas's pockets glow vivid yellow-orange).
+    vec3 warm = mix(s, vec3(1.0, 0.8, 0.22), smoothstep(0.5, 0.85, l) * 0.6);
     vec3 c = heat < 0.5 ? mix(cool, s, smoothstep(0.1, 0.5, heat)) : mix(s, warm, smoothstep(0.5, 0.9, heat));
     // Upwellings: white-hot cores.
     return mix(c, vec3(1.0, 0.95, 0.75), hot * (0.35 + 0.65 * smoothstep(0.4, 0.8, l)));
@@ -96,11 +99,9 @@ vec4 lavaSurface(vec3 worldPos, vec3 posDx, vec3 posDy, vec3 normal,
     vec4 pch = lavaPatch(q);
     int k = int(pch.x * 8.0);
     vec2 offset = floor(vec2(pch.y, pch.z) * 16.0) / 16.0;
-    // Each patch creeps in its own direction at 0.05-0.12 blocks per second.
-    float ang = pch.x * 37.0 + pch.z * TAU;
-    vec2 drift = vec2(cos(ang), sin(ang)) * mix(0.05, 0.12, pch.y) * time;
-
-    vec2 local = lavaOrient(p, k) + offset + drift;
+    // Pools sit still (Trevor: drifting patches read as flowing, non-full lava blocks); vanilla's own sprite
+    // animation is the only motion.
+    vec2 local = lavaOrient(p, k) + offset;
     vec2 uv = clamp(spriteMid + (fract(local) * 2.0 - 1.0) * halfExtent, spriteMid - safeHalf, spriteMid + safeHalf);
     vec2 gx = lavaOrient(pDx, k) * (2.0 * halfExtent), gy = lavaOrient(pDy, k) * (2.0 * halfExtent);
     vec3 sprite = textureGrad(gtexture, uv, gx, gy).rgb;

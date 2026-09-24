@@ -126,18 +126,29 @@ void main() {
         tPrev = t1;
         vec3 p = rd * rayEnd * xm * xm;
         vec3 wp = p + cameraPosition;
-        float sigma = netherSmogDensity(wp, frameTimeCounter, ash);
+        vec2 smog = netherSmog(wp, frameTimeCounter, ash);
+        float sigma = smog.x;
         vec3 light = netherSeaGlow(wp, frameTimeCounter) + ambient;
 #ifdef LIGHT_FIELD
         vec3 uvw = voxelUVW(p, cameraPositionFract);
         float fw = voxelEdgeFade(uvw);
         // Local sources light the smoke around them. Near the lava the field replaces most of the analytic
         // sea glow, which only knows about altitude.
-        if (fw > 0.0) light = mix(light, light * 0.35 + lightFieldTap(uvw) * 0.3 + ambient, fw);
+        // Inside the field the smoke glows only where lava really is: the field's extra-light channel is a lava
+        // (and portal) proximity map, so smoke over a lava lake burns orange and a lava-free valley stays sooty.
+        // Outside the field the altitude-only estimate takes over.
+        if (fw > 0.0) {
+            vec4 raw = lightFieldTapRaw(uvw);
+            float lavaNear = saturate(sqrt(max(raw.a, 0.0)) * 2.5);
+            vec3 local = netherSeaGlow(wp, frameTimeCounter) * lavaNear + sqrt(max(raw.rgb, 0.0)) * LIGHT_FIELD_GAIN * 0.3;
+            light = mix(light, local + ambient, fw);
+        }
 #endif
         float stepT = exp(-sigma * stepLen);
-        // Smoke is dark soot: a low single-scattering albedo keeps it heavy and brown rather than milky.
-        scatter += trans * light * 0.45 * (1.0 - stepT);
+        // Thin haze glows (it scatters the lava light well); thick soot is dark: a low albedo, and its cores
+        // shade themselves. That contrast is what makes the smoke read as heavy shapes rather than a tint.
+        float albedo = mix(0.6, 0.12, smog.y);
+        scatter += trans * light * albedo * (1.0 - stepT);
         trans *= stepT;
     }
     outScatter = vec4(scatter, trans);

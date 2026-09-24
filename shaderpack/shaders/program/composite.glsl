@@ -120,6 +120,22 @@ void main() {
         playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
         dist = length(playerPos);
     }
+#if defined DIM_NETHER
+    // Heat shimmer: air over the lava seas wobbles. Whatever is seen through the hot layer (the lava itself, the
+    // shore, anything low and some distance away) is resampled with a small upward-scrolling offset.
+    {
+        float surfaceY = sky ? cameraPosition.y : playerPos.y + cameraPosition.y;
+        float lowPath = min(surfaceY, cameraPosition.y) - NETHER_LAVA_LEVEL;
+        float heat = exp(-max(lowPath, 0.0) / 9.0) * smoothstep(3.0, 18.0, dist);
+        if (heat > 0.02) {
+            vec2 sp = texcoord * vec2(viewWidth / viewHeight, 1.0) * 55.0;
+            vec2 off = vec2(valueNoise(sp + vec2(0.0, -frameTimeCounter * 3.2)),
+                            valueNoise(sp * 1.3 + vec2(17.0, -frameTimeCounter * 2.6))) - 0.5;
+            vec2 uv2 = texcoord + off * vec2(0.0035, 0.0045) * heat;
+            if (texture(depthtex0, uv2).r >= 0.56) col = texture(colortex0, uv2).rgb;
+        }
+    }
+#endif
     if (isEyeInWater == 1) {
         // Underwater: strong absorption toward teal, lit by filtered sky/sun.
         const vec3 absorb = vec3(0.30, 0.07, 0.05);
@@ -183,7 +199,7 @@ void main() {
             float ash = netherAshiness();
             vec3 mid = cameraPosition + vec3(0.0, -0.35 * max(cameraPosition.y - NETHER_LAVA_LEVEL, 0.0), 0.0);
             vec3 farLight = netherSeaGlow(mid, frameTimeCounter) + netherSmogAmbient(netherBiomeAir());
-            float sigmaFar = (0.0065 + 0.018 * exp(-max(mid.y - NETHER_LAVA_LEVEL, 0.0) / 34.0) + 0.012) * (1.0 + ash * 0.9);
+            float sigmaFar = (0.010 + 0.026 * exp(-max(mid.y - NETHER_LAVA_LEVEL, 0.0) / 30.0) + 0.02) * (1.0 + ash * 0.9);
             float farT = exp(-sigmaFar * (smogDist - NETHER_SMOG_RANGE));
             col = col * farT + farLight * 0.45 * (1.0 - farT);
         }
