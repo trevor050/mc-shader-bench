@@ -55,7 +55,57 @@ public abstract class IrisShadowProfilerMixin {
 		target = "Lcom/mojang/blaze3d/opengl/GlStateManager;_viewport(IIII)V", remap = false), remap = false, require = 1)
 	private void benchcam$beginEntities(LevelRendererAccessor levelRenderer, Camera playerCamera,
 			CameraRenderState renderState, CallbackInfo ci) {
-		benchcam$nextShadowPhase("entities_depth_copy");
+		benchcam$nextShadowPhase("entity_setup_extract");
+	}
+
+	/** Entity and block-entity submit methods populate render nodes; feature rendering draws them later. */
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;renderEntities(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;Lcom/mojang/blaze3d/vertex/PoseStack;FLnet/minecraft/client/renderer/culling/Frustum;DDD)I", remap = false), remap = false, require = 1)
+	private void benchcam$beginEntitySubmit(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("entity_submit");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE", shift = At.Shift.AFTER,
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;renderEntities(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;Lcom/mojang/blaze3d/vertex/PoseStack;FLnet/minecraft/client/renderer/culling/Frustum;DDD)I", remap = false), remap = false, require = 1)
+	private void benchcam$beginBlockEntityExtract(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("block_entity_extract");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;renderBlockEntities(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeStorage;Lnet/minecraft/client/renderer/state/level/LevelRenderState;Lnet/minecraft/client/Camera;)I", remap = false), remap = false, require = 1)
+	private void benchcam$beginBlockEntitySubmit(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("block_entity_submit");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE", shift = At.Shift.AFTER,
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;renderBlockEntities(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeStorage;Lnet/minecraft/client/renderer/state/level/LevelRenderState;Lnet/minecraft/client/Camera;)I", remap = false), remap = false, require = 1)
+	private void benchcam$beginFeatureRender(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("feature_render");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
+		target = "Lnet/minecraft/client/renderer/RenderBuffers;endFrame()V", remap = false), remap = false, require = 1)
+	private void benchcam$beginBufferFlush(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("buffer_end_frame");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE",
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;copyPreTranslucentDepth(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;)V", remap = false), remap = false, require = 1)
+	private void benchcam$beginDepthCopy(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("depth_copy");
+	}
+
+	@Inject(method = "renderShadows", at = @At(value = "INVOKE", shift = At.Shift.AFTER,
+		target = "Lnet/irisshaders/iris/shadows/ShadowRenderer;copyPreTranslucentDepth(Lnet/irisshaders/iris/mixin/LevelRendererAccessor;)V", remap = false), remap = false, require = 1)
+	private void benchcam$endDepthCopy(LevelRendererAccessor levelRenderer, Camera playerCamera,
+			CameraRenderState renderState, CallbackInfo ci) {
+		benchcam$nextShadowPhase("translucent_setup");
 	}
 
 	/** The second renderGroup call is translucent terrain; the first is opaque terrain. */

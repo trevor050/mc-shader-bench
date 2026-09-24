@@ -35,6 +35,7 @@ public final class GpuPassProfiler {
 	private static long nextToken;
 	private static String activeStage;
 	private static String activePass;
+	private static long activeCpuStartNs;
 	private static Session session;
 	private static boolean recording;
 	private static long submitted;
@@ -46,7 +47,7 @@ public final class GpuPassProfiler {
 	private static boolean restartRequired;
 	private static long unreleasedQueries;
 
-	private record Pending(int query, long frame, String stage, String pass) {}
+	private record Pending(int query, long frame, String stage, String pass, long cpuWallNs) {}
 
 	private GpuPassProfiler() {}
 
@@ -71,7 +72,7 @@ public final class GpuPassProfiler {
 		if (!absolute.getParent().equals(root)) throw new IOException("output path escaped capture root");
 		BufferedWriter out = Files.newBufferedWriter(absolute, StandardCharsets.UTF_8,
 			StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-		out.write("frame,stage,pass,gpu_ns");
+		out.write("frame,stage,pass,gpu_ns,cpu_wall_ns");
 		out.newLine();
 		out.flush();
 		return new Session(absolute, out);
@@ -203,6 +204,7 @@ public final class GpuPassProfiler {
 		activeToken = ++nextToken;
 		activeStage = stage;
 		activePass = pass;
+		activeCpuStartNs = System.nanoTime();
 		return activeToken;
 	}
 
@@ -238,7 +240,8 @@ public final class GpuPassProfiler {
 			activeStage = activePass = null;
 			return;
 		}
-		PENDING.addLast(new Pending(activeQuery, frame, activeStage, activePass));
+		long cpuWallNs = System.nanoTime() - activeCpuStartNs;
+		PENDING.addLast(new Pending(activeQuery, frame, activeStage, activePass, cpuWallNs));
 		submitted++;
 		activeQuery = 0;
 		activeToken = 0;
@@ -383,7 +386,7 @@ public final class GpuPassProfiler {
 			}
 			FREE.addLast(sample.query);
 			received++;
-			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos)) droppedRows++;
+			if (captureFailure == null && !session.offer(sample.frame + "," + csv(sample.stage) + "," + csv(sample.pass) + "," + nanos + "," + sample.cpuWallNs)) droppedRows++;
 		}
 		if (!recording && session != null && PENDING.isEmpty() && activeQuery == 0) {
 			retireFreeQueries();
