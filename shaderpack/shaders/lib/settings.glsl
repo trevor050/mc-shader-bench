@@ -41,6 +41,8 @@
 
 #define VOLUMETRIC_LIGHT
 #define VL_STEPS 20
+#define NETHER_SMOG_STEPS 12      // half-resolution march steps for Nether smoke
+#define NETHER_SMOG_RANGE 160.0   // marched distance; beyond it the smog continues analytically
 #define FOG_DENSITY 1.0
 
 #define WATER_SSR

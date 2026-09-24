@@ -63,7 +63,7 @@ layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
 
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_END
 uniform sampler2D colortex11;
 uniform sampler2D colortex12;
 uniform float viewWidth;
@@ -139,20 +139,16 @@ void main() {
 
     // Aerial perspective: blend toward the horizon sky with height-dependent density. Nether haze skips the
     // first-person hand entirely, whose depth comes from a separate projection.
-#if defined DIM_NETHER
-    if (!sky && depth >= 0.56) {
-#else
+#if !defined DIM_NETHER
     if (!sky) {
+#else
+    if (false) {
 #endif
         vec3 rd = normalize(playerPos);
         float worldY = playerPos.y + cameraPosition.y;
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
         float density = (0.00018 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
-#if defined DIM_NETHER
-        // Thick near the lava seas, thinning with height; the smoke never fully clears.
-        float fogY = min(worldY, cameraPosition.y);
-        density = 0.005 + 0.011 * exp(-max(fogY - 31.0, 0.0) / 40.0);
-#elif defined DIM_END
+#if defined DIM_END
         density = 0.0025;
 #endif
         // dhFarPlane is a projection plane, not the LOD extent (half of it was ~1.6 km, which flattened all
@@ -172,32 +168,25 @@ void main() {
         // The ramp only covers the last stretch: starting it earlier flattened distant hills into grey slabs.
         fogAmt = max(fogAmt, smoothstep(LOD_DISTANCE * 0.72, LOD_DISTANCE * 0.97, dist));
 #endif
-#if defined DIM_NETHER
-        float hazeY = mix(worldY, cameraPosition.y, 0.5);
-        col = mix(col, netherFogColor(rd, hazeY), saturate(fogAmt));
-#else
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
-#endif
 
     }
 
 #if defined DIM_NETHER
-    // Integrate a single representative sample through the smoke-height segment. World-space anchoring
-    // keeps the billows from sticking to the screen; skip the hand and nearby portal surfaces entirely.
-    if (depth >= 0.56 && (sky || dist > 24.0)) {
-        vec3 smokeRay;
-        float smokeLimit;
-        if (sky) {
-            vec3 viewRay = projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0);
-            smokeRay = normalize(mat3(gbufferModelViewInverse) * viewRay);
-            smokeLimit = 220.0;
-        } else {
-            smokeRay = normalize(playerPos);
-            smokeLimit = min(dist, 190.0);
+    // Smog. Past the marched range the medium continues analytically, lit like the smoke at mid height above
+    // the seas; then the half-resolution march (composite/vl_march + temporal) covers the near segment.
+    {
+        float smogDist = sky ? 520.0 : min(dist, 520.0);
+        if (smogDist > NETHER_SMOG_RANGE) {
+            float ash = netherAshiness();
+            vec3 mid = cameraPosition + vec3(0.0, -0.35 * max(cameraPosition.y - NETHER_LAVA_LEVEL, 0.0), 0.0);
+            vec3 farLight = netherSeaGlow(mid, frameTimeCounter) + netherSmogAmbient(netherBiomeAir());
+            float sigmaFar = (0.0065 + 0.018 * exp(-max(mid.y - NETHER_LAVA_LEVEL, 0.0) / 34.0) + 0.012) * (1.0 + ash * 0.9);
+            float farT = exp(-sigmaFar * (smogDist - NETHER_SMOG_RANGE));
+            col = col * farT + farLight * 0.55 * (1.0 - farT);
         }
-
-        vec4 smoke = sampleNetherSmoke(cameraPosition, smokeRay, smokeLimit);
-        col = mix(col, smoke.rgb, smoke.a);
+        vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
+        col = col * smog.a + smog.rgb;
     }
 #endif
 

@@ -1,56 +1,56 @@
-// Low-cost Nether smoke and lava-lit distance haze. Requires clouds.glsl's cloudTex().
+// Nether smog: a participating medium marched at half resolution (vl_march.glsl), accumulated temporally and
+// composited in composite.glsl. Requires clouds.glsl's cloudTex() and atmosphere.glsl's fogColor.
+//
+// Direction (Trevor, after Bliss): smoke you can feel in your lungs, lava that burns, a hellish alien world.
+// Bliss gets the mood from dense, uniformly lit fog. This version keeps that density but lights the medium
+// from its actual sources: the voxel light field puts an orange glow in the smoke right above lava, fire and
+// portals (purple haze around a portal, cold cyan over soul fire), while the far field is lit by the lava seas
+// from below, so smoke is bright where it hangs low over lava and sooty and dark overhead.
 
-float netherSmokeDensity(vec3 p) {
-    float altitude = max(p.y - 34.0, 0.0);
+const float NETHER_LAVA_LEVEL = 31.0;
 
-    // Oblique world axes stretch the tile far beyond a normal view and shear the field with height,
-    // so the billows rise as columns instead of reading as a flat cloud deck.
-    vec3 q = vec3(
-        p.x * 0.00113 + p.z * 0.00027 + altitude * 0.00024,
-        p.z * 0.00107 - p.x * 0.00031 - altitude * 0.00018,
-        altitude * 0.00175 + p.x * 0.00019 - p.z * 0.00041 - frameTimeCounter * 0.00036
-    );
-    vec4 noise = cloudTex(q);
-    float shape = noise.r * 0.68 + noise.g * 0.19 + noise.b * 0.09 + noise.a * 0.04;
-    float billow = smoothstep(0.42, 0.64, shape);
-    float height = smoothstep(35.0, 49.0, p.y) * (1.0 - smoothstep(126.0, 158.0, p.y));
-    return billow * height;
+// Biome air colour from the game's fog colour (crimson red, warped teal, soul sand valley cold blue-grey,
+// basalt deltas ash, wastes ember). Returned hue-normalized and partly desaturated.
+vec3 netherBiomeAir() {
+    vec3 a = toLinear(fogColor);
+    a = mix(vec3(luminance(a)), a, 0.6);
+    return a / max(luminance(a), 1e-3);
 }
 
-vec3 netherFogColor(vec3 rd, float y) {
-    // Ember lift belongs near lava and along the horizon. Steep views stay ashen, avoiding an orange wash.
-    float nearLava = exp(-max(y - 31.0, 0.0) / 37.0);
-    float horizon = exp(-abs(rd.y) * 3.2);
-    float glow = nearLava * (0.11 + horizon * 0.38);
-    return vec3(0.010, 0.008, 0.007) + vec3(0.105, 0.023, 0.0035) * glow;
+// Ash-heavy biomes (basalt deltas' grey fog) get thicker smoke.
+float netherAshiness() {
+    vec3 a = toLinear(fogColor);
+    float sat = (max(a.r, max(a.g, a.b)) - min(a.r, min(a.g, a.b))) / max(max(a.r, max(a.g, a.b)), 1e-3);
+    return 1.0 - smoothstep(0.2, 0.6, sat);
 }
 
-vec4 sampleNetherSmoke(vec3 origin, vec3 rd, float rayLimit) {
-    const float SMOKE_BOTTOM = 36.0;
-    const float SMOKE_TOP = 151.0;
-    float t0 = 0.0;
-    float t1 = rayLimit;
+// Extinction coefficient (per block). Haze is always present; billows rise in columns off the lava seas.
+float netherSmogDensity(vec3 p, float time, float ash) {
+    float h = p.y - NETHER_LAVA_LEVEL;
+    float nearSea = exp(-max(h, 0.0) / 34.0);
+    float haze = 0.0065 + 0.018 * nearSea;
 
-    if (abs(rd.y) < 0.001) {
-        if (origin.y < SMOKE_BOTTOM || origin.y > SMOKE_TOP) return vec4(0.0);
-    } else {
-        float a = (SMOKE_BOTTOM - origin.y) / rd.y;
-        float b = (SMOKE_TOP - origin.y) / rd.y;
-        t0 = max(t0, min(a, b));
-        t1 = min(t1, max(a, b));
-    }
+    // Rising smoke: the noise domain scrolls downward so features climb, and is sheared with height so columns
+    // lean and curl instead of rising as straight pipes.
+    float rise = time * 0.9;
+    vec3 q = vec3(p.x * 0.0105 + h * 0.0021, (p.y - rise) * 0.0072, p.z * 0.0105 - h * 0.0017);
+    vec4 n = cloudTex(q + vec3(0.0, 0.0, time * 0.0009));
+    float shape = n.r * 0.62 + n.g * 0.25 + n.b * 0.13;
+    float billow = smoothstep(0.46, 0.78, shape);
+    // Billows are born low and thin out as they climb, but a few reach the ceiling.
+    float column = billow * (0.35 + 0.65 * exp(-max(h, 0.0) / 60.0));
+    return (haze + column * 0.06) * (1.0 + ash * 0.9);
+}
 
-    float segment = t1 - t0;
-    if (segment < 4.0) return vec4(0.0);
+// Light arriving at a smoke point from the lava seas below: an analytic stand-in for sources beyond the voxel
+// field. Strong, deep orange low down, falling off with height; slightly flickering heat.
+vec3 netherSeaGlow(vec3 p, float time) {
+    float h = max(p.y - NETHER_LAVA_LEVEL, 0.0);
+    float pulse = 0.92 + 0.08 * valueNoise(p.xz * 0.02 + time * 0.15);
+    return vec3(1.0, 0.30, 0.05) * 1.35 * exp(-h / 26.0) * pulse;
+}
 
-    vec3 p = origin + rd * (t0 + segment * 0.52);
-    float density = netherSmokeDensity(p);
-    float opacity = 1.0 - exp(-min(density * segment * 0.008, 0.60));
-    float heat = exp(-max(p.y - 34.0, 0.0) / 60.0);
-    float viewLift = mix(0.38, 1.0, saturate(-rd.y * 0.65 + 0.5));
-
-    // Soot dominates overhead; lower billows catch a restrained red-orange lift from the lava seas.
-    vec3 soot = vec3(0.025, 0.019, 0.016);
-    vec3 ember = vec3(0.120, 0.029, 0.007) * heat * viewLift;
-    return vec4(soot + ember, opacity);
+// Soot and ember ambient that keeps high smoke from going pure black.
+vec3 netherSmogAmbient(vec3 biomeAir) {
+    return mix(vec3(0.030, 0.018, 0.012), biomeAir * 0.024, 0.55);
 }

@@ -53,6 +53,16 @@ uniform ivec2 eyeBrightnessSmooth;
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/mist.glsl"
+#if defined DIM_NETHER
+#include "/lib/nether_atmosphere.glsl"
+#ifdef LIGHT_FIELD
+#define VOXEL_READ
+uniform sampler3D lightFieldSamplerA;
+uniform sampler3D lightFieldSamplerB;
+uniform vec3 cameraPositionFract;
+#include "/lib/voxel.glsl"
+#endif
+#endif
 
 flat in vec3 sunDir;
 flat in vec3 envLightDir;
@@ -94,7 +104,45 @@ void main() {
     outDist = vec4(dist, 0.0, 0.0, 0.0);
     vec3 rd = normalize(playerPos);
 
-#if defined DIM_NETHER || defined DIM_END || !defined VOLUMETRIC_LIGHT
+#if defined DIM_NETHER
+    // Smog march. Steps grow with distance (dense sampling where the field and billows have detail), the ray
+    // stops at the scene or at NETHER_SMOG_RANGE; composite.glsl extends the far remainder analytically.
+    if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
+    float rayEnd = min(dist, NETHER_SMOG_RANGE);
+    float ash = netherAshiness();
+    vec3 biomeAir = netherBiomeAir();
+    vec3 ambient = netherSmogAmbient(biomeAir);
+    vec3 scatter = vec3(0.0);
+    float trans = 1.0;
+    const int STEPS = NETHER_SMOG_STEPS;
+    float tPrev = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        // Quadratic spacing: t(x) = rayEnd * x^2, jittered per frame.
+        float x1 = (float(i) + 1.0) / float(STEPS);
+        float xm = (float(i) + dither) / float(STEPS);
+        float t1 = rayEnd * x1 * x1;
+        float stepLen = t1 - tPrev;
+        tPrev = t1;
+        vec3 p = rd * rayEnd * xm * xm;
+        vec3 wp = p + cameraPosition;
+        float sigma = netherSmogDensity(wp, frameTimeCounter, ash);
+        vec3 light = netherSeaGlow(wp, frameTimeCounter) + ambient;
+#ifdef LIGHT_FIELD
+        vec3 uvw = voxelUVW(p, cameraPositionFract);
+        float fw = voxelEdgeFade(uvw);
+        // Local sources light the smoke around them. Near the lava the field replaces most of the analytic
+        // sea glow, which only knows about altitude.
+        if (fw > 0.0) light = mix(light, light * 0.35 + lightFieldTap(uvw) * LIGHT_FIELD_GAIN * 0.3 + ambient, fw);
+#endif
+        float stepT = exp(-sigma * stepLen);
+        // Smoke is dark soot: a low single-scattering albedo keeps it heavy and brown rather than milky.
+        scatter += trans * light * 0.55 * (1.0 - stepT);
+        trans *= stepT;
+    }
+    outScatter = vec4(scatter, trans);
+    return;
+#elif defined DIM_END || !defined VOLUMETRIC_LIGHT
     outScatter = vec4(0.0, 0.0, 0.0, 1.0);
     return;
 #else

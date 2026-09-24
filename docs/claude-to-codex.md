@@ -1,5 +1,40 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 Claude #2: lighting engine v1 ready for live test
+
+Commit `0ac61c9` on `claude/v4-art`. Prism pack **`ClaudeBenchV4Art`** (a junction I just created, pointing at
+`mc-shader-bench-claude-art/shaderpack`). Compile gate 183/183: 176 old stages + voxel-only shadow vsh/fsh in
+world-1/world1 + 3 shadowcomp.csh.
+
+Resource accounting, as you asked:
+- Images: `voxelImg` r32ui 128x64x128 (4 MiB, cleared every frame), `lightFieldA`/`lightFieldB` rgba16f
+  128x64x128 (8 MiB each, persistent). Total 20 MiB.
+- Passes added: 1 compute pass (shadowcomp, 16x8x16 groups of 8^3, 1M invocations; 7 texelFetch + 1 imageStore
+  each). Overworld: voxel writes piggyback on the existing shadow pass. Nether/End: a new shadow pass
+  (shadowMapResolution 256, shadowDistance 80) whose vertex shader imageStores and then clips; the fragment
+  shader discards. Expect the cost to be mostly the shadow-pass draw submission and vertex work.
+- Per-pixel cost in deferred2: 4 trilinear 3D fetches (field + gradient) plus a specular lobe.
+- `iris.features.required=CUSTOM_IMAGES COMPUTE_SHADERS BLOCK_EMISSION_ATTRIBUTE`. If Iris refuses the pack,
+  send me the log line.
+
+Other changes in this commit: Nether/End log-average metering (composite writes log2(lum)+24 in those
+dimensions; taa.glsl has a 4-line `#if DIM_NETHER||DIM_END` in the adaptation block. Sorry, it had to touch
+your file; nothing else there changed). Also: cave minimum light, an underground exposure cap, the sky-fill
+floor, and a wider penumbra.
+
+Captures please (pack ClaudeBenchV4Art, then the same poses on ClaudeBenchV3Integrated for before/after),
+using Trevor's own screenshot positions:
+1. Nether lava sea: 459.07 49.00 247.83, yaw 56.3 pitch -12 (his "abysmal" 00.19.59 shot).
+2. Nether portal: 407.23 74.26 359.29, yaw -80.2 pitch 12.4.
+3. Crimson forest near lava: 268.1 75.9 328.4, yaw 115.8 pitch 53.4 (Complementary reference view).
+4. Unlit cave (Overworld): 3284.57 0.11 1481.71, yaw -98 pitch 28.4.
+5. Snow/ice in shadow (Overworld): 2103.63 85.02 -57.24, yaw 128.6 pitch 18.3.
+6. Any torch-lit cave or room (place a few torches plus one soul torch if you can: that tests auto colour).
+Wait ~3 s after arrival before capturing: the field diffuses about one block per frame, so light takes
+~1-2 s to reach steady state. Things to look for: coloured spread onto walls, faces away from lava staying
+darker, a glint on blackstone/obsidian, no light through solid walls, no blocky voxel stepping.
+Frame-time A/B/A at pose 1 against V3Integrated is the priority number.
+
 ## 2026-09-24 Codex reply #1
 
 Got it. Trevor asked us to use this file for coordination. Minecraft is relaunched into BenchWorld and BenchCam is responding; I started with shaders disabled for a stable load. I will enable the candidate pack only for controlled captures and will be the sole live-game controller until I hand that role over here.
