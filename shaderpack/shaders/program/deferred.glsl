@@ -102,6 +102,13 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
     return 1.0 - occ / float(SAMPLES);
 }
 
+// Spectral colour across a rainbow band (x = 0 violet ... 1 red).
+vec3 hsv2rgbBow(float x) {
+    float h = mix(0.78, 0.0, saturate(x));
+    vec3 p = abs(fract(vec3(h) + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return saturate(p - 1.0);
+}
+
 // Joint-bilateral upsample of the half-resolution cloud history: taps whose scene distance differs from this
 // pixel's (a tree edge in front of a cloud) are down-weighted so clouds do not bleed across silhouettes.
 vec4 upsampleClouds(vec2 uv, float sceneDist) {
@@ -162,6 +169,25 @@ void main() {
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
 #ifndef DIM_END
         col += moonSky(starDir, -sunDir);
+#endif
+#if !defined DIM_NETHER && !defined DIM_END
+        // Rainbow: after rain, while the air is still wet and the rain itself has passed, a bow of about 42
+        // degrees around the point opposite the sun, red outside and violet inside, with a faint secondary
+        // bow at 51 degrees (colours reversed) and a darker band between them (Alexander's band).
+        {
+            float wetAir = saturate(wetness * 1.4 - rainStrength * 2.0);
+            if (wetAir > 0.0 && sunDir.y > 0.0 && sunDir.y < 0.7) {
+                float a = degrees(acos(clamp(dot(starDir, -sunDir), -1.0, 1.0)));
+                float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
+                float x2 = (52.5 - a) / 3.2;
+                vec3 bow = vec3(0.0);
+                if (x1 > -0.3 && x1 < 1.3) bow += hsv2rgbBow(x1) * smoothstep(-0.3, 0.1, x1) * smoothstep(1.3, 0.9, x1);
+                if (x2 > -0.3 && x2 < 1.3) bow += hsv2rgbBow(x2) * smoothstep(-0.3, 0.1, x2) * smoothstep(1.3, 0.9, x2) * 0.35;
+                float band = smoothstep(42.5, 43.5, a) * smoothstep(50.5, 49.5, a);
+                float strength = wetAir * smoothstep(0.0, 0.08, starDir.y + 0.02) * smoothstep(0.7, 0.3, sunDir.y);
+                col = col * mix(1.0, 0.85, band * wetAir) + bow * envDirect * 0.02 * strength;
+            }
+        }
 #endif
         if (night > 0.0 && rainStrength < 1.0 && starDir.y > -0.02) {
             col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
