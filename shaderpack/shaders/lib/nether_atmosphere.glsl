@@ -71,5 +71,5 @@ vec3 netherSeaGlow(vec3 p, float time) {
 vec3 netherSmogAmbient(vec3 biomeAir) {
     // Grey-brown soot. The Nether's orange belongs to the lava, not the air: cold, dirty smoke is what makes the
     // lava read as blinding by contrast (Solas and Bliss both keep their smoke grey).
-    return mix(vec3(0.04, 0.033, 0.028), biomeAir * 0.035, 0.4);
+    return mix(vec3(0.10, 0.08, 0.066), biomeAir * 0.085, 0.4);
 }

@@ -155,6 +155,9 @@ vec3 filmic(vec3 c) { return saturate(linearToSrgb(hejl2015(c))); }
 // tonemap the brightest channel instead and keep the colour's proportions, with a partial path to white only
 // at the very top, so lava stays a vivid yellow-orange.
 vec3 agxHuePreserving(vec3 c) {
+    // TAA sharpening can leave a channel slightly negative next to very bright lava; a negative base in pow()
+    // returned NaN and showed up as black pixels on flowing lava.
+    c = max(c, vec3(0.0));
     vec3 a = filmic(c);
     float m = max(c.r, max(c.g, c.b));
     if (m <= 1e-5) return a;
@@ -261,7 +264,15 @@ void main() {
     // Kept subtle: a strong shift painted every dark cave wall blue-grey.
     col = mix(col, rodColor, scotopic * 0.35);
 
+    vec3 exposed = col;
     col = agxHuePreserving(col);
+    // Complementary's dark lift and dark desaturation (composite5 DoCompTonemap): below a luminance of 0.1 the
+    // tonemap's toe is mostly undone, so shade, caves and night stay readable instead of crushing to black, and
+    // the darkest tones lose a little saturation (the eye's own behaviour in low light).
+    float initialLum = luminance(exposed);
+    float darkLift = smoothstep(0.1, 0.0, initialLum);
+    col = mix(col, pow(max(exposed, 0.0), vec3(1.0 / 2.2)), darkLift * 0.75);
+    col = mix(col, vec3(luminance(col)), darkLift * 0.25);
     col = colorGrade(col);
 
     vec2 v = texcoord - 0.5;

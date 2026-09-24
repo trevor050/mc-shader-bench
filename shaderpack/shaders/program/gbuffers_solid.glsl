@@ -259,7 +259,8 @@ void main() {
     float tl = luminance(albedo.rgb);
     if (mat == MAT_POLISHED) smoothness = mix(0.45, 0.82, smoothstep(0.15, 0.75, tl));
     else if (mat == MAT_METAL) smoothness = mix(0.62, 0.9, smoothstep(0.2, 0.8, tl));
-    else if (mat == MAT_GLASSY) smoothness = 0.93;
+    // Obsidian (Complementary's rule): only its purple-sheened texels are glossy, patchy and mostly subtle.
+    else if (mat == MAT_GLASSY) smoothness = min(max(0.3 - abs(albedo.r - 0.3), 0.0) * 1.5 + 0.07, 1.0);
     else if (mat == MAT_ICE_SOLID) smoothness = mix(0.8, 0.95, tl);
 #endif
     outMaterial = vec4(float(mat) / 255.0, emissive, ao, smoothness);
