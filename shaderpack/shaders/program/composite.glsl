@@ -201,7 +201,9 @@ void main() {
             float F = (f0 + (1.0 - f0) * pow(1.0 - NdotV, 5.0)) * mix(0.55, 1.0, gm.a);
             // Misses: the sky where the surface sees it, otherwise what the surroundings would reflect.
 #if defined DIM_NETHER
-            vec3 fallback = netherSmogAmbient(netherBiomeAir()) * 2.5 + netherSeaGlow(playerPos + cameraPosition, frameTimeCounter) * 0.05;
+            // A missed screen-space ray sees dark smoke, not an invented lava horizon. Actual lava
+            // still appears when the reflection ray hits its lit pixels in colortex0.
+            vec3 fallback = netherSmogAmbient(netherBiomeAir()) * 0.75;
 #elif defined DIM_END
             vec3 fallback = vec3(0.012, 0.007, 0.02);
 #else

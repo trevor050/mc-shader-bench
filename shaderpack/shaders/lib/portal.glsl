@@ -70,6 +70,8 @@ PortalSurface shadePortal(vec2 q, vec2 viewPlane, float spriteLum, float edge, f
 
     PortalSurface result;
     result.color = col * breath * 1.6;
-    result.alpha = 0.94;
+    // Tall sheets cross much brighter sky and cloud backgrounds. The void keeps its own colour all the
+    // way up instead of turning into a pale window wherever the procedural energy is quiet.
+    result.alpha = 1.0;
     return result;
 }

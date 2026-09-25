@@ -387,24 +387,21 @@ void main() {
             col += envDirect * shadow * a2 / (PI * dd * dd) * iceFresnel(dot(hv, -rd)) * saturate(dot(n, envLightDir)) * 0.25;
         }
 #endif
-        // Glassy dark stone (obsidian, blackstone, basalt): very dark albedos get a glossy sky reflection,
-        // so they read as polished volcanic glass instead of a black hole.
+        // Generic dark rock is not a mirror in the Nether. The old horizon reflection put an orange
+        // Fresnel rim on every netherrack and basalt silhouette, even with no visible lava source.
+#ifndef DIM_NETHER
+        // Outside the Nether, very dark albedos retain a subtle sky reflection.
         float darkness = 1.0 - smoothstep(0.02, 0.07, luminance(gAlbedo.rgb));
         if (darkness > 0.0 && !isHand && mat != MAT_LAVA && mat != MAT_GLASSY && mat != MAT_POLISHED) {
             vec3 rr = reflect(rd, n);
             float fr = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, n)), 5.0);
-#ifdef DIM_NETHER
-            // Use the lighting library's warm-neutral ash/ember reflection so Nether biome fog cannot tint
-            // obsidian and blackstone blue. This hook is Nether-only; Overworld and End keep the sky model.
-            vec3 env = netherStoneReflection(rr);
-#else
             vec3 env = skyRadiance(normalize(vec3(rr.x, max(rr.y, 0.05), rr.z)), sunDir, 4);
-#endif
-#if !defined DIM_NETHER && !defined DIM_END
+#ifndef DIM_END
             env *= lm.y * lm.y;
 #endif
             col += env * fr * darkness * ao * 0.8;
         }
+#endif
         if (mat == MAT_ENDPORTAL) {
             col = endPortalRadiance(wp, n, rd);
         }

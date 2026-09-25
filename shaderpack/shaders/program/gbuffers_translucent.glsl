@@ -89,6 +89,7 @@ uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
 uniform sampler2D colortex9;
+uniform sampler2D colortex8;
 #if !defined DIM_NETHER && !defined DIM_END
 #include "/lib/shadows.glsl"
 #endif
@@ -197,11 +198,14 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 }
 
 // Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
-vec3 applyCloudsInFront(vec3 col, vec2 uv) {
+vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     if (isEyeInWater == 1) return col;
     vec2 bufferRes = vec2(textureSize(colortex9, 0));
     vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
+    // The cloud history was rendered against the opaque scene before translucent surfaces existed.
+    // A cloud behind a portal or water surface must not be pasted over its foreground pixels.
+    if (texture(colortex8, cuv).r >= surfaceDist - 0.5) return col;
     vec4 c = texture(colortex9, cuv);
     return col * c.a + c.rgb;
 #else
@@ -377,7 +381,7 @@ void main() {
         vec3 glitterLight = mix(envDirect, sunsetLight * 3.5, saturate(sunsetWindow(sunDir.y) * 1.5) * smoothstep(-0.015, 0.012, sunDir.y));
         col += glitterLight * shadow * spec * skyVis;
 
-        outColor = vec4(applyCloudsInFront(col, uv), 1.0);
+        outColor = vec4(applyCloudsInFront(col, uv, dist), 1.0);
         return;
     }
 
@@ -437,7 +441,7 @@ void main() {
         const float a2 = 0.0016;
         float dd = nh * nh * (a2 - 1.0) + 1.0;
         col += envDirect * shadow * a2 / (PI * dd * dd) * iceFresnel(dot(h, -rd)) * saturate(dot(n, envLightDir)) * 0.25 * skyVis;
-        outColor = vec4(applyCloudsInFront(col, uv), 1.0);
+        outColor = vec4(applyCloudsInFront(col, uv, dist), 1.0);
         return;
     }
     if (mat == MAT_PORTAL) {
@@ -456,7 +460,10 @@ void main() {
 #ifdef PROG_WATER
         outMat = vec4(float(MAT_PORTAL) / 255.0, 1.0, 1.0, 1.0);
 #endif
-        outColor = vec4(applyCloudsInFront(portal.color, uv), portal.alpha);
+        // The portal stays legible when its upper blocks enter a cloud bank. Let some cloud
+        // pass in front, but never erase the violet sheet into a flat patch of sky colour.
+        vec3 cloudedPortal = applyCloudsInFront(portal.color, uv, dist);
+        outColor = vec4(mix(cloudedPortal, portal.color, 0.7), portal.alpha);
         return;
     }
 #endif
