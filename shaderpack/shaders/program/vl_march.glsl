@@ -219,10 +219,13 @@ void main() {
     // Dust that catches block light: dense underground, a trace in the open at night (a torch-lit village gets
     // soft halos), none by day where it could never compete with sunlight.
     float underground = 1.0 - smoothstep(0.05, 0.55, skyExposure);
-    // Enclosure of what this pixel looks at: cave walls behind a sunbeam have little sky light, open land and the
-    // sky have full. The camera's own sky light cannot tell, since beams are brightest right by an opening.
+    // Enclosure of what this pixel looks at: cave walls behind a sunbeam have little sky light. This is only
+    // a destination hint; exposed terrain, deep water and floating-island undersides can have the same lightmap.
     float surfSky = sky ? 1.0 : texture(colortex1, uv).w;
     float enclosed = 1.0 - smoothstep(0.55, 0.92, surfSky);
+    // A ray through open daylight is not cave air just because its last pixel is dark. The old surface-only
+    // test filled oceans and shadowed terrain with white scatter from the camera to the surface.
+    float caveView = 1.0 - smoothstep(0.45, 0.85, skyExposure);
     float night = 1.0 - smoothstep(-0.12, 0.08, sunDir.y);
     float dust = CAVE_AIR_GLOW * caveDustDensity() * max(underground, night * 0.3);
     // Isotropic phase and the field's amplitude scale.
@@ -257,7 +260,7 @@ void main() {
         vec3 sun = envDirect * vis * skyExposure;
         // Underground the same dust that catches torchlight catches daylight falling through an opening: a
         // visible beam. Only where the shadow map says the air is sunlit, so the rest of the cave stays dark.
-        float beamDust = enclosed * caveDustDensity() * CAVE_SUNBEAM;
+        float beamDust = enclosed * caveView * caveDustDensity() * CAVE_SUNBEAM;
         vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase + beamDust * mix(airPhase, 0.08, 0.5)) + mistAmbient * mist * skyExposure;
         float stepT = exp(-mist * stepLen);
         // Energy-conserving integral over the step for the mist part; the thin air term is linear.
