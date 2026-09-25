@@ -223,7 +223,9 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
         // themselves, while vanilla's level stays the floor so a lagging field cannot leave black pockets.
 #if !defined DIM_NETHER
         // (Not in the Nether: its lava-lit balance is tuned on vanilla levels plus the extra channel.)
-        lightmapXM = max(lightmapXM, cuLuminance(special) * FIELD_BRIGHTNESS * f.weight);
+        // Capped relative to vanilla's level: in enclosed caves the field pools, and uncapped it lit whole areas
+        // Minecraft calls dark (Trevor: light with no visible source).
+        lightmapXM = max(lightmapXM, min(cuLuminance(special) * FIELD_BRIGHTNESS * f.weight, lightmapXM * 3.0 + 0.05));
 #endif
         special *= 1.0 + 50.0 * volA;
         // The square-root light mix below halves chroma; pre-expand it so coloured light survives as colour.
@@ -250,6 +252,11 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 
 #if !defined DIM_NETHER && !defined DIM_END
     ambientMult = mix(lightmapYM, lightmapYM * lightmapYM * lightmapYM, t.rainFactor);
+    // Sky light that has crept deep into a cave is weak, bounced light: fade it faster than Complementary's curve
+    // and toward grey. With the eye dark-adapted underground, the full sky-blue fill made faint sky light (level
+    // ~5 from a distant opening) read as a bright blue glow with no source.
+    ambientMult *= mix(lightmapYM, 1.0, smoothstep(0.55, 0.9, lm.y));
+    ambientColorM = mix(vec3(cuLuminance(ambientColorM)) * vec3(0.9, 0.95, 1.05), ambientColorM, smoothstep(0.3, 0.85, lm.y));
     // Daylight suppresses block light; nearer surfaces a little brighter at night and in rain.
     float lxFactor = (t.sunVisibility2 * 0.4 + (0.6 - 0.6 * t.invNoonFactor2)) * (6.0 - 5.0 * t.rainFactor);
     lxFactor *= lightmapY2 + lightmapY2 * 2.0 * shadowMultFloat * shadowMultFloat;

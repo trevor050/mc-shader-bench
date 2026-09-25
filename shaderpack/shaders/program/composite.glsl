@@ -157,7 +157,9 @@ void main() {
 #elif defined DIM_END
             vec3 fallback = vec3(0.012, 0.007, 0.02);
 #else
-            float skyVis = gnl.w * gnl.w;
+            // Only surfaces that really see the sky may reflect it on a miss. Damp cave rock with a little sky light
+            // otherwise mirrored the bright daytime sky as glowing blue patches with no light source.
+            float skyVis = gnl.w * gnl.w * smoothstep(0.7, 0.95, gnl.w);
             vec3 fallback = (skyRadiance(normalize(vec3(r.x, max(r.y, 0.02), r.z)), sunDir, 6) + sunAureole(r, sunDir)) * skyVis * skyVis
                           * smoothstep(-0.3, 0.1, r.y) + col * 0.15;
 #endif

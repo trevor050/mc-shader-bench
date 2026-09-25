@@ -334,7 +334,10 @@ void main() {
         // pitch-black faces. Glass does not reduce vanilla sky light, so it needs no lift.
 #if !defined DIM_NETHER && !defined DIM_END
         vec2 lm = nl.zw;
-        if (!isLod && !isHand && shadowWaterDepth > 0.05) lm.y = max(lm.y, 0.8);
+        // Only surfaces really under the water: some sky light of their own and a plausible water depth. The shadow
+        // map only says that water lies somewhere along the sun ray, so a cave under a lake got full sky light
+        // (a lake-shaped glowing patch on the cave floor with no visible source).
+        if (!isLod && !isHand && shadowWaterDepth > 0.05 && shadowWaterDepth < 20.0 && lm.y > 0.12) lm.y = max(lm.y, 0.8);
 #else
         vec2 lm = nl.zw;
 #endif
