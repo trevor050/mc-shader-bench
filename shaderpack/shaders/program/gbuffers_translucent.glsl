@@ -310,7 +310,10 @@ void main() {
 #if !defined DIM_NETHER && !defined DIM_END
         shadow = sampleShadow(playerPos, vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
 #endif
-        float skyVis = lmcoord.y * lmcoord.y;
+        // Overhead islands can zero the water block's sky light while the surrounding sea remains open to the
+        // sky. Keep a little ambient water body and reflection in that case, without lighting enclosed cave pools.
+        float openView = underwater ? 0.0 : smoothstep(0.45, 0.85, float(eyeBrightnessSmooth.y) / 240.0);
+        float skyVis = max(lmcoord.y * lmcoord.y, 0.25 * openView);
         // Absorption: red goes first, then green; the biome tint shifts which colour survives in depth.
         vec3 absorb = mix(vec3(0.45, 0.11, 0.075), (1.0 - tint) * 0.4 + 0.05, 0.35);
         // Suspended sediment and plankton: grey extinction on top of absorption, so the floor fades within a few

@@ -90,6 +90,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - thunderStrength is declared under THUNDER_UNIFORM guard in both atmosphere.glsl and cloud_weather.glsl; never redeclare it unguarded.
 - Portal tag: gbuffers_water (PROG_WATER only) writes colortex2 via outMat; blend.gbuffers_water.colortex2 keeps dst alpha. outMat must default to vec4(0). TAA reprojects MAT_PORTAL 1.3 blocks deeper; composite skips SSR for it.
 - Deferred half-resolution clouds must skip MAT_ENTITY pixels. Depth alone lets clouds wash over a third-person player even when the player is in front; keep the material guard in deferred.glsl.
+- Water under floating islands can have zero local sky light even when viewed from open daylight. gbuffers_translucent.glsl keeps a small camera-exposure floor for water body light/reflection; cave pools stay dark when the camera is enclosed.
 - Weather renders to colortex13 (premultiplied) and is composited in final after fog; drawn into c0 the composite fog dissolved streaks into far-land haze. Lit in pack HDR units (skyRadiance), not vanilla skyColor.
 - Ground rain effects (wet, puddles, ripples, rain fog) use custom uniforms rainLocal/wetLocal (zero where biome_precipitation is NONE). Vanilla draws no rain in dry biomes; "rain only over water" there is vanilla behaviour.
 - Emitter light colour samples the whole 16-texel sprite (atlas grid assumption); per-face UV sampling made wall soul torches flicker red.
