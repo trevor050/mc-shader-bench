@@ -14,6 +14,7 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
+uniform sampler2D colortex2;
 uniform sampler2D colortex5;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
@@ -87,6 +88,10 @@ void main() {
         viewPos = projectAndDivide(sky ? gbufferProjectionInverse : dhProjectionInverse, vec3(texcoord, sky ? 1.0 : dh) * 2.0 - 1.0);
     }
     vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
+    // The nether portal's interior is drawn as parallax layers behind its sheet. Reprojecting it at the sheet made
+    // those layers smear and lag when moving; reproject at the depth of the middle layer instead.
+    bool portal = !sky && int(texture(colortex2, texcoord).r * 255.0 + 0.5) == MAT_PORTAL;
+    if (portal) playerPos += normalize(playerPos) * 1.3;
     // The sky is effectively at infinity: only camera rotation matters.
     vec3 prevPlayer = sky ? playerPos : playerPos + cameraPosition - previousCameraPosition;
     vec3 prevView = mat3(gbufferPreviousModelView) * prevPlayer + (sky ? vec3(0.0) : gbufferPreviousModelView[3].xyz);
@@ -137,6 +142,7 @@ void main() {
 
         float velocity = length((prevUV - texcoord) * vec2(viewWidth, viewHeight));
         float blend = mix(0.9, 0.75, saturate(velocity / 20.0));
+        if (portal) blend = min(blend, 0.7);
         // (A former "hot pixel" history bypass made the sun re-alias every frame while turning, which read as
         // flicker. The sun's radiance is now soft-capped, so ordinary blending handles it.)
         float currentLum = max(luminance(current), 0.0);

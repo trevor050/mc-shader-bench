@@ -1,6 +1,11 @@
 // Single-scattering Rayleigh/Mie atmosphere, procedural clouds, and stars.
 // Requires: common.glsl, settings.glsl, uniforms frameTimeCounter, rainStrength.
 
+#ifndef THUNDER_UNIFORM
+#define THUNDER_UNIFORM
+uniform float thunderStrength;
+#endif
+
 const float ATM_GROUND = 6360e3;
 const float ATM_TOP = 6420e3;
 const vec3 BETA_R = vec3(5.8e-6, 13.5e-6, 33.1e-6);
@@ -292,6 +297,8 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     float overcast = rainStrength * 0.85;
     if (overcast == 0.0) return col;
     vec3 grey = vec3(luminance(scatter(vec3(0.0, 1.0, 0.0), sunDir, SUN_ILLUMINANCE, 4))) * 0.55 + vec3(0.0008);
+    // Thunderstorms: a heavy, bruised slate dome, darkest overhead where the cloud is thickest.
+    grey *= mix(vec3(1.0), vec3(0.78, 0.82, 0.92) * mix(1.0 - STORM_DARKNESS, 1.0, exp(-max(rd.y, 0.0) * 1.5)), thunderStrength);
     return mix(col, grey, overcast);
 }
 

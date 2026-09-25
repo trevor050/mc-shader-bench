@@ -32,6 +32,8 @@ vec3 waterNormal(vec3 worldPos, vec3 flatN, float t, float strength) {
     vec2 dir = flowing ? normalize(flatN.xz + 1e-5) : WATER_WIND;
     float speed = flowing ? 2.4 : 0.55;
     float amp = (flowing ? 0.35 : 0.13) * strength;
+    // Wind picks up in rain and storms: taller, choppier waves.
+    amp *= 1.0 + STORM_WAVES * max(rainStrength * 0.4, thunderStrength);
     vec2 p = worldPos.xz;
     const float e = 0.08;
     float h = waterHeight(p, t, dir, speed);

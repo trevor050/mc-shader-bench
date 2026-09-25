@@ -35,7 +35,11 @@ float remap(float v, float lo, float hi, float nlo, float nhi) {
     return nlo + (v - lo) * (nhi - nlo) / (hi - lo);
 }
 
-vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1.3); }
+vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1.3) * CLOUD_SPEED; }
+
+// Strength of the narrow forward-scattering peak (the bright rim of a cloud seen against its light source).
+// The cloud march raises it by moonlight, when the silver lining is most of what makes a night cloud readable.
+float gCloudRim = 1.0;
 
 // The cumulus volume spans a tall slab; inside it every region picks its own cloud base and depth, so one
 // march covers low decks that hug mountain tops, ordinary fair-weather cumulus higher up, and the occasional
@@ -193,7 +197,7 @@ float hgPhase(float mu, float g) {
 // Direct light phase: broad forward lobe, a very narrow peak for the bright rim around the sun, and a
 // back-scatter lobe so clouds facing away from the sun are not flat.
 float cloudPhase(float mu) {
-    return 0.62 * max(hgPhase(mu, 0.8), 0.6 * hgPhase(mu, 0.97)) + 0.38 * hgPhase(mu, -0.3);
+    return 0.62 * max(hgPhase(mu, 0.8), 0.6 * gCloudRim * hgPhase(mu, 0.97)) + 0.38 * hgPhase(mu, -0.3);
 }
 
 // Scattered light from one sample, given optical depths toward the light and the sky. Octave series after
@@ -484,6 +488,20 @@ float cloudShadow(vec3 worldPos, vec3 lightDir, CloudWeather w) {
     // Light scattered in from cloud edges and through thinner parts keeps cloud shade at roughly a third of the
     // sun. With the clouds now low and broad, the old 12% floor turned whole valleys dark blue at noon.
     return mix(exp(-od * 0.035), 1.0, CLOUD_SHADOW_FLOOR);
+}
+
+// Mist around a camera inside the cumulus volume, for the near field the cloud march cannot resolve. Returns the
+// cloud density averaged over the eye position and a few points along the view ray (x) and the transmittance of
+// the light toward the camera through the cloud above it (y).
+vec2 cloudMistAt(vec3 camPos, vec3 rd, vec3 lightDir, CloudWeather w) {
+    float d = l0Density(camPos, w, 1) * 0.4
+            + l0Density(camPos + rd * 5.0, w, 1) * 0.3
+            + l0Density(camPos + rd * 16.0, w, 1) * 0.3;
+    if (d <= 0.002) return vec2(0.0, 1.0);
+    float od = l0Density(camPos + lightDir * 14.0, w, 2) * 20.0
+             + l0Density(camPos + lightDir * 40.0, w, 2) * 35.0
+             + l0Density(camPos + lightDir * 95.0, w, 2) * 70.0;
+    return vec2(d, exp(-od * 0.07 * 0.6));
 }
 
 float cloudShadow(vec3 worldPos, vec3 lightDir) {

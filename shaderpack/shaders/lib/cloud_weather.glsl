@@ -5,7 +5,10 @@
 
 uniform int worldDay;
 uniform int worldTime;
+#ifndef THUNDER_UNIFORM
+#define THUNDER_UNIFORM
 uniform float thunderStrength;
+#endif
 
 float noise1(float x) {
     float i = floor(x), f = fract(x);

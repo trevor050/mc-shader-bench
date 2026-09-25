@@ -16,6 +16,7 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
+flat out vec3 zenithLight;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -24,6 +25,8 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+    // Light arriving at a cloud from the sky dome (as in the cloud march), for mist around a camera inside a cloud.
+    zenithLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9;
 }
 #endif
 
@@ -59,6 +62,9 @@ flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
+flat in vec3 zenithLight;
+#include "/lib/night.glsl"
+uniform float fireflyBiome;
 
 // Eye adaptation input. The Overworld keeps its calibrated arithmetic mean (capped so the sun counts as bright
 // but not overwhelming). The Nether and End meter a log average instead: there a lava sea is both the brightest
@@ -135,7 +141,7 @@ void main() {
     // are hazed together.
     if (!sky && depth < 1.0 && isEyeInWater == 0) {
         vec4 gm = texture(colortex2, texcoord);
-        if (gm.a > 0.01) {
+        if (gm.a > 0.01 && int(gm.r * 255.0 + 0.5) != MAT_PORTAL) {
             vec4 gnl = texture(colortex1, texcoord);
             vec3 n = decodeNormal(gnl.xy);
             int gmat = int(gm.r * 255.0 + 0.5);
@@ -217,6 +223,24 @@ void main() {
         return;
     }
 
+#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
+    // Inside a cloud: the near field fills with wet, bright grey-white mist lit from the cloud around it. The cloud
+    // march covers the view beyond; this adds the droplets right around the eye, so entering a cloud is a gradual
+    // whiteout and leaving it through the top is a burst into sunlight.
+    if (cameraPosition.y > L0_SLAB_BOTTOM && cameraPosition.y < L0_SLAB_TOP && CLOUD_INSIDE_FOG > 0.0) {
+        vec3 mrd = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
+                       : normalize(playerPos);
+        vec2 mist = cloudMistAt(cameraPosition, mrd, envLightDir, cloudWeather());
+        if (mist.x > 0.0) {
+            float mu = dot(mrd, envLightDir);
+            // Multiple scattering keeps the inside of a cloud bright and nearly directionless, with a glow toward the
+            // light and the sun's warmth where the cloud above thins out.
+            vec3 mistCol = (envDirect * mist.y * mix(1.0 / (4.0 * PI), cloudPhase(mu), 0.35) + zenithLight / (4.0 * PI)) * 2.4;
+            float amt = 1.0 - exp(-mist.x * 0.07 * min(sky ? 60.0 : dist, 60.0) * 1.6 * CLOUD_INSIDE_FOG);
+            col = mix(col, mistCol, amt);
+        }
+    }
+#endif
     // Aerial perspective: blend toward the horizon sky with height-dependent density. Nether haze skips the
     // first-person hand entirely, whose depth comes from a separate projection.
 #if !defined DIM_NETHER
@@ -333,6 +357,18 @@ void main() {
                            : normalize(playerPos);
         col += soulMotes(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * SOUL_MOTES * inDeepDark;
     }
+#if !defined DIM_NETHER && !defined DIM_END
+    // Fireflies over warm, humid land at night, out in the open.
+    {
+        float ff = FIREFLIES * fireflyBiome * smoothstep(-0.02, -0.15, sunDir.y) * (1.0 - rainStrength)
+                 * smoothstep(150.0, 220.0, float(eyeBrightnessSmooth.y)) * float(isEyeInWater == 0);
+        if (ff > 0.01) {
+            vec3 viewDir = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
+                               : normalize(playerPos);
+            col += fireflies(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 0.5 * ff;
+        }
+    }
+#endif
 #endif
     outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);}
 #endif

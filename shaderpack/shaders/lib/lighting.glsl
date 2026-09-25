@@ -38,6 +38,8 @@ LightEnv makeLightEnv(vec3 sunDir) {
     e.skyAmbient = (up * 2.2 + side * 1.1) * PI * 0.5 + vec3(0.0015, 0.002, 0.003);
     e.skyAmbient *= mix(1.0, 0.80, nightBlend);
     e.skyAmbient = mix(e.skyAmbient, vec3(luminance(e.skyAmbient)) * 0.8, rainStrength * 0.6);
+    // Under a thunderstorm the land sits in deep, cool shade.
+    e.skyAmbient *= mix(vec3(1.0), vec3(0.85, 0.9, 1.0) * (1.0 - STORM_DARKNESS), thunderStrength);
     // Under a clear sky, skylight on a horizontal surface is roughly a fifth of the direct sun. Below that ratio
     // shadows read as black holes (Trevor: shadowed blue ice and snow crushed to near black). Raise the fill to
     // that floor, keeping the sky's own hue so shade stays cool.

@@ -89,3 +89,19 @@
 #define GRADE_VIBRANCE 0.3
 
 #define TAA
+
+// ---- Overworld V6: clouds, weather, night, water, bloom ----
+#define CLOUD_SPEED 1.8           // multiplier on cloud drift (and so on how fast cloud shadows sweep the land)
+#define CLOUD_INSIDE_FOG 1.0      // wet grey-white mist when the camera is inside a cloud
+#define CLOUD_MOON_SILVER 1.5     // moonlit clouds: boost of the bright forward-scattered rim toward the moon
+#define RAIN_RIPPLES 1.0          // expanding raindrop rings on puddles and water
+#define LIGHTNING_GROUND 1.0      // how strongly a lightning flash lights the landscape
+#define STORM_DARKNESS 0.45       // how much a thunderstorm darkens the sky and the light under it
+#define FIREFLIES 1.0             // fireflies over warm, humid land at night (0 disables)
+#define AURORA 1.0                // aurora over snowy biomes on clear nights (0 disables)
+#define AURORA_BRIGHTNESS 0.09
+#define CAUSTIC_STRENGTH 1.4      // caustics on shallow water floors
+#define SHORE_FOAM 1.0            // foam where water laps at the shore
+#define STORM_WAVES 1.5           // extra wave height in rain and thunder
+#define EMITTER_BLOOM 0.35        // thresholded glow around lava, glowstone and other bright emitters
+#define EMITTER_BLOOM_THRESHOLD 3.0 // relative to the average scene brightness

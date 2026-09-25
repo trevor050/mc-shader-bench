@@ -94,6 +94,8 @@ uniform float viewHeight;
 #include "/lib/end_atmosphere.glsl"
 #endif
 #include "/lib/stars.glsl"
+#include "/lib/night.glsl"
+#include "/lib/rain.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
@@ -238,6 +240,11 @@ void main() {
             col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
                             vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
         }
+#if !defined DIM_END
+        // Aurora over snowy lands on clear nights. It sits behind the clouds (composited below).
+        float auroraAmt = AURORA * inSnowy * night * (1.0 - rainStrength) * smoothstep(-0.12, -0.3, sunDir.y);
+        if (auroraAmt > 0.001) col += aurora(starDir, frameTimeCounter) * auroraAmt;
+#endif
 #endif
 #if defined DIM_NETHER || defined DIM_END
         col += gAlbedo.rgb;
@@ -281,7 +288,9 @@ void main() {
                 // Project along the light onto the water plane so the pattern slides with the sun.
                 vec2 cuv = (wp.xz + envLightDir.xz / max(envLightDir.y, 0.2) * shadowWaterDepth) / 5.0;
                 float c = caustics(cuv, frameTimeCounter * 0.6);
-                shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
+                // Strongest over shallow floors (a block or a few deep), where the focused light is still tight.
+                float cAmt = saturate(shadowWaterDepth * 1.4) * mix(1.0, 0.55, smoothstep(3.0, 12.0, shadowWaterDepth));
+                shadow *= mix(1.0, 0.3 + c * 3.0 * CAUSTIC_STRENGTH, cAmt);
             }
         }
         {
@@ -312,6 +321,10 @@ void main() {
             float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
             puddle = smoothstep(0.52, 0.62, pn) * wet;
         }
+        // While it is still raining, drops land in the puddles: rings of ripples on the mirror.
+        vec2 ripple = vec2(0.0);
+        if (puddle > 0.0 && rainStrength > 0.01 && length(playerPos) < 64.0)
+            ripple = rainRipples(wp.xz, frameTimeCounter) * RAIN_RIPPLES * rainStrength * (1.0 - length(playerPos) / 64.0);
         // Standing water hides the surface color underneath, so puddles read as dark, glossy patches.
         albedo *= mix(1.0, 0.55, wet * 0.8) * mix(1.0, 0.25, puddle);
         float ao = m.b;
@@ -403,12 +416,16 @@ void main() {
         {
             // Lightning briefly lights the landscape: cold light from the sky, strongest on open ground.
             vec4 fl = cloudFlash(cameraPosition);
-            if (fl.w > 0.0) col += albedo * vec3(0.7, 0.78, 1.0) * fl.w * 0.03 * lm.y * lm.y * (0.6 + 0.4 * n.y) * ao;
+            // The flash comes from one place in the sky, so faces turned toward it light up more.
+            if (fl.w > 0.0) {
+                float facing = 0.55 + 0.45 * saturate(dot(n, normalize(fl.xyz - wp)));
+                col += albedo * vec3(0.7, 0.78, 1.0) * fl.w * 0.07 * LIGHTNING_GROUND * lm.y * lm.y * facing * ao;
+            }
         }
 #endif
 
         if (wet > 0.0 && !isLod) {
-            vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
+            vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle) + vec3(ripple.x, 0.0, ripple.y) * 0.18 * puddle);
             vec3 r = reflect(rd, rn);
             float fres = 0.02 + 0.98 * pow(1.0 - saturate(dot(-rd, rn)), 5.0);
             vec3 refl = (skyRadiance(r, sunDir, 6) + sunAureole(r, sunDir)) * nl.w * nl.w;
