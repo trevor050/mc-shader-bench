@@ -458,7 +458,10 @@ void main() {
     // Clouds cover the sky and, when the camera is inside or above them, terrain behind them too.
     // The hand never gets clouds: they are all behind it (compositing them made the arm look cloud-shadowed
     // and see-through).
-    if (depth >= 0.56) {
+    // Keep opaque entities crisp through the half-resolution cloud upsample. The cloud layer can still fill
+    // the surrounding pixels, but its radiance must not wash across a player or mob silhouette.
+    bool isEntity = depth < 1.0 && int(texture(colortex2, texcoord).r * 255.0 + 0.5) == MAT_ENTITY;
+    if (depth >= 0.56 && !isEntity) {
         float sceneDist = (depth >= 1.0 && !isLod) ? 1e6 : length(playerPos);
         vec4 clouds = upsampleClouds(texcoord, sceneDist);
         col = col * clouds.a + clouds.rgb;
