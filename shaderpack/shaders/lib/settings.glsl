@@ -34,11 +34,15 @@
 #define EMITTER_SATURATION 2.2    // chroma expansion of emitter colours read from their sprites
 #define BLOCKLIGHT_SATURATION 1.35 // extra chroma of the field's hue on lit surfaces
 #define FIELD_BRIGHTNESS 3.5      // light-field luminance -> block light brightness floor
+#define CAVE_WETNESS 1.0         // damp, glossy cave rock where no sky reaches
+#define ORE_SPARKLE 0.07          // strength of ore glints under nearby block light
+#define CAVE_SUNBEAM 1.0          // daylight beams through cave openings (dust lit by the sun)
 #define CAVE_AIR_GLOW 0.4        // dust in cave air lit by block lights (coloured halos)
 
 #define CLOUDS
 #define CLOUD_HEIGHT 820.0
 #define CLOUD_COVERAGE 0.34
+#define CLOUD_SHADOW_FLOOR 0.33 // share of direct light that survives under the thickest cloud
 //#define CLOUD_DEBUG_WEATHER
 //#define MIST_DEBUG
 

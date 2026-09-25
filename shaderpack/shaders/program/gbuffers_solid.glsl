@@ -271,6 +271,32 @@ void main() {
     // Obsidian (Complementary's rule): only its purple-sheened texels are glossy, patchy and mostly subtle.
     else if (mat == MAT_GLASSY) smoothness = min(max(0.3 - abs(albedo.r - 0.3), 0.0) * 1.5 + 0.07, 1.0);
     else if (mat == MAT_ICE_SOLID) smoothness = mix(0.8, 0.95, tl);
+    else if (mat == MAT_STONE) {
+        // Damp cave rock: only where the sky cannot reach, in world-anchored patches (seepage, not a uniform
+        // coat), wettest in the darker texels (cracks hold water). Wet stone darkens and turns glossy, so a
+        // torch or lava glints across it as you move.
+        float under = 1.0 - smoothstep(0.25, 0.65, lmcoord.y);
+        if (under > 0.0) {
+            vec3 wp = relPos + cameraPosition;
+            float seep = valueNoise(wp.xz * 0.16 + wp.y * 0.07) * 0.6 + valueNoise(vec2(wp.x + wp.z, wp.y) * 0.35) * 0.4;
+            float wet = under * smoothstep(0.42, 0.72, seep) * CAVE_WETNESS;
+            outAlbedo.rgb *= 1.0 - 0.22 * wet; // albedo was already written above
+            smoothness = wet * mix(0.62, 0.38, smoothstep(0.1, 0.5, tl));
+        }
+    } else if (mat == MAT_ORE) {
+        // Gem and metal texels stand out from the grey host rock by saturation (or, for iron and gold, warm
+        // brightness). They are glossy and throw tiny glints that re-roll with the view direction, so a vein
+        // twinkles as you walk past; glints scale with nearby block light, so they sparkle under a torch.
+        float mx = max(albedo.r, max(albedo.g, albedo.b)), mn = min(albedo.r, min(albedo.g, albedo.b));
+        float sat = (mx - mn) / max(mx, 1e-3);
+        float gem = smoothstep(0.2, 0.45, sat) * smoothstep(0.12, 0.3, mx);
+        smoothness = gem * 0.85;
+        vec2 tx = floor(texcoord * vec2(textureSize(gtexture, 0)));
+        vec3 view = floor(normalize(relPos) * 60.0 + relPos * 0.8);
+        float h = hash12(tx * 0.618 + view.xz * 1.37 + view.y * 3.11);
+        float glint = step(0.9, h) * gem;
+        emissive = max(emissive, glint * ORE_SPARKLE * saturate(lmcoord.x * 1.3 + 0.08));
+    }
 #endif
     outMaterial = vec4(float(mat) / 255.0, emissive, ao, smoothness);
 }

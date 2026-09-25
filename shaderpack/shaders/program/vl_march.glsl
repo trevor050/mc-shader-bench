@@ -35,6 +35,7 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
+uniform sampler2D colortex1;
 #if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 uniform sampler2D shadowtex1;
 #endif
@@ -218,6 +219,10 @@ void main() {
     // Dust that catches block light: dense underground, a trace in the open at night (a torch-lit village gets
     // soft halos), none by day where it could never compete with sunlight.
     float underground = 1.0 - smoothstep(0.05, 0.55, skyExposure);
+    // Enclosure of what this pixel looks at: cave walls behind a sunbeam have little sky light, open land and the
+    // sky have full. The camera's own sky light cannot tell, since beams are brightest right by an opening.
+    float surfSky = sky ? 1.0 : texture(colortex1, uv).w;
+    float enclosed = 1.0 - smoothstep(0.55, 0.92, surfSky);
     float night = 1.0 - smoothstep(-0.12, 0.08, sunDir.y);
     float dust = CAVE_AIR_GLOW * caveDustDensity() * max(underground, night * 0.3);
     // Isotropic phase and the field's amplitude scale.
@@ -250,7 +255,10 @@ void main() {
         // Since falloff is at most 1, amounts below 0.01 can skip the call exactly.
         float mist = amount < 0.01 ? 0.0 : mistDensity(wp, amount);
         vec3 sun = envDirect * vis * skyExposure;
-        vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase) + mistAmbient * mist * skyExposure;
+        // Underground the same dust that catches torchlight catches daylight falling through an opening: a
+        // visible beam. Only where the shadow map says the air is sunlit, so the rest of the cave stays dark.
+        float beamDust = enclosed * caveDustDensity() * CAVE_SUNBEAM;
+        vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase + beamDust * mix(airPhase, 0.08, 0.5)) + mistAmbient * mist * skyExposure;
         float stepT = exp(-mist * stepLen);
         // Energy-conserving integral over the step for the mist part; the thin air term is linear.
         scatter += trans * inscatter * (mist > 1e-6 ? (1.0 - stepT) / mist : stepLen);

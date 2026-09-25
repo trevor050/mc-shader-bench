@@ -265,9 +265,12 @@ void main() {
             haze = mix(haze, white, inSnowy * snowHorizonShare());
         }
         if (open < 1.0) {
+            // The two media are applied with their own amounts: blending the colour and the amount separately
+            // painted partly sky-lit cave walls with dense fog of bright daylight haze (glowing blue columns under
+            // every opening).
             float caveAmt = 1.0 - exp(-dist * caveFogDensity());
-            vec3 fogCol = mix(caveAirColor(), haze, open);
-            col = mix(col, fogCol, saturate(mix(caveAmt, fogAmt, open)));
+            col = mix(col, haze, saturate(fogAmt) * open);
+            col = mix(col, caveAirColor(), caveAmt * (1.0 - open));
         } else
             col = mix(col, haze, saturate(fogAmt));
 #else

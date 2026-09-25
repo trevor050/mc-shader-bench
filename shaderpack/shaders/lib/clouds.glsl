@@ -481,7 +481,9 @@ float cloudShadow(vec3 worldPos, vec3 lightDir, CloudWeather w) {
         vec3 p = worldPos + lightDir * ((ys[i] - worldPos.y) / lightDir.y);
         od += l0Density(p, w, 2) * thick[i];
     }
-    return mix(exp(-od * 0.05), 1.0, 0.12);
+    // Light scattered in from cloud edges and through thinner parts keeps cloud shade at roughly a third of the
+    // sun. With the clouds now low and broad, the old 12% floor turned whole valleys dark blue at noon.
+    return mix(exp(-od * 0.035), 1.0, CLOUD_SHADOW_FLOOR);
 }
 
 float cloudShadow(vec3 worldPos, vec3 lightDir) {
