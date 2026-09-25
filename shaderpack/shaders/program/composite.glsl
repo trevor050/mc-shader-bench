@@ -47,6 +47,7 @@ uniform int isEyeInWater;
 uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
+uniform float rainLocal;
 #include "/lib/clouds.glsl"
 #include "/lib/cave.glsl"
 #if defined DIM_NETHER
@@ -268,7 +269,7 @@ void main() {
         vec3 rd = normalize(playerPos);
         float worldY = playerPos.y + cameraPosition.y;
         float heightFalloff = exp(-max(worldY - 62.0, 0.0) / 90.0);
-        float density = (0.00018 + rainStrength * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
+        float density = (0.00018 + rainLocal * 0.004) * FOG_DENSITY * mix(0.6, 1.0, heightFalloff);
 #if defined DIM_END
         density = 0.0025;
 #endif

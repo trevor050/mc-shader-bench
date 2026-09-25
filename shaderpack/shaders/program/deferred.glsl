@@ -79,7 +79,10 @@ uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 #endif
 uniform vec3 cameraPosition;
-uniform float wetness;
+// Wetness and rain level where the player is: zero in biomes without precipitation (deserts, savannas), where
+// vanilla draws no rain either (custom uniforms, shaders.properties). The sky and clouds keep the global rain level.
+uniform float wetLocal;
+uniform float rainLocal;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
 uniform sampler2D colortex8;
@@ -220,7 +223,7 @@ void main() {
         // degrees around the point opposite the sun, red outside and violet inside, with a faint secondary
         // bow at 51 degrees (colours reversed) and a darker band between them (Alexander's band).
         {
-            float wetAir = saturate(wetness * 1.4 - rainStrength * 2.0);
+            float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
             if (wetAir > 0.0 && sunDir.y > 0.0 && sunDir.y < 0.7) {
                 float a = degrees(acos(clamp(dot(starDir, -sunDir), -1.0, 1.0)));
                 float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
@@ -315,7 +318,7 @@ void main() {
         }
 #endif
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
-        float wet = isHand ? 0.0 : wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
+        float wet = isHand ? 0.0 : wetLocal * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
         float puddle = 0.0;
         if (wet > 0.0 && n.y > 0.9 && !foliage) {
             float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
@@ -323,8 +326,8 @@ void main() {
         }
         // While it is still raining, drops land in the puddles: rings of ripples on the mirror.
         vec2 ripple = vec2(0.0);
-        if (puddle > 0.0 && rainStrength > 0.01 && length(playerPos) < 64.0)
-            ripple = rainRipples(wp.xz, frameTimeCounter) * RAIN_RIPPLES * rainStrength * (1.0 - length(playerPos) / 64.0);
+        if (puddle > 0.0 && rainLocal > 0.01 && length(playerPos) < 64.0)
+            ripple = rainRipples(wp.xz, frameTimeCounter) * RAIN_RIPPLES * rainLocal * (1.0 - length(playerPos) / 64.0);
         // Standing water hides the surface color underneath, so puddles read as dark, glossy patches.
         albedo *= mix(1.0, 0.55, wet * 0.8) * mix(1.0, 0.25, puddle);
         float ao = m.b;

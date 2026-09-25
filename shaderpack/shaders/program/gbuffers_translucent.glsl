@@ -12,6 +12,7 @@ uniform vec3 cameraPosition;
 uniform float rainStrength;
 uniform float frameTimeCounter;
 uniform ivec2 eyeBrightnessSmooth;
+uniform float rainLocal;
 #include "/lib/atmosphere.glsl"
 #include "/lib/lighting.glsl"
 
@@ -245,8 +246,8 @@ void main() {
             float strength = mix(1.0, 0.2, saturate(dist / 96.0));
             n = waterNormal(worldPos, n, frameTimeCounter, strength);
             // Raindrops ring the surface where rain can reach it.
-            if (rainStrength > 0.01 && lmcoord.y > 0.8 && dist < 64.0 && isEyeInWater != 1) {
-                vec2 rp = rainRipples(worldPos.xz, frameTimeCounter) * RAIN_RIPPLES * rainStrength * (1.0 - dist / 64.0);
+            if (rainLocal > 0.01 && lmcoord.y > 0.8 && dist < 64.0 && isEyeInWater != 1) {
+                vec2 rp = rainRipples(worldPos.xz, frameTimeCounter) * RAIN_RIPPLES * rainLocal * (1.0 - dist / 64.0);
                 n = normalize(n + vec3(rp.x, 0.0, rp.y) * 0.16);
             }
         }

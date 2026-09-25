@@ -2,6 +2,9 @@
 // shows as silvery streaks refracting the sky around it. Streaks are lit by the pack's own sky radiance (the scene
 // is in those HDR units; vanilla skyColor is two orders of magnitude dimmer, which left rain visible only against
 // dark water), scaled by how open the sky is where the player stands.
+// Weather goes to its own buffer (colortex13, premultiplied colour + coverage) and final lays it over the finished
+// scene. Drawn into the scene directly, the streaks had no depth of their own, so the composite fog treated them as
+// the far land behind them and dissolved them into the rain haze: rain only survived in front of nearby water.
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
 
@@ -34,7 +37,7 @@ uniform ivec2 eyeBrightnessSmooth;
 in vec2 texcoord;
 in vec4 glcolor;
 flat in vec3 skyLight;
-/* RENDERTARGETS: 0 */
+/* RENDERTARGETS: 13 */
 layout(location = 0) out vec4 outColor;
 void main() {
 #ifdef DIM_END
@@ -49,6 +52,6 @@ void main() {
     vec3 tint = rain ? vec3(0.85, 0.9, 1.0) : toLinear(c.rgb);
     float alpha = rain ? c.a * 0.5 : c.a * 0.75;
     // Drops are brighter than the sky they refract only at the rims; snow is a diffuse white lit by the sky.
-    outColor = vec4(tint * sky * open * (rain ? 1.1 : 1.6) + 0.004, alpha);
+    outColor = vec4(tint * sky * open * 1.6 + 0.004, alpha);
 }
 #endif

@@ -83,6 +83,12 @@ void main() {
 uniform sampler2D colortex0;
 uniform sampler2D colortex3;
 uniform sampler2D colortex7;
+// Rain and snow from gbuffers_weather: premultiplied colour, coverage in alpha. Cleared to zero every frame.
+uniform sampler2D colortex13;
+/*
+const int colortex13Format = RGBA16F;
+const vec4 colortex13ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
+*/
 uniform sampler2D colortex5;
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
@@ -280,6 +286,9 @@ vec3 colorGrade(vec3 c) {
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
+    // Precipitation over the fogged scene (see weather.glsl).
+    vec4 weather = texture(colortex13, texcoord);
+    col = col * (1.0 - saturate(weather.a)) + max(weather.rgb, 0.0);
     // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
     col += texture(colortex3, texcoord).rgb;
