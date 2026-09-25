@@ -43,6 +43,8 @@ void main() {
 #endif
 #if defined PROG_HAND
     mat = MAT_HAND;
+#elif defined PROG_ENTITIES_TRANSLUCENT
+    mat = MAT_ENTITY;
 #elif defined PROG_DH
     mat = dhMaterialId == DH_BLOCK_WATER ? MAT_WATER : MAT_TRANSLUCENT;
 #else
@@ -432,7 +434,10 @@ void main() {
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
     vec3 skyRefl = vec3(0.0);
     if (lmcoord.y != 0.0) skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
+#ifndef PROG_ENTITIES_TRANSLUCENT
+    // Glass-like sheen; entities are not glass.
     col = mix(col, skyRefl, fres * 0.6);
+#endif
 #ifdef PROG_HAND
     // The solid hand pass is cutout, not translucent. Keep transparent texels
     // discarded above, but make visible skin and held-item pixels fully opaque.

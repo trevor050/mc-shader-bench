@@ -21,6 +21,9 @@ PROGRAMS = {
     "gbuffers_damagedblock": ("gbuffers_solid.glsl", ""),
     "gbuffers_block": ("gbuffers_solid.glsl", "PROG_BLOCK"),
     "gbuffers_entities": ("gbuffers_solid.glsl", "PROG_ENTITIES"),
+    # Translucent entities (spectator players, ghostly layers) draw after deferred lighting. Without their own program
+    # Iris fell back to the opaque G-buffer one and wrote raw, unlit albedo into the lit frame (a glowing player).
+    "gbuffers_entities_translucent": ("gbuffers_translucent.glsl", "PROG_ENTITIES_TRANSLUCENT"),
     "dh_terrain": ("gbuffers_solid.glsl", "PROG_DH"),
     "gbuffers_water": ("gbuffers_translucent.glsl", "PROG_WATER"),
     # The underwater held-item pass must use opaque hand shading, not translucent world-water shading.
