@@ -53,6 +53,7 @@ LightEnv makeLightEnv(vec3 sunDir) {
 FieldLight surfaceField;
 #endif
 
+#include "/lib/cave.glsl"
 uniform vec3 skyColor;
 uniform float screenBrightness;
 uniform float inSnowy; // custom uniform: smoothed 1 in biomes where it snows
@@ -248,6 +249,13 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     vec3 minLighting = vec3(0.0);
 #if !defined DIM_END
     minLighting = vec3(0.005625 + vsB * 0.043) * vec3(0.45, 0.475, 0.6) * (1.0 - lightmapYM);
+#endif
+#if !defined DIM_NETHER && !defined DIM_END
+    // Cave moods. Lush caves: moss bounces a green, faintly luminous fill into the shadows. Dripstone: warm amber
+    // dust. Deep Dark: the fill all but gone, so only sculk and your own light break the black.
+    minLighting = mix(minLighting, minLighting * vec3(0.55, 1.45, 0.75) * 2.6, inLushCave);
+    minLighting = mix(minLighting, minLighting * vec3(1.35, 1.0, 0.65) * 1.4, inDripstone);
+    minLighting *= 1.0 - 0.85 * inDeepDark;
 #endif
 
 #if !defined DIM_NETHER && !defined DIM_END

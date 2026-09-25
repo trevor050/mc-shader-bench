@@ -89,6 +89,8 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
         // Lava and portals throw extra light beyond Minecraft's range (lava seas light whole caverns); their
         // colours are fixed so the lava's yellow blobs cannot wash its light out to amber.
         if (mat == MAT_LAVA) { c = vec3(1.0, 0.3, 0.06); extra = 3u; }
+        // Glow berries give a soft golden light, not the fire orange their warm sprite would select.
+        else if (mat == MAT_GLOWBERRY) c = vec3(1.0, 0.78, 0.36);
         else if (mat == MAT_PORTAL) { c = vec3(0.72, 0.22, 1.0); extra = 2u; }
         else if (c.r > 0.9 && c.b < 0.35) extra = 1u;
         data = packVoxel(VOXEL_EMITTER, uint(emission + 0.5), c, extra);

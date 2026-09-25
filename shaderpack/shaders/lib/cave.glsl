@@ -20,11 +20,11 @@ vec3 caveAirColor() {
 
 // Extinction of cave air per block.
 float caveFogDensity() {
-    return mix(0.012, 0.035, inDeepDark) * mix(1.0, 1.6, inLushCave) * mix(1.0, 1.3, inDripstone);
+    return mix(0.012, 0.035, inDeepDark) * mix(1.0, 1.25, inLushCave) * mix(1.0, 1.3, inDripstone);
 }
 
 // Dust that catches block light: how much the air scatters (per block), and its tint.
 float caveDustDensity() {
-    return mix(0.010, 0.022, max(inLushCave, inDripstone)) * mix(1.0, 0.55, inDeepDark);
+    return mix(0.010, mix(0.022, 0.015, inLushCave), max(inLushCave, inDripstone)) * mix(1.0, 0.55, inDeepDark);
 }
 #endif
