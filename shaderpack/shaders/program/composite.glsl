@@ -377,16 +377,17 @@ void main() {
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;
     }
-    // Keep the heat close to the sea; the lava itself supplies the contrast instead of a heavy red vignette.
+    // Standing close over a lava sea should feel dangerous: sparks rise above the pool and the
+    // edges burn down to red, drawing the eye toward the white-hot center.
     {
         float heat = smoothstep(18.0, 3.0, cameraPosition.y - NETHER_LAVA_LEVEL) * LAVA_HEAT;
         if (heat > 0.001) {
             vec3 viewDir = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
                                : normalize(playerPos);
-            col += lavaEmbers(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 3.5 * heat;
+            col += lavaEmbers(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 6.0 * heat;
             vec2 e = (texcoord - 0.5) * vec2(viewWidth / viewHeight, 1.0);
             float edge = smoothstep(0.25, 1.0, length(e) * 1.2);
-            col = mix(col, col * vec3(0.95, 0.72, 0.58), edge * heat * 0.25);
+            col = mix(col, col * vec3(0.9, 0.32, 0.12), edge * heat * 0.8);
         }
     }
 #endif

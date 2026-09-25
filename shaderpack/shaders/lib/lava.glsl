@@ -75,9 +75,9 @@ vec3 lavaGrade(vec3 s, float heat, float hot) {
 // Emission (0..1, lighting squares it). Bright pixels and hot zones blaze; the body glows strongly anyway.
 float lavaEmission(vec3 graded, float heat, float hot) {
     float l = luminance(graded);
-    // Leave room for the sprite's bright yellow pockets instead of pushing the entire lake into
-    // the tonemapper's shoulder. Lighting squares this value before scaling by LAVA_EMISSION.
-    return saturate(mix(0.35, 0.88, smoothstep(0.35, 0.85, l)) * mix(0.85, 1.08, heat) + hot * 0.15);
+    // Wide spread between the body and the blobs: lighting squares this, so 0.42 vs 0.95 is ~5x, which keeps
+    // the body a deep saturated orange under the tonemapper while the bright blobs blaze.
+    return saturate(mix(0.42, 0.95, smoothstep(0.35, 0.85, l)) * mix(0.85, 1.08, heat) + hot * 0.15);
 }
 
 #ifdef PROG_TERRAIN

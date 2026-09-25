@@ -124,7 +124,7 @@ vec3 netherSeaGlow(vec3 p, float time) {
     float h = max(p.y - NETHER_LAVA_LEVEL, 0.0);
     float pulse = 0.92 + 0.08 * valueNoise(p.xz * 0.02 + time * 0.15);
     // Falls off fast: smoke hanging low over the seas glows, smoke overhead stays sooty and dark.
-    return vec3(1.0, 0.30, 0.05) * 1.55 * exp(-h / 18.0) * pulse;
+    return vec3(1.0, 0.30, 0.05) * 2.4 * exp(-h / 18.0) * pulse;
 }
 
 // Soot and ember ambient that keeps high smoke from going pure black.
