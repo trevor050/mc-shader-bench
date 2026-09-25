@@ -345,6 +345,8 @@ void main() {
 #ifdef FIELD_SHADING
         surfaceField = FieldLight(vec3(0.0), BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR), 0.0, 0.0, vec3(0.0), 0.0, 0.0);
         if (!isHand && !isLod) surfaceField = sampleLightField(playerPos, n);
+        // The hand's depth is not a world position, but the hand is at the eye: read the colour field there.
+        if (isHand) surfaceField = sampleLightField(vec3(0.0, -0.4, 0.0), n);
         fieldWeight = surfaceField.weight;
 #endif
         col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
@@ -391,6 +393,12 @@ void main() {
             col = endPortalRadiance(wp, n, rd);
         }
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
+        // A torch (or any light) held in either hand lights the hands themselves; vanilla's light level there does
+        // not include it, so in a dark cave the hand holding a torch rendered black.
+        if (isHand) {
+            float held = float(max(heldBlockLightValue, heldBlockLightValue2)) / 15.0;
+            if (held > 0.0) col += albedo * heldLightColor() * blockLightLevel(held * 0.92) * (0.55 + 0.45 * saturate(n.y * 0.5 + 0.5)) * 0.4;
+        }
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
         {
             // Lightning briefly lights the landscape: cold light from the sky, strongest on open ground.

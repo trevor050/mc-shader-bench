@@ -101,6 +101,10 @@ uniform sampler2D gtexture;
 #ifdef PROG_ENTITIES
 uniform vec4 entityColor;
 #endif
+#ifdef PROG_HAND
+uniform int heldBlockLightValue;
+uniform int heldBlockLightValue2;
+#endif
 #ifdef PROG_TERRAIN
 uniform float far;
 uniform int frameCounter;
@@ -252,6 +256,16 @@ void main() {
 #endif
 #ifdef PROG_BASIC
     emissive = 0.4;
+#endif
+#ifdef PROG_HAND
+    // Holding a light source: the flame texels of held items burn (bright, mostly warm pixels), so a torch in
+    // hand glows instead of rendering as a dark stick.
+    if (max(heldBlockLightValue, heldBlockLightValue2) > 0) {
+        float hmx = max(albedo.r, max(albedo.g, albedo.b)), hmn = min(albedo.r, min(albedo.g, albedo.b));
+        float hsat = (hmx - hmn) / max(hmx, 1e-3);
+        // Flame texels are bright and clearly saturated (yellow/orange); the light wood of the stick is not.
+        emissive = max(emissive, smoothstep(0.72, 0.95, hmx) * smoothstep(0.35, 0.6, hsat));
+    }
 #endif
 
     vec3 n = normalize(worldNormal);
