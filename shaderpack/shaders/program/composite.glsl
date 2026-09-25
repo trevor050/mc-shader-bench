@@ -243,7 +243,15 @@ void main() {
                 float side = valueNoise(vec2(sp.x * 9.0 + 3.0, sp.y * 17.0 - t * 0.6)) - 0.5;
                 vec2 uv2 = texcoord + vec2(side * 0.0006, wave * 0.0022) * heat;
                 int matThere = int(texture(colortex2, uv2).r * 255.0 + 0.5);
-                if (matThere != MAT_LAVA && texture(depthtex0, uv2).r >= 0.56) col = texture(colortex0, uv2).rgb;
+                float sampleDepth = texture(depthtex0, uv2).r;
+                // Refract only within the same visible surface. A displaced tap across a rock
+                // silhouette used to pull bright lava haze/empty sky onto the dark edge, then
+                // TAA made that false outline particularly obvious while moving.
+                if (matThere != MAT_LAVA && sampleDepth >= 0.56 && sampleDepth < 1.0) {
+                    vec3 sampleView = projectAndDivide(gbufferProjectionInverse, vec3(uv2, sampleDepth) * 2.0 - 1.0);
+                    float sampleDist = length(mat3(gbufferModelViewInverse) * sampleView + gbufferModelViewInverse[3].xyz);
+                    if (abs(sampleDist - dist) < max(1.0, dist * 0.025)) col = texture(colortex0, uv2).rgb;
+                }
             }
         }
     }
