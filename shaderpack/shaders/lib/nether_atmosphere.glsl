@@ -62,8 +62,9 @@ vec2 netherSmog(vec3 p, float time, float ash) {
 
 float netherSmogDensity(vec3 p, float time, float ash) { return netherSmog(p, time, ash).x; }
 
-// Embers: sparks torn off the lava seas, rising fast and swaying, flaring and dying. An exact 3D DDA over 2-block
-// cells along the view ray near the camera. Returns radiance to add.
+#ifdef EMBERS_VOXEL
+// Embers: sparks above broad lava pools, rising and swaying. A 3D DDA visits 2-block cells near the camera;
+// the voxel map rejects stray sparks over solid ground and isolated lava blocks.
 vec3 lavaEmbers(vec3 camPos, vec3 rd, float maxDist, float t) {
     const float CELL = 2.0;
     const int STEPS = 24;
@@ -88,10 +89,24 @@ vec3 lavaEmbers(vec3 camPos, vec3 rd, float maxDist, float t) {
             if (along > 0.05 && along < limit) {
                 float perp2 = max(dot(d, d) - along * along, 0.0);
                 const float r = 0.018;
-                float life = fract(t * (0.35 + 0.3 * h3) + h2 * 7.0);
-                float flare = smoothstep(0.0, 0.1, life) * (1.0 - life);
-                vec3 c = mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), flare);
-                acc += c * (exp(-perp2 / (r * r)) + 0.05 * exp(-perp2 / (r * r * 25.0))) * flare * smoothstep(limit, limit * 0.5, along);
+                vec3 worldSpark = m * CELL + vec3(0.0, t * 1.5, 0.0);
+                float aboveSea = worldSpark.y - NETHER_LAVA_LEVEL;
+                // The centre plus four points three blocks away must all be lava at sea level. That
+                // gives the sparks room to rise over a real pool, without filling every nearby cave.
+                ivec3 v = worldBlockToVoxel(ivec3(floor(worldSpark.x), int(NETHER_LAVA_LEVEL), floor(worldSpark.z)), cameraPositionInt);
+                ivec3 dx = ivec3(3, 0, 0), dz = ivec3(0, 0, 3);
+                if (aboveSea > 0.5 && aboveSea < 24.0 && perp2 < 0.015 &&
+                    voxelInside(v - dx) && voxelInside(v + dx) && voxelInside(v - dz) && voxelInside(v + dz) &&
+                    voxelExtra(texelFetch(voxelSampler, v, 0).r) == 3u &&
+                    voxelExtra(texelFetch(voxelSampler, v - dx, 0).r) == 3u &&
+                    voxelExtra(texelFetch(voxelSampler, v + dx, 0).r) == 3u &&
+                    voxelExtra(texelFetch(voxelSampler, v - dz, 0).r) == 3u &&
+                    voxelExtra(texelFetch(voxelSampler, v + dz, 0).r) == 3u) {
+                    float life = fract(t * (0.35 + 0.3 * h3) + h2 * 7.0);
+                    float flare = smoothstep(0.0, 0.1, life) * (1.0 - life);
+                    vec3 c = mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), flare);
+                    acc += c * (exp(-perp2 / (r * r)) + 0.05 * exp(-perp2 / (r * r * 25.0))) * flare * smoothstep(limit, limit * 0.5, along);
+                }
             }
         }
         if (tCell > limit) break;
@@ -101,6 +116,7 @@ vec3 lavaEmbers(vec3 camPos, vec3 rd, float maxDist, float t) {
     }
     return acc;
 }
+#endif
 
 // Light arriving at a smoke point from the lava seas below: an analytic stand-in for sources beyond the voxel
 // field. Strong, deep orange low down, falling off with height; slightly flickering heat.
@@ -108,7 +124,7 @@ vec3 netherSeaGlow(vec3 p, float time) {
     float h = max(p.y - NETHER_LAVA_LEVEL, 0.0);
     float pulse = 0.92 + 0.08 * valueNoise(p.xz * 0.02 + time * 0.15);
     // Falls off fast: smoke hanging low over the seas glows, smoke overhead stays sooty and dark.
-    return vec3(1.0, 0.30, 0.05) * 2.4 * exp(-h / 18.0) * pulse;
+    return vec3(1.0, 0.30, 0.05) * 1.55 * exp(-h / 18.0) * pulse;
 }
 
 // Soot and ember ambient that keeps high smoke from going pure black.

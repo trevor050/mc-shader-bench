@@ -51,6 +51,10 @@ uniform float rainLocal;
 #include "/lib/clouds.glsl"
 #include "/lib/cave.glsl"
 #if defined DIM_NETHER
+#include "/lib/voxel.glsl"
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+#define EMBERS_VOXEL
 #include "/lib/nether_atmosphere.glsl"
 #endif
 #include "/lib/reflections.glsl"
@@ -107,7 +111,18 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
         float m = exp(-rel * 6.0);
         match = max(match, m);
         float w = bw.x * bw.y * (m + 1e-3);
-        acc += texelFetch(colortex11, t, 0) * w;
+        vec4 sampleVL = texelFetch(colortex11, t, 0);
+#if defined DIM_NETHER
+        // A half-res sky/far sample beside a near rock face must only contribute the length of fog
+        // in front of that face. Otherwise its orange scatter draws a bright contour around blocks.
+        if (sceneDist < sd && sceneDist < 1e5) {
+            float fraction = clamp(min(sceneDist, NETHER_SMOG_RANGE) / max(min(sd, NETHER_SMOG_RANGE), 1.0), 0.0, 1.0);
+            float shortenedT = pow(clamp(sampleVL.a, 1e-4, 1.0), fraction);
+            sampleVL.rgb *= (1.0 - shortenedT) / max(1.0 - sampleVL.a, 1e-4);
+            sampleVL.a = shortenedT;
+        }
+#endif
+        acc += sampleVL * w;
         wsum += w;
     }
     // On thin near geometry (a block edge, a pillar one texel wide at half resolution) none of the four nearest
@@ -116,13 +131,22 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
     if (match < 0.3) {
         float best = 1e9;
         vec4 pick = acc / max(wsum, 1e-5);
+        float pickDist = sceneDist;
         for (int y = -1; y <= 2; y++)
             for (int x = -1; x <= 2; x++) {
                 ivec2 t = clamp(i0 + ivec2(x, y), ivec2(0), bufferSize - 1);
                 float sd = texelFetch(colortex8, t, 0).r;
                 float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
-                if (rel < best) { best = rel; pick = texelFetch(colortex11, t, 0); }
+                if (rel < best) { best = rel; pickDist = sd; pick = texelFetch(colortex11, t, 0); }
             }
+#if defined DIM_NETHER
+        if (sceneDist < pickDist && sceneDist < 1e5) {
+            float fraction = clamp(min(sceneDist, NETHER_SMOG_RANGE) / max(min(pickDist, NETHER_SMOG_RANGE), 1.0), 0.0, 1.0);
+            float shortenedT = pow(clamp(pick.a, 1e-4, 1.0), fraction);
+            pick.rgb *= (1.0 - shortenedT) / max(1.0 - pick.a, 1e-4);
+            pick.a = shortenedT;
+        }
+#endif
         return pick;
     }
     return acc / max(wsum, 1e-5);
@@ -348,17 +372,16 @@ void main() {
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;
     }
-    // Standing close over a lava sea should feel dangerous: sparks rise all around and the edges of the view burn
-    // down to deep red, so the white-hot lava in the middle is what the eye is drawn to.
+    // Keep the heat close to the sea; the lava itself supplies the contrast instead of a heavy red vignette.
     {
         float heat = smoothstep(18.0, 3.0, cameraPosition.y - NETHER_LAVA_LEVEL) * LAVA_HEAT;
         if (heat > 0.001) {
             vec3 viewDir = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
                                : normalize(playerPos);
-            col += lavaEmbers(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 6.0 * heat;
+            col += lavaEmbers(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 3.5 * heat;
             vec2 e = (texcoord - 0.5) * vec2(viewWidth / viewHeight, 1.0);
             float edge = smoothstep(0.25, 1.0, length(e) * 1.2);
-            col = mix(col, col * vec3(0.9, 0.32, 0.12), edge * heat * 0.8);
+            col = mix(col, col * vec3(0.95, 0.72, 0.58), edge * heat * 0.25);
         }
     }
 #endif

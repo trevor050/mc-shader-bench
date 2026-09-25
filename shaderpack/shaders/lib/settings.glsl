@@ -17,7 +17,7 @@
 #define BLOCKLIGHT_STRENGTH 2.2
 #define MIN_LIGHT 0.006
 #define CU_EXPOSURE_SCALE 1.0 // Complementary-port lighting output scale (linear)
-#define LAVA_EMISSION 22.0
+#define LAVA_EMISSION 15.0
 #define BLOCK_EMISSION 17.0     // glowstone, lanterns, froglights, glow berries: bright enough to bloom     // lava emission strength (squared emissive channel times this)
 
 // Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the

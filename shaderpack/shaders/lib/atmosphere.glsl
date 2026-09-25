@@ -120,13 +120,14 @@ vec3 netherHaze(vec3 rd, float y, float plume) {
     vec3 smoke = vec3(0.014, 0.011, 0.010) * mix(vec3(1.0), tint, 0.18);
     vec3 soot = vec3(0.007, 0.009, 0.010);
     float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
-    // Overhead smoke stays ashen; the lava lift concentrates along the horizon and below it.
-    float look = max(1.0 - smoothstep(-0.65, -0.05, rd.y), exp(-abs(rd.y) * 9.0) * 0.12);
-    vec3 ember = vec3(1.0, 0.30, 0.045) * (0.12 + 0.55 * nearLava) * look;
+    // Keep the lava glow near the horizon. Looking down across the sea should reveal the molten
+    // surface, not turn the whole lower half of the view into an orange light source.
+    float look = exp(-abs(rd.y) * 6.0) * (1.0 - 0.3 * smoothstep(-0.2, 0.3, rd.y));
+    vec3 ember = vec3(1.0, 0.30, 0.045) * (0.08 + 0.32 * nearLava) * look;
     float loft = exp(-max(y - 31.0, 0.0) / 78.0);
     // Plumes carry soot overhead and catch lava light lower down, with turbulent warm edges.
     smoke = mix(smoke, soot, plume * (1.0 - loft * 0.60));
-    vec3 litSmoke = vec3(0.62, 0.095, 0.010) * plume * loft * (0.035 + 0.965 * look);
+    vec3 litSmoke = vec3(0.50, 0.085, 0.012) * plume * loft * (0.035 + 0.965 * look);
     return smoke + ember * mix(vec3(1.0), tint, 0.08) + litSmoke;
 }
 
