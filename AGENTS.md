@@ -22,7 +22,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 ## V3 systems
 - lib/lava.glsl (procedural lava: MAT_LAVA from block 10007 and DH lava), MAT_PORTAL 8 (nether portal vortex, translucent), MAT_SNOW 9 (glitter, deferred), MAT_ENDPORTAL 10 (gbuffers_block via blockEntityId + PROG_BLOCK; parallax space in deferred).
 - atmosphere: netherHaze, endSky (also end portal), twilightGlow. lighting: handheldLight, netherUplight. deferred: rainbow, lightning (cloudFlash), glossy dark stone. weather.glsl: grey rain lit by skyColor.
-- Clouds: one volume y 175..1080; cloudColumn() picks base 185..430 per region/cloud, storm towers (w.cb) with anvils.
+- Clouds: one volume y132..1080; clear-weather cumulus bases are >=330 so they do not look like raised water or cover the player at y245. Rain/thunder lower the deck toward y178; scud at y138..188 is limited to wet low-deck weather. Storm towers still have anvils.
 - Lightning must be applied after cloud temporal accumulation (in deferred) or history averages it away.
 - Stars: raSun pinned (fract(day/3650+0.44)) so the Milky Way is up at midnight, not behind the full moon.
 
@@ -51,7 +51,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Emitter colour (shadow.glsl emitterColor): chroma x EMITTER_SATURATION, flames (warm + real green share) forced to fixed fire colour (1,.40,.09). Trevor: torch must be fire-orange, not yellow. shadowcomp partly luminance-normalizes non-lava/portal energy (pure red lum 0.21 -> redstone had no light); flicker only for flames.
 - lighting.glsl: lightmapXM = max(vanilla, field lum * FIELD_BRIGHTNESS) outside the Nether (never darker than vanilla). FIELD_BRIGHTNESS 7 / CAVE_AIR_GLOW 1 washed the test cave out; 3.5 / 0.4 kept contrast.
 - Test cave: sealed deepslate room 2600..2630, -40..-29, 600..630 (torches W, soul lanterns E, crying obsidian+redstone N, sea lantern+glowstone S); view from 2615 -36 615.
-- Clouds: cumulus bases ~190-305 (was 185-430), scud deck y138-188 (scudDensity, regional, more on low/rain days), upper deck more common, slab bottom 132. Night 62% cloud-opacity hack removed (Trevor: Milky Way must not show through clouds).
+- Clouds: fair-day cumulus bases are >=330, lowering toward ~190-305 in rain/thunder; scud deck y138-188 stays patchy on clear days, upper deck more common, slab bottom 132. Night 62% cloud-opacity hack removed (Trevor: Milky Way must not show through clouds).
 - Sun: low-sun crisp limb-darkened disc in sunDisc; aureole core/halo cut at low sun (they blew the region to cream and hid the sun). Reload replays identical clouds, so sunset tests keep hitting the same cloud over the sun; judge the disc with CLOUDS temporarily off.
 - Snow: composite whiteout (0.0019 + 0.028*rain) toward snowWhiteout(haze); far fog and the sky's lower band whiten by the same snowHorizonShare() so the horizon has no seam. Ambient bounce x(1 + inSnowy*...).
 - Sky (later in V5): sunset palette (atmosphere.glsl sunsetWindow/sunsetLightTint/cloudSunsetLight) shared by sky, clouds_march (clouds keep sun light after sunset), ground light and water glitter. Low sun gets a smooth analytic veil computed once per frame in final's vertex stage (SUN_VEIL); Trevor rejected starburst streaks twice and blocky boosted mip glare. Milky Way baked by tools/bake_milkyway.py (2048x1024), fades in late (sun 7-30 deg below). twilightGlow pow() needs saturate(toward): a NaN column above the sun came from away<0.
