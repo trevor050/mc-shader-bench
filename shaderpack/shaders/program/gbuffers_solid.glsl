@@ -302,9 +302,15 @@ void main() {
         }
     } else if (mat == MAT_SCULK) {
         // Sculk's cyan specks are bioluminescent: they breathe with the travelling heartbeat (lib/cave.glsl).
+        // Only a sparse share of the specks glow (every speck glowing read as a dot pattern and lit the whole
+        // biome); the rest keep their plain texture. At rest they are nearly dark and brighten only as a heartbeat
+        // wave passes, so the dark reads as alive rather than lit.
         float cyan = saturate(((albedo.g + albedo.b) * 0.5 - albedo.r) * 4.0) * smoothstep(0.22, 0.5, max(albedo.g, albedo.b));
-        emissive = max(emissive, cyan * SCULK_GLOW * sculkPulse(relPos + cameraPosition, frameTimeCounter));
-        smoothness = cyan * 0.4;
+        vec2 speck = floor(texcoord * vec2(textureSize(gtexture, 0)));
+        vec3 swp = floor(relPos + cameraPosition + worldNormal * 0.5);
+        float lit = step(0.8, hash12(speck * 0.37 + swp.xz * 1.71 + swp.y * 3.3));
+        emissive = max(emissive, cyan * lit * SCULK_GLOW * sculkPulse(relPos + cameraPosition, frameTimeCounter));
+        smoothness = cyan * 0.3;
     } else if (mat == MAT_ORE) {
         // Gem and metal texels stand out from the grey host rock by saturation (or, for iron and gold, warm
         // brightness). They are glossy and throw tiny glints that re-roll with the view direction, so a vein

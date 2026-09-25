@@ -24,13 +24,13 @@ float caveFogDensity() {
 }
 
 // Sculk heartbeat: a slow double beat (lub-dub) that travels across the sculk fields in broad, bending waves, so
-// the Deep Dark breathes around you. 0.3 at rest, peaks near 1.2.
+// the Deep Dark breathes around you. Near zero at rest, peaks near 1.1.
 float sculkPulse(vec3 wp, float t) {
     float bend = valueNoise(wp.xz * 0.045) * 1.6;
     float phase = t / 2.3 - dot(wp.xz, vec2(0.031, 0.024)) - wp.y * 0.02 - bend;
     float f = fract(phase);
     float beat = exp(-f * 13.0) + 0.65 * exp(-abs(f - 0.17) * 17.0);
-    return 0.3 + 0.9 * beat;
+    return 0.06 + beat;
 }
 
 // Soul motes: sparse cyan specks drifting upward through Deep Dark air. A 3D grid of 2-block cells is walked

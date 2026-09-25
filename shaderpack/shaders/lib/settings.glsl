@@ -37,7 +37,7 @@
 #define CAVE_WETNESS 1.0         // damp, glossy cave rock where no sky reaches
 #define ORE_SPARKLE 0.07          // strength of ore glints under nearby block light
 #define CAVE_SUNBEAM 1.0          // daylight beams through cave openings (dust lit by the sun)
-#define SCULK_GLOW 0.12           // brightness of sculk's bioluminescent specks (times the heartbeat)
+#define SCULK_GLOW 0.07           // brightness of sculk's bioluminescent specks (times the heartbeat)
 #define SOUL_MOTES 0.15           // soul motes drifting through Deep Dark air
 #define CAVE_AIR_GLOW 0.4        // dust in cave air lit by block lights (coloured halos)
 
