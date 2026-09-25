@@ -67,10 +67,7 @@ vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     if (rd.y <= 0.02) return sky;
     CloudWeather w = cloudWeather();
-    // Match the fair-weather cloud lift; the old fixed y320 sample reflected a cloud
-    // deck that no longer exists at that height on clear days.
-    float wet = smoothstep(0.15, 0.75, max(rainStrength, thunderStrength));
-    float y = mix(L0_BASE + 70.0, 320.0, wet);
+    float y = L0_BASE + 70.0;
     vec3 p = ro + rd * max((y - ro.y) / rd.y, 0.0);
     float d = l0Density(p, w, 2) + l0Density(p + vec3(0.0, 60.0, 0.0), w, 2) * 0.7;
     if (d <= 0.01) return sky;

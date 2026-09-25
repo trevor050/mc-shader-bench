@@ -19,7 +19,7 @@ uniform sampler3D cloudNoise;
 #include "/lib/cloud_weather.glsl"
 uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exists
 
-#define L0_BASE 400.0         // fair-weather cloud base reference (blocks)
+#define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
 #define L1_ALT 1150.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
 #define L1_THICK 220.0        // deep enough to read as volume from below, not a painted band
@@ -64,14 +64,10 @@ CloudColumn cloudColumn(vec2 xz, CloudWeather w) {
     // Continuous height field: w.low pushes the whole distribution down (low-deck days) or up.
     float lowness = saturate(smoothstep(0.0, 1.0, 1.0 - region) * (0.4 + w.low));
     c.low = smoothstep(0.55, 0.95, lowness);
-    // In clear weather, keep the main deck above most terrain. Its old y178-300 base
-    // made an opaque white "ocean" over real water and wrapped hills and the player.
-    // Rain and thunder can still pull clouds down around mountain peaks.
-    float wet = smoothstep(0.15, 0.75, max(rainStrength, thunderStrength));
-    float fairBase = mix(465.0, 355.0, lowness);
-    float stormBase = mix(305.0, 190.0, lowness);
-    c.base = mix(fairBase, stormBase, wet) + 60.0 * (m.g - 0.5) + 90.0 * (own - 0.55);
-    c.base = max(c.base, mix(330.0, 178.0, wet));
+    // Fair-weather cumulus bases sit just above the peaks (about y 200-300), low enough to reach on foot from a
+    // mountain top or with a short flight.
+    c.base = mix(305.0, 190.0, lowness) + 60.0 * (m.g - 0.5) + 90.0 * (own - 0.55);
+    c.base = max(c.base, 178.0);
     // Low clouds are flatter layers; higher ones build taller cumulus.
     c.thick = mix(320.0, 130.0, lowness);
     float storm = saturate((m.b - 0.55) / 0.15);
@@ -109,7 +105,7 @@ float cumulusDeck(vec3 p, CloudWeather w, int lod, CloudColumn col, float seed, 
     vec4 cm = cloudTex(vec3(cq, 0.37));
     float field = saturate(((cm.r * 0.7 + cm.g * 0.3) - 0.42) / 0.27);
     // Low decks spread wider (more coverage); storm cells merge into one massive body.
-    float cov = (w.cov0 + col.low * w.lowCov * mix(0.5, 1.0, rainStrength) + col.cb * 0.35) * covScale;
+    float cov = (w.cov0 + col.low * w.lowCov + col.cb * 0.35) * covScale;
     float local = saturate(remap(field, 1.0 - cov - 0.15, 1.0 - cov + 0.22, 0.0, 1.0));
     // Anvil: near the top of a storm cell the cloud spreads sideways into a flat shelf.
     float anvil = col.cb * smoothstep(0.72, 0.86, h) * (1.0 - smoothstep(0.96, 1.0, h));
@@ -165,10 +161,7 @@ float scudDensity(vec3 p, CloudWeather w, int lod) {
     if (p.y <= SCUD_BASE || p.y >= SCUD_TOP) return 0.0;
     vec2 xzw = p.xz + cloudWind().xz * 1.7;
     float region = cloudTex(vec3(xzw / 5200.0, 0.81)).r;
-    // Reserve the low scud sheet for genuinely wet weather. On clear days it hid the
-    // ocean and broke terrain into stray white patches, even well below the main deck.
-    float lowWeather = max(rainStrength, smoothstep(0.65, 0.85, w.low));
-    float amount = saturate((region - 0.5) / 0.22) * lowWeather;
+    float amount = saturate((region - 0.5) / 0.22) * mix(0.35, 1.0, max(w.low, rainStrength));
     if (amount <= 0.0) return 0.0;
     CloudColumn c;
     c.base = SCUD_BASE + 18.0 * (cloudTex(vec3(xzw / 1900.0, 0.27)).g - 0.3);
