@@ -10,17 +10,22 @@ uniform float inDeepDark;
 uniform float inLushCave;
 uniform float inDripstone;
 
-vec3 caveAirColor() {
-    vec3 c = vec3(0.0011, 0.0016, 0.0025);
+// Depth below the upper cave levels: 0 around y 48 and above, 1 deep in the deepslate (y -40 and below).
+float caveDepth(float y) { return smoothstep(48.0, -40.0, y); }
+
+vec3 caveAirColor(float y) {
+    // Near the surface the air is a dim stone grey; deep down it sinks toward a cold, near-black blue.
+    float deep = caveDepth(y);
+    vec3 c = mix(vec3(0.0013, 0.0016, 0.0021), vec3(0.00045, 0.00065, 0.0012), deep);
     c = mix(c, vec3(0.0008, 0.0024, 0.0017), inLushCave);
     c = mix(c, vec3(0.0024, 0.0017, 0.0011), inDripstone);
     c = mix(c, vec3(0.00008, 0.00022, 0.00030), inDeepDark);
     return c;
 }
 
-// Extinction of cave air per block.
-float caveFogDensity() {
-    return mix(0.012, 0.035, inDeepDark) * mix(1.0, 1.25, inLushCave) * mix(1.0, 1.3, inDripstone);
+// Extinction of cave air per block: denser the deeper you go, so the deepslate levels feel heavy.
+float caveFogDensity(float y) {
+    return mix(0.010, 0.035, inDeepDark) * mix(1.0, 1.25, inLushCave) * mix(1.0, 1.3, inDripstone) * mix(1.0, CAVE_DEPTH_FOG, caveDepth(y) * (1.0 - 0.6 * inDeepDark));
 }
 
 // Sculk heartbeat: a slow double beat (lub-dub) that travels across the sculk fields in broad, bending waves, so

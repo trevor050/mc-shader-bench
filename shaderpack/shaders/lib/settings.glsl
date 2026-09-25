@@ -39,6 +39,7 @@
 #define CAVE_SUNBEAM 1.0          // daylight beams through cave openings (dust lit by the sun)
 #define SCULK_GLOW 0.07           // brightness of sculk's bioluminescent specks (times the heartbeat)
 #define SOUL_MOTES 0.15           // soul motes drifting through Deep Dark air
+#define CAVE_DEPTH_FOG 2.4         // how much denser cave air gets deep in the deepslate
 #define CAVE_AIR_GLOW 0.4        // dust in cave air lit by block lights (coloured halos)
 
 #define CLOUDS
