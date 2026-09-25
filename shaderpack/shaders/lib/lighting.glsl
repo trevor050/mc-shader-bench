@@ -197,8 +197,11 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
 #endif
     shadowMult = shadow * max(NdotLM * t.shadowTime, 0.0);
 #if !defined DIM_END
-    // Direct light needs some open sky: deep caves never see the sun even where the shadow map is unreliable.
-    shadowMult *= smoothstep(0.08, 0.45, lm.y);
+    // Direct light needs open sky: caves never see the sun or moon even where the shadow map is unreliable. On 26.2
+    // Iris culls the rock overhead out of the shadow pass beyond voxelDistance when the camera is underground, so a
+    // cave with a little sky light (near any opening) got hard-edged "phantom" moonlight. Open-air surfaces, even
+    // under trees and overhangs, sit at sky light 13-15; only the first blocks inside an opening pass this gate.
+    shadowMult *= smoothstep(0.55, 0.87, lm.y);
 #endif
 #endif
     float shadowMultFloat = min(cuLuminance(shadowMult), 1.0);
