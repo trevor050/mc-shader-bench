@@ -1,21 +1,39 @@
-// Rain and snow, drawn after lighting. Vanilla's rain texture is saturated blue; real rain is clear water
-// that only shows as faint silvery streaks catching the ambient light. Both are lit by the sky's current
-// brightness (Iris skyColor), so precipitation darkens at night and goes silver by day.
+// Rain and snow, drawn after lighting. Vanilla's rain texture is saturated blue; real rain is clear water that
+// shows as silvery streaks refracting the sky around it. Streaks are lit by the pack's own sky radiance (the scene
+// is in those HDR units; vanilla skyColor is two orders of magnitude dimmer, which left rain visible only against
+// dark water), scaled by how open the sky is where the player stands.
+#include "/lib/settings.glsl"
+#include "/lib/common.glsl"
+
+uniform vec3 sunPosition;
+uniform mat4 gbufferModelViewInverse;
+uniform float rainStrength;
+uniform float frameTimeCounter;
+#include "/lib/atmosphere.glsl"
+
 #ifdef VERTEX
 out vec2 texcoord;
 out vec4 glcolor;
+flat out vec3 skyLight;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
+#if defined DIM_NETHER || defined DIM_END
+    skyLight = vec3(0.0);
+#else
+    vec3 sunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
+    // Average of the overhead and horizon sky: what a falling drop refracts toward the eye.
+    skyLight = (skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) + skyRadiance(normalize(vec3(sunDir.x, 0.15, sunDir.z) + vec3(0.0, 0.0, 1e-3)), sunDir, 4)) * 0.5;
+#endif
 }
 #endif
 #ifdef FRAGMENT
 uniform sampler2D gtexture;
-uniform vec3 skyColor;
 uniform ivec2 eyeBrightnessSmooth;
 in vec2 texcoord;
 in vec4 glcolor;
+flat in vec3 skyLight;
 /* RENDERTARGETS: 0 */
 layout(location = 0) out vec4 outColor;
 void main() {
@@ -26,10 +44,11 @@ void main() {
     vec4 c = texture(gtexture, texcoord) * glcolor;
     if (c.a < 0.05) discard;
     bool rain = c.b > c.r * 1.25;
-    vec3 sky = pow(skyColor, vec3(2.2));
-    float light = dot(sky, vec3(0.2126, 0.7152, 0.0722)) * (0.25 + 0.75 * float(eyeBrightnessSmooth.y) / 240.0);
-    vec3 tint = rain ? vec3(0.85, 0.9, 1.0) : pow(c.rgb, vec3(2.2));
-    float alpha = rain ? c.a * 0.4 : c.a * 0.6;
-    outColor = vec4(tint * (light * 2.2 + 0.004), alpha);
+    float open = 0.3 + 0.7 * float(eyeBrightnessSmooth.y) / 240.0;
+    vec3 sky = vec3(luminance(skyLight)) * mix(vec3(1.0), vec3(0.9, 0.95, 1.05), 0.6);
+    vec3 tint = rain ? vec3(0.85, 0.9, 1.0) : toLinear(c.rgb);
+    float alpha = rain ? c.a * 0.5 : c.a * 0.75;
+    // Drops are brighter than the sky they refract only at the rims; snow is a diffuse white lit by the sky.
+    outColor = vec4(tint * sky * open * (rain ? 1.1 : 1.6) + 0.004, alpha);
 }
 #endif

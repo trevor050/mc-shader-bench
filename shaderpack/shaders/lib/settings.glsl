@@ -18,7 +18,7 @@
 #define MIN_LIGHT 0.006
 #define CU_EXPOSURE_SCALE 1.0 // Complementary-port lighting output scale (linear)
 #define LAVA_EMISSION 22.0
-#define BLOCK_EMISSION 13.0     // glowstone, lanterns, froglights, glow berries: bright enough to bloom     // lava emission strength (squared emissive channel times this)
+#define BLOCK_EMISSION 17.0     // glowstone, lanterns, froglights, glow berries: bright enough to bloom     // lava emission strength (squared emissive channel times this)
 
 // Voxel light field (lib/voxel.glsl): coloured, directional block light diffused through a grid around the
 // camera. Must match the image sizes in shaders.properties.
@@ -105,3 +105,4 @@
 #define STORM_WAVES 1.5           // extra wave height in rain and thunder
 #define EMITTER_BLOOM 0.35        // thresholded glow around lava, glowstone and other bright emitters
 #define EMITTER_BLOOM_THRESHOLD 3.0 // relative to the average scene brightness
+#define LAVA_HEAT 1.0             // close to a lava sea: rising embers and a burning red vignette

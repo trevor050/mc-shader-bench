@@ -83,3 +83,12 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Sun: disc radiance soft-capped (~1800) so bloom doesn't flood when a sliver shows; no TAA hot-pixel bypass (caused flicker). Eye adaptation state lives in colortex5 alpha, fed by capped luminance in colortex6.
 - Others commit to this repo too (commits under Trevor050). Check git log before editing sun/final code.
 - Editing the same file via PowerShell and Edit tool causes stale-read failures; re-Read before Edit.
+
+## Overworld V6 pass (2026-09-24)
+- New libs: night.glsl (aurora in deferred sky, fireflies in composite; custom uniform fireflyBiome from temperature/rainfall), rain.glsl (rainRipples for puddles + water).
+- In-cloud mist: composite cloudMistAt() near field; moon rims via global gCloudRim set in clouds_march before renderClouds.
+- thunderStrength is declared under THUNDER_UNIFORM guard in both atmosphere.glsl and cloud_weather.glsl; never redeclare it unguarded.
+- Portal tag: gbuffers_water (PROG_WATER only) writes colortex2 via outMat; blend.gbuffers_water.colortex2 keeps dst alpha. outMat must default to vec4(0). TAA reprojects MAT_PORTAL 1.3 blocks deeper; composite skips SSR for it.
+- Weather must be lit in pack HDR units (skyRadiance), not vanilla skyColor, or rain is invisible except over dark water.
+- Emitter light colour samples the whole 16-texel sprite (atlas grid assumption); per-face UV sampling made wall soul torches flicker red.
+- upsampleVL falls back to best-depth texel when no bilinear tap matches (removed smog glow outlines around Nether blocks).

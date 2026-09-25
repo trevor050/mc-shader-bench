@@ -31,8 +31,15 @@ layout(r32ui) uniform writeonly uimage3D voxelImg;
 // The colour a light block casts: an average over its sprite weighted hard toward the brightest, most
 // saturated texels, so a torch contributes its flame rather than its stick, glowstone its crystals rather than
 // the grout, and glow berries their fruit rather than the (far more numerous) leaves.
+// The whole sprite is sampled, not the face's own UV patch: the faces of small models (a wall torch's tilted stick,
+// a lantern's cap) each cover a different part of it, and whichever face wrote the voxel last decided the light's
+// colour, so a wall-mounted soul torch flickered red from its stick. Sprites of 16x16 texels sit on a 16-texel grid
+// in the atlas.
 vec3 emitterColor(vec2 uv, vec2 mid) {
-    vec2 halfExtent = abs(uv - mid);
+    vec2 atlas = vec2(textureSize(gtexture, 0));
+    vec2 spriteOrigin = floor(mid * atlas / 16.0) * 16.0;
+    mid = (spriteOrigin + 8.0) / atlas;
+    vec2 halfExtent = 8.0 / atlas;
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
     for (int y = 0; y < 6; y++) {

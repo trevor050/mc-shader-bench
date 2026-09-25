@@ -96,16 +96,33 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
     ivec2 i0 = ivec2(floor(p));
     vec2 f = fract(p);
     vec4 acc = vec4(0.0);
-    float wsum = 0.0;
+    float wsum = 0.0, match = 0.0;
     for (int k = 0; k < 4; k++) {
         ivec2 o = ivec2(k & 1, k >> 1);
         ivec2 t = clamp(i0 + o, ivec2(0), bufferSize - 1);
         vec2 bw = mix(1.0 - f, f, vec2(o));
         float sd = texelFetch(colortex8, t, 0).r;
         float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
-        float w = bw.x * bw.y * (exp(-rel * 6.0) + 1e-3);
+        float m = exp(-rel * 6.0);
+        match = max(match, m);
+        float w = bw.x * bw.y * (m + 1e-3);
         acc += texelFetch(colortex11, t, 0) * w;
         wsum += w;
+    }
+    // On thin near geometry (a block edge, a pillar one texel wide at half resolution) none of the four nearest
+    // samples may lie on the surface itself; blending them anyway painted the far, denser medium around every
+    // silhouette as a glowing outline. Take the best-matching sample of the wider neighbourhood instead.
+    if (match < 0.3) {
+        float best = 1e9;
+        vec4 pick = acc / max(wsum, 1e-5);
+        for (int y = -1; y <= 2; y++)
+            for (int x = -1; x <= 2; x++) {
+                ivec2 t = clamp(i0 + ivec2(x, y), ivec2(0), bufferSize - 1);
+                float sd = texelFetch(colortex8, t, 0).r;
+                float rel = abs(sd - sceneDist) / max(min(sd, sceneDist), 1.0);
+                if (rel < best) { best = rel; pick = texelFetch(colortex11, t, 0); }
+            }
+        return pick;
     }
     return acc / max(wsum, 1e-5);
 }
@@ -329,6 +346,19 @@ void main() {
         }
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;
+    }
+    // Standing close over a lava sea should feel dangerous: sparks rise all around and the edges of the view burn
+    // down to deep red, so the white-hot lava in the middle is what the eye is drawn to.
+    {
+        float heat = smoothstep(18.0, 3.0, cameraPosition.y - NETHER_LAVA_LEVEL) * LAVA_HEAT;
+        if (heat > 0.001) {
+            vec3 viewDir = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
+                               : normalize(playerPos);
+            col += lavaEmbers(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * 6.0 * heat;
+            vec2 e = (texcoord - 0.5) * vec2(viewWidth / viewHeight, 1.0);
+            float edge = smoothstep(0.25, 1.0, length(e) * 1.2);
+            col = mix(col, col * vec3(0.9, 0.32, 0.12), edge * heat * 0.8);
+        }
     }
 #endif
 

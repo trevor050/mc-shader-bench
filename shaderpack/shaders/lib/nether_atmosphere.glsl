@@ -37,6 +37,10 @@ vec2 netherSmog(vec3 p, float time, float ash) {
     float nearSea = exp(-hp / 30.0);
     // Fumes: a dense sheet hugging the lava seas.
     float sheet = exp(-hp / 3.5);
+    // Close over the lava the fumes stream upward in wisps with clear gaps between them. A uniform sheet turned the
+    // view from a lava shore into flat orange soup; broken wisps keep the sea visible and blinding through them.
+    float wisp = cloudTex(vec3(p.x * 0.055, (p.y - time * 2.2) * 0.07, p.z * 0.055) + 0.61).r;
+    sheet *= smoothstep(0.38, 0.78, wisp) * 1.5;
     float haze = 0.006 + 0.012 * nearSea + 0.01 * sheet;
 
     // Swirl: the domain rotates slowly with height and time, so rising columns twist and drift.
@@ -57,6 +61,46 @@ vec2 netherSmog(vec3 p, float time, float ash) {
 }
 
 float netherSmogDensity(vec3 p, float time, float ash) { return netherSmog(p, time, ash).x; }
+
+// Embers: sparks torn off the lava seas, rising fast and swaying, flaring and dying. An exact 3D DDA over 2-block
+// cells along the view ray near the camera. Returns radiance to add.
+vec3 lavaEmbers(vec3 camPos, vec3 rd, float maxDist, float t) {
+    const float CELL = 2.0;
+    const int STEPS = 24;
+    vec3 ro = camPos / CELL;
+    // Rising: the grid scrolls down so each spark climbs about 1.5 blocks a second.
+    ro.y -= t * 0.75;
+    vec3 cell = floor(ro);
+    vec3 stepDir = sign(rd);
+    vec3 tDelta = abs(1.0 / max(abs(rd), vec3(1e-4)));
+    vec3 tMax = (stepDir * (cell - ro) + stepDir * 0.5 + 0.5) * tDelta;
+    vec3 acc = vec3(0.0);
+    float limit = min(maxDist, 30.0) / CELL;
+    for (int i = 0; i < STEPS; i++) {
+        float tCell = min(tMax.x, min(tMax.y, tMax.z));
+        float h = hash12(cell.xz * 1.131 + cell.y * 2.717 + 0.7);
+        if (h > 0.8) {
+            float h2 = hash12(cell.zy * 1.93 + 3.3), h3 = hash12(cell.xy * 2.39 + 6.1);
+            vec3 m = cell + vec3(h2, fract(h * 9.1), h3) * 0.8 + 0.1;
+            m.xz += 0.25 * vec2(sin(t * 1.7 + h * 50.0), cos(t * 1.3 + h2 * 50.0));
+            vec3 d = m - ro;
+            float along = dot(d, rd);
+            if (along > 0.05 && along < limit) {
+                float perp2 = max(dot(d, d) - along * along, 0.0);
+                const float r = 0.018;
+                float life = fract(t * (0.35 + 0.3 * h3) + h2 * 7.0);
+                float flare = smoothstep(0.0, 0.1, life) * (1.0 - life);
+                vec3 c = mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), flare);
+                acc += c * (exp(-perp2 / (r * r)) + 0.05 * exp(-perp2 / (r * r * 25.0))) * flare * smoothstep(limit, limit * 0.5, along);
+            }
+        }
+        if (tCell > limit) break;
+        if (tMax.x < tMax.y && tMax.x < tMax.z) { cell.x += stepDir.x; tMax.x += tDelta.x; }
+        else if (tMax.y < tMax.z) { cell.y += stepDir.y; tMax.y += tDelta.y; }
+        else { cell.z += stepDir.z; tMax.z += tDelta.z; }
+    }
+    return acc;
+}
 
 // Light arriving at a smoke point from the lava seas below: an analytic stand-in for sources beyond the voxel
 // field. Strong, deep orange low down, falling off with height; slightly flickering heat.
