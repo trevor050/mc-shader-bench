@@ -94,6 +94,9 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
         else if (mat == MAT_PORTAL) { c = vec3(0.72, 0.22, 1.0); extra = 2u; }
         else if (c.r > 0.9 && c.b < 0.35) extra = 1u;
         data = packVoxel(VOXEL_EMITTER, uint(emission + 0.5), c, extra);
+    } else if (mat == MAT_SCULK) {
+        // Sculk seeps a faint teal into the light field: the air above sculk fields glows.
+        data = packVoxel(VOXEL_EMITTER, 2u, vec3(0.08, 0.8, 0.95));
     } else if (mat == MAT_WATER) {
         data = packVoxel(VOXEL_TINT, 0u, vec3(0.55, 0.80, 0.85));
     } else if (mat == MAT_LEAVES) {

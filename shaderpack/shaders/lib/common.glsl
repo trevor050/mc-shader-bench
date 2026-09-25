@@ -23,6 +23,7 @@
 #define MAT_GLOWBERRY 17    // cave vines with glow berries: only the berry texels glow
 #define MAT_ORE 18          // ores: gem and metal texels glossy, glinting under nearby light
 #define MAT_STONE 19        // natural cave rock: damp and glossy where no sky reaches
+#define MAT_SCULK 22        // sculk: bioluminescent specks with a travelling heartbeat pulse
 #define MAT_LAVA_FLOWING 16 // block id only: flowing lava, remapped to MAT_LAVA plus a flag in vertex shaders
 #define MAT_ENTITY 20
 #define MAT_HAND 21

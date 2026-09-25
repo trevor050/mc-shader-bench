@@ -106,6 +106,9 @@ uniform int heldBlockLightValue;
 uniform int heldBlockLightValue2;
 #endif
 #ifdef PROG_TERRAIN
+#include "/lib/cave.glsl"
+#endif
+#ifdef PROG_TERRAIN
 uniform float far;
 uniform int frameCounter;
 uniform float frameTimeCounter;
@@ -297,6 +300,11 @@ void main() {
             outAlbedo.rgb *= 1.0 - 0.22 * wet; // albedo was already written above
             smoothness = wet * mix(0.62, 0.38, smoothstep(0.1, 0.5, tl));
         }
+    } else if (mat == MAT_SCULK) {
+        // Sculk's cyan specks are bioluminescent: they breathe with the travelling heartbeat (lib/cave.glsl).
+        float cyan = saturate(((albedo.g + albedo.b) * 0.5 - albedo.r) * 4.0) * smoothstep(0.22, 0.5, max(albedo.g, albedo.b));
+        emissive = max(emissive, cyan * SCULK_GLOW * sculkPulse(relPos + cameraPosition, frameTimeCounter));
+        smoothness = cyan * 0.4;
     } else if (mat == MAT_ORE) {
         // Gem and metal texels stand out from the grey host rock by saturation (or, for iron and gold, warm
         // brightness). They are glossy and throw tiny glints that re-roll with the view direction, so a vein

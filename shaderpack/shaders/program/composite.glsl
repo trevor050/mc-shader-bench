@@ -325,5 +325,13 @@ void main() {
 #endif
 #endif
 
+#if !defined DIM_NETHER && !defined DIM_END
+    // Deep Dark: soul motes rising through the air around you (lib/cave.glsl).
+    if (inDeepDark > 0.01 && isEyeInWater == 0) {
+        vec3 viewDir = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
+                           : normalize(playerPos);
+        col += soulMotes(cameraPosition, viewDir, sky ? 1e3 : dist, frameTimeCounter) * SOUL_MOTES * inDeepDark;
+    }
+#endif
     outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);}
 #endif
