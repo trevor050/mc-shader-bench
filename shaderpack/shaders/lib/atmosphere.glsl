@@ -158,8 +158,8 @@ float sunsetWindow(float e) {
 vec3 sunsetLightTint(float e) {
     // After real dusk skies: the last light on high cloud is a soft rose-lilac, not a dark crimson.
     const vec3 gold    = vec3(1.00, 0.68, 0.34);
-    const vec3 orange  = vec3(1.00, 0.50, 0.22);
-    const vec3 coral   = vec3(1.00, 0.44, 0.36);
+    const vec3 orange  = vec3(1.00, 0.34, 0.08);
+    const vec3 coral   = vec3(1.00, 0.30, 0.22);
     const vec3 magenta = vec3(1.00, 0.40, 0.52);
     const vec3 crimson = vec3(0.78, 0.40, 0.80);
     // Orange lasts until the sun is well down (Livingston photos: blazing orange toward the sun a degree after
@@ -182,7 +182,7 @@ vec3 cloudSunsetLight(vec3 sunDir, float lift) {
     float lit = smoothstep(-0.14, -0.03, e);
     // Around and just after sunset the clouds are still brightly lit (pink, not maroon): the grazing-path
     // transmittance alone made them too dim, and dim pink tone-maps to brownish red.
-    float afterglow = mix(1.8, 1.0, smoothstep(-0.02, 0.08, e));
+    float afterglow = mix(1.45, 1.0, smoothstep(-0.02, 0.08, e));
     return sunsetLightTint(e) * lum * 2.2 * afterglow * lit * SUN_ILLUMINANCE;
 }
 vec3 cloudSunsetLight(vec3 sunDir) { return cloudSunsetLight(sunDir, 0.0); }

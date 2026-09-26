@@ -51,6 +51,17 @@ CloudWeather cloudWeather() {
     w.cirrus *= 1.0 - rainStrength;
     w.low = mix(w.low, 0.9, rainStrength);
     w.cb = max(w.cb, thunderStrength);
+#if SKY_PRESET == 1
+    // Storm shield (the 2026-09-25 pre-nor'easter sky): altocumulus under a high veil, ragged fractus below, a little
+    // cirrus, no fair-weather cumulus; the deck ends west of the observer (clouds.glsl).
+    w.cov0 = 0.06; w.tower = 0.3; w.cov1 = 0.72; w.cirrus = 0.3; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
+#elif SKY_PRESET == 2
+    // Mackerel sky: a full altocumulus deck.
+    w.cov0 = 0.05; w.tower = 0.3; w.cov1 = 0.85; w.cirrus = 0.1; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
+#elif SKY_PRESET == 3
+    // Cirrus: fans and mares' tails over a few small cumulus.
+    w.cov0 = 0.15; w.tower = 0.4; w.cov1 = 0.0; w.cirrus = 0.95; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
+#endif
 #ifdef CLOUD_DEBUG_ALTO
     w.cov1 = 0.8; w.cirrus = 0.35; w.cov0 = 0.1;
 #endif

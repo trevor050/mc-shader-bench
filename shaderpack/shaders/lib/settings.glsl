@@ -108,7 +108,8 @@
 #define LAVA_HEAT 1.0             // close to a lava sea: rising embers and a burning red vignette
 #define DUSK_EXPOSURE 1.15       // extra exposure around sunset and dusk (eye/phone adaptation to the fading light)
 #define CLOUD_IRIDESCENCE 1.0     // pastel diffraction colours on thin altocumulus near the sun
-#define CLOUD_DUSK_SKYLIGHT 1.7   // skylight on clouds around sunset (lavender fill in shade, pink away from the sun)
+#define CLOUD_DUSK_SKYLIGHT 1.3   // skylight on clouds around sunset (lavender fill in shade, pink away from the sun)
 #define DUSK_VIBRANCE 2.2         // extra vibrance through the sunset window
 #define CLOUD_DOME_ALBEDO 0.05     // share of the cloud-level sunlight a lit deck sends down as sky light
 #define CLOUD_DOME_STRENGTH 1.0
+#define SKY_PRESET 0              // [0 1 2 3] 0 = weather clock, 1 = storm shield (pre-nor'easter), 2 = mackerel, 3 = cirrus
