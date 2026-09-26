@@ -61,6 +61,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     // Fine structure the texture cannot hold at screen resolution (it is ~0.18 degrees per texel, magnified a
     // few times on screen): star-cloud grain and thin dark wisps from tileable 3D noise fixed on the celestial
     // sphere, strongest where the band is bright. The broad shapes and colours stay the baked texture's.
+#if NIGHT_DETAIL_QUALITY >= 2
     {
         vec3 csd = vec3(dot(rd, b1), dot(rd, b2), sinDec);
         float band = smoothstep(0.015, 0.3, luminance(mw));
@@ -73,6 +74,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
             mw *= mix(1.0, 0.3 + 0.7 * smoothstep(0.2, 0.62, wisp), band * 0.55);
         }
     }
+#endif
     // The diffuse galaxy needs deep darkness. A quintic ease (zero slope at both
     // ends), squared, reveals the bright core slowly while the last twilight fades.
     // Bright catalogue stars retain their independent, earlier visibility below.
@@ -91,6 +93,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
     // density follows the galaxy's brightness (dense in the band, sparse elsewhere). Cells are fixed on the
     // celestial sphere so the dust turns with the sky.
+#if NIGHT_DETAIL_QUALITY >= 1
     {
         vec3 cs = vec3(dot(rd, b1), dot(rd, b2), sinDec);
         vec3 sp = cs / pixelAngle / 2.2;
@@ -104,6 +107,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
             col += vec3(0.85, 0.9, 1.0) * core * (0.25 + b * b * 1.6) * STAR_BRIGHTNESS * 6000.0 / (pixelAngle * pixelAngle * 1.0e6);
         }
     }
+#endif
 
     const vec2 size = vec2(2048.0, 1024.0);
     vec2 st = uv * size;
@@ -124,6 +128,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     float minStarDot = 1.0 - 0.5 * maxStarAngle * maxStarAngle;
     bool canCullByAngle = maxStarAngle < PI;
     vec3 acc = vec3(0.0);
+    float airmass = 1.0 - smoothstep(0.05, 0.6, rd.y);
     for (int dy = -1; dy <= 1; dy++) {
         int y = c.y + dy;
         if (y < 0 || y >= 1024) continue;
@@ -148,7 +153,6 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
             float flux = exp2(-1.3288 * mag); // 10^(-0.4 mag)
             // Twinkling: the long air path near the horizon makes stars scintillate; overhead they hold still.
             float seed = fract(sin(dot(vec2(t), vec2(12.9898, 78.233))) * 43758.5453);
-            float airmass = 1.0 - smoothstep(0.05, 0.6, rd.y);
             flux *= 1.0 + airmass * 0.55 * (sin(time * (7.0 + seed * 9.0) + seed * 40.0) * 0.5
                                            + sin(time * (13.0 + seed * 5.0) + seed * 17.0) * 0.5);
             acc += starColor(s.a * 2.5 - 0.5) * flux * exp(-d2 / (2.0 * sp2)) * norm * (sigmaPx * sigmaPx / sp2);
@@ -170,7 +174,8 @@ vec3 moonSky(vec3 rd, vec3 moonDir) {
     float illum = 0.5 + 0.5 * cos(phaseAngle);       // lit fraction
     float horizon = smoothstep(-0.03, 0.05, moonDir.y);
     // Air mass reddening near the horizon, softened: a hint of warmth, not orange.
-    vec3 airTint = mix(vec3(1.0), sunTransmittance(moonDir) / max(luminance(sunTransmittance(moonDir)), 1e-3), 0.35);
+    vec3 moonAir = sunTransmittance(moonDir);
+    vec3 airTint = mix(vec3(1.0), moonAir / max(luminance(moonAir), 1e-3), 0.35);
 
     vec3 col = vec3(0.0);
     vec3 right = normalize(cross(moonDir, CELESTIAL_NORTH));

@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
 
 import numpy as np
 
@@ -57,7 +58,7 @@ def number(source: str, pattern: str) -> float:
     return float(match[1])
 
 
-def step_bound(clouds: str) -> dict:
+def step_bound(clouds: str, profile: int | None = None) -> dict:
     """Replay production stride constants in float32, assuming no early opacity exit."""
     deck = function(clouds, "marchDeck")
     span = number(deck, r"t0\s*\+\s*([\d.]+)\s*,\s*rayLimit")
@@ -71,7 +72,13 @@ def step_bound(clouds: str) -> dict:
                                np.linspace(1., span, 1200, dtype="f4"))
     end = starts + spans
     position = starts.copy()
-    nominal = (end - starts) / np.float32(nominal_count)
+    scale = 1.0
+    if profile is not None:
+        quality = (SHADERS / "lib/performance_quality.glsl").read_text()
+        control = "#if PERFORMANCE_PROFILE >= 4" if profile == 4 else f"#elif PERFORMANCE_PROFILE == {profile}" if profile else "#else"
+        block = re.search(re.escape(control) + r"\s*\n(.*?)(?=\n#(?:elif|else|endif))", quality, re.S)[1]
+        scale = float(re.search(r"#define CLOUD_MARCH_SCALE ([\d.]+)", block)[1])
+    nominal = (end - starts) / np.float32(nominal_count) * np.float32(scale)
     counts = np.zeros(starts.shape, dtype="i4")
     for _ in range(bound):
         active = position < end
@@ -82,13 +89,16 @@ def step_bound(clouds: str) -> dict:
     if np.any(missing > 0.):
         raise AssertionError(f"deck march truncates {float(missing.max()):.6f} blocks at loop bound {bound}")
     return {"intervals": int(starts.size), "loop_bound": bound, "max_steps": int(counts.max()),
-            "max_span": span, "nominal_steps": nominal_count, "close_stride": base, "growth": growth}
+            "max_span": span, "nominal_steps": nominal_count, "nominal_stride_scale": scale,
+            "close_stride": base, "growth": growth, "active_in_selected_profile": profile != 0}
 
 
-def core_shader() -> str:
+def core_shader(profile: int | None = None) -> str:
     settings = compile_check.expand(SHADERS / "lib/settings.glsl", [])
     # The designed presets have separate authored masks; probe the ordinary weather path.
     settings = re.sub(r"#define SKY_PRESET [^\n]*", "#define SKY_PRESET 0", settings)
+    if profile is not None:
+        settings = re.sub(r"#define PERFORMANCE_PROFILE [^\n]*", f"#define PERFORMANCE_PROFILE {profile}", settings)
     core = "#version 430 core\n#define FRAGMENT\n#define patch patchValue\n"
     core += "uniform float rainStrength;\nuniform float frameTimeCounter;\n" + settings
     for name in ["common", "atmosphere", "lighting", "clouds"]:
@@ -359,14 +369,17 @@ void main() {
     return {"azimuths_per_case": 257, "cases": result}
 
 
-def link_checks() -> dict:
+def link_checks(profile: int | None = None) -> dict:
     """Use the existing Iris include/prelude expansion on the actual pass pairs."""
     result = {}
     with tempfile.TemporaryDirectory(prefix="cloud-link-") as folder:
         for name in ["deferred", "composite2"]:
             paths = []
             for suffix, stage in [("vsh", "vert"), ("fsh", "frag")]:
-                first, rest = compile_check.expand(SHADERS / f"{name}.{suffix}", []).split("\n", 1)
+                expanded = compile_check.expand(SHADERS / f"{name}.{suffix}", [])
+                if profile is not None:
+                    expanded = re.sub(r"#define PERFORMANCE_PROFILE [^\n]*", f"#define PERFORMANCE_PROFILE {profile}", expanded)
+                first, rest = expanded.split("\n", 1)
                 path = Path(folder) / f"{name}.{stage}"
                 path.write_text(first + "\n" + compile_check.PRELUDE + rest, encoding="utf-8")
                 paths.append(str(path))
@@ -377,11 +390,21 @@ def link_checks() -> dict:
     return result
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cpu-only", action="store_true", help="skip all actual-GLSL checks; only verify the parsed march bound")
     parser.add_argument("--report", type=Path, default=Path("work/cloud-verification.json"))
-    args = parser.parse_args()
+    default_profile = re.search(r"#define PERFORMANCE_PROFILE (\d+)", (SHADERS / "lib/settings.glsl").read_text())[1]
+    parser.add_argument("--profile", choices=("0", "1", "2", "3", "4", "all"), default=default_profile,
+                        help="Potato 0 through Ultra 4, or all sequentially")
+    args = parser.parse_args(argv)
+    if args.profile == "all":
+        original_args = sys.argv[1:] if argv is None else argv
+        for profile in range(5):
+            report_path = args.report.with_name(f"{args.report.stem}-profile-{profile}{args.report.suffix}")
+            main(original_args + ["--profile", str(profile), "--report", str(report_path)])
+        return
+    args.profile = int(args.profile)
     output = args.report if args.report.is_absolute() else ROOT / args.report
     output.parent.mkdir(parents=True, exist_ok=True)
     # A failed/interrupted run must not leave an older successful receipt at this path.
@@ -389,15 +412,21 @@ def main() -> None:
     clouds = (SHADERS / "lib/clouds.glsl").read_text()
     composite = (SHADERS / "program/composite.glsl").read_text()
     deferred = (SHADERS / "program/deferred.glsl").read_text()
-    core = core_shader()
+    core = core_shader(profile=args.profile)
     report = {"mode": "cpu-only" if args.cpu_only else "cpu-and-glsl",
+              "performance_profile": args.profile,
+              "performance_profile_name": ("Potato", "Low", "Medium", "High", "Ultra")[args.profile],
+              "quality_header_sha256": hashlib.sha256((SHADERS / "lib/performance_quality.glsl").read_bytes()).hexdigest(),
+              "extracted_helper_scope": {
+                  "fog_algebra_and_foreground_depth": "Profile-independent full helper algebra; active callers are profiles 1-4. Potato caller bypasses these, so this does not validate Potato composition.",
+                  "selected_profile_core": "Weather, sky/haze, cloud boundaries and link checks compile the explicit selected profile."},
               "source_sha256": hashlib.sha256((core + composite + deferred).encode()).hexdigest(),
               "noise_sha256": hashlib.sha256((SHADERS / "textures/cloudnoise.dat").read_bytes()).hexdigest(),
               "climate_uniforms": {"neutral": NEUTRAL, "humid": HUMID},
               "limitations": "Small exact-GLSL numerical probes. No Iris temporal/deferred frame, game controls, visual certification, or performance measurement.",
-              "deck_coverage": step_bound(clouds)}
+              "deck_coverage": step_bound(clouds, profile=args.profile)}
     if not args.cpu_only:
-        report["pass_links"] = link_checks()
+        report["pass_links"] = link_checks(profile=args.profile)
         import moderngl
         ctx = moderngl.create_standalone_context(require=430)
         noise = None

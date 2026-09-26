@@ -8,6 +8,9 @@ uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
 uniform vec3 cameraPosition;
+#if VANILLA_LIGHTING && !defined DIM_NETHER
+uniform vec3 fogColor;
+#endif
 #include "/lib/atmosphere.glsl"
 #include "/lib/lighting.glsl"
 #include "/lib/clouds.glsl"
@@ -20,6 +23,11 @@ flat out vec3 envDirect;
 flat out vec3 envAmbient;
 flat out CloudLightEnv nearCloudLight;
 flat out float nearCloudLightT;
+#if !defined DIM_NETHER && !defined DIM_END
+flat out vec4 cloudWeather0;
+flat out vec3 cloudWeather1;
+flat out vec3 cloudDeckWeather;
+#endif
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -28,8 +36,20 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+    CloudWeather w = cloudWeather();
+    cloudWeather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
+    cloudWeather1 = vec3(w.low, w.lowCov, w.cb);
+    cloudDeckWeather = vec3(veilAmount(w), fractusAmount(w), virgaAmount(w));
+    gCloudDeckWeather = cloudDeckWeather;
+#endif
+#if VANILLA_LIGHTING
+    nearCloudLight = CloudLightEnv(vec3(0.0, 1.0, 0.0), vec3(0.0), vec3(0.0, 1.0, 0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0);
+    nearCloudLightT = 1.0;
+#else
     nearCloudLight = makeCloudLightEnv(sunDir);
     nearCloudLightT = cloudNearLightTransmittance(cameraPosition, nearCloudLight);
+#endif
 }
 #endif
 
@@ -37,8 +57,10 @@ void main() {
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
+#if !VANILLA_LIGHTING
 uniform sampler2D colortex3;
 uniform sampler2D colortex9;
+#endif
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex0;
@@ -52,15 +74,19 @@ uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
 uniform float rainLocal;
+uniform float fogStart;
+uniform float fogEnd;
 #include "/lib/cave.glsl"
-#if defined DIM_NETHER
+#if defined DIM_NETHER && !VANILLA_LIGHTING
 #include "/lib/voxel.glsl"
 uniform usampler3D voxelSampler;
 uniform ivec3 cameraPositionInt;
 #define EMBERS_VOXEL
 #include "/lib/nether_atmosphere.glsl"
 #endif
+#if !VANILLA_LIGHTING
 #include "/lib/reflections.glsl"
+#endif
 #ifdef DIM_END
 #include "/lib/end_atmosphere.glsl"
 #endif
@@ -72,6 +98,11 @@ flat in vec3 envDirect;
 flat in vec3 envAmbient;
 flat in CloudLightEnv nearCloudLight;
 flat in float nearCloudLightT;
+#if !defined DIM_NETHER && !defined DIM_END
+flat in vec4 cloudWeather0;
+flat in vec3 cloudWeather1;
+flat in vec3 cloudDeckWeather;
+#endif
 #include "/lib/night.glsl"
 uniform float fireflyBiome;
 
@@ -93,6 +124,7 @@ layout(location = 1) out vec4 outAdaptLum;
 
 // Restore the same premultiplied foreground cloud layer after fogging its background. Cloud distances survive
 // in c3 until this pass; c8 now belongs to VL and cannot identify the clouds seen by deferred/forward surfaces.
+#if !VANILLA_LIGHTING
 vec4 cloudForegroundAt(vec2 uv, float sceneDist, bool entity) {
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
     if (entity) return vec4(0.0, 0.0, 0.0, 1.0);
@@ -118,6 +150,7 @@ vec4 cloudForegroundAt(vec2 uv, float sceneDist, bool entity) {
     return vec4(0.0, 0.0, 0.0, 1.0);
 #endif
 }
+#endif
 
 vec3 fogBehindClouds(vec3 color, vec3 fogColor, float amount, vec4 clouds) {
     // If color = background * cloudT + cloudRGB, this equals fog(background) * cloudT + cloudRGB.
@@ -125,13 +158,15 @@ vec3 fogBehindClouds(vec3 color, vec3 fogColor, float amount, vec4 clouds) {
     return color * (1.0 - amount) + (fogColor * clouds.a + clouds.rgb) * amount;
 }
 
-#if 1
+#if !VANILLA_LIGHTING && VL_STEPS > 0
 uniform sampler2D colortex11;
 uniform sampler2D colortex8;
+#endif
 uniform float viewWidth;
 uniform float viewHeight;
 
 // Joint-bilateral upsample of the half-resolution light-shaft/mist history (see deferred's upsampleClouds).
+#if !VANILLA_LIGHTING && VL_STEPS > 0
 vec4 upsampleVL(vec2 uv, float sceneDist) {
     ivec2 bufferSize = textureSize(colortex11, 0);
     vec2 bufferRes = vec2(bufferSize);
@@ -192,6 +227,35 @@ vec4 upsampleVL(vec2 uv, float sceneDist) {
 #endif
 
 void main() {
+#if !defined DIM_NETHER && !defined DIM_END
+    gCloudDeckWeather = cloudDeckWeather;
+#endif
+#if VANILLA_LIGHTING
+    // Vanilla-lit sRGB travels directly to final. A single analytic fog evaluation retains depth,
+    // underwater visibility and the DH horizon without reading any disabled cloud/VL history.
+    vec3 col = texture(colortex0, texcoord).rgb;
+    float depth = texture(depthtex0, texcoord).r;
+    float dhDepth = depth >= 1.0 ? texture(dhDepthTex0, texcoord).r : 1.0;
+    if (depth >= 0.56 && (depth < 1.0 || dhDepth < 1.0)) {
+        vec3 viewPos = projectAndDivide(depth < 1.0 ? gbufferProjectionInverse : dhProjectionInverse,
+                                       vec3(texcoord, depth < 1.0 ? depth : dhDepth) * 2.0 - 1.0);
+        vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
+        float dist = length(playerPos);
+        float amount = smoothstep(fogStart, max(fogEnd, fogStart + 1.0), dist);
+        vec3 haze = fogColor;
+#if !defined DIM_NETHER && !defined DIM_END
+        if (isEyeInWater == 0) {
+            vec3 skyHaze = max(hazeColor(normalize(playerPos), sunDir), vec3(0.0));
+            haze = pow(skyHaze / (vec3(1.0) + skyHaze), vec3(1.0 / 2.2));
+            if (dhFarPlane > 0.0) amount = smoothstep(LOD_DISTANCE * 0.75, LOD_DISTANCE * 0.97, dist);
+            amount = max(amount, 1.0 - exp(-dist * rainLocal * 0.004 * FOG_DENSITY));
+        }
+#endif
+        col = mix(col, haze, amount);
+    }
+    outColor = vec4(col, 1.0);
+    outAdaptLum = vec4(0.0);
+#else
     vec3 col = texture(colortex0, texcoord).rgb;
     float depth = texture(depthtex0, texcoord).r;
     // The hand is a screen-space overlay with its own depth convention. Keep world fog, underwater
@@ -317,7 +381,10 @@ void main() {
         vec3 mrd = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
                        : normalize(playerPos);
         gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
-        vec4 mist = cloudNearFog(cameraPosition, mrd, sky ? 1e6 : dist, nearCloudLight, nearCloudLightT, ignTemporal(gl_FragCoord.xy, frameCounter));
+        vec4 mist = cloudNearFog(cameraPosition, mrd, sky ? 1e6 : dist, nearCloudLight, nearCloudLightT,
+                                ignTemporal(gl_FragCoord.xy, frameCounter),
+                                CloudWeather(cloudWeather0.x, cloudWeather0.y, cloudWeather0.z, cloudWeather0.w,
+                                             cloudWeather1.x, cloudWeather1.y, cloudWeather1.z));
         col = col * mist.a + mist.rgb;
         foregroundClouds = vec4(mist.rgb + mist.a * foregroundClouds.rgb, mist.a * foregroundClouds.a);
     }
@@ -414,8 +481,10 @@ void main() {
             float farT = exp(-sigmaFar * (smogDist - NETHER_SMOG_RANGE));
             col = col * farT + farLight * 0.45 * (1.0 - farT);
         }
+#if VL_STEPS > 0 && NETHER_SMOG_STEPS > 0
         vec4 smog = upsampleVL(texcoord, sky ? 1e6 : dist);
         col = col * smog.a + smog.rgb;
+#endif
     }
     // Standing close over a lava sea should feel dangerous: sparks rise above the pool and the
     // edges burn down to red, drawing the eye toward the white-hot center.
@@ -432,7 +501,7 @@ void main() {
     }
 #endif
 
-#if defined DIM_END
+#if defined DIM_END && VL_STEPS > 0
     // End storm from the half-resolution march (vl_march + temporal accumulation).
     {
         vec4 storm = upsampleVL(texcoord, sky ? 1e6 : dist);
@@ -443,10 +512,12 @@ void main() {
 #endif
 
 #ifdef VOLUMETRIC_LIGHT
+#if VL_STEPS > 0
 #if !defined DIM_NETHER && !defined DIM_END
     // Light shafts and ground mist from the half-resolution march (vl_march + temporal accumulation).
     vec4 vl = upsampleVL(texcoord, sky ? 1e6 : dist);
     col = col * vl.a + vl.rgb;
+#endif
 #endif
 #endif
 
@@ -470,5 +541,7 @@ void main() {
     }
 #endif
 #endif
-    outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);}
+    outColor = vec4(col, 1.0); outAdaptLum = adaptMeter(col);
+#endif
+}
 #endif

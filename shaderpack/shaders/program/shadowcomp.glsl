@@ -6,6 +6,7 @@
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
+#ifdef LIGHT_FIELD
 #include "/lib/voxel.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
@@ -89,3 +90,9 @@ void main() {
     if (readA) imageStore(lightFieldB, pos, light);
     else imageStore(lightFieldA, pos, light);
 }
+#else
+// No resource declarations or sampler/image work survive when the light field is disabled.
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+const ivec3 workGroups = ivec3(1, 1, 1);
+void main() {}
+#endif

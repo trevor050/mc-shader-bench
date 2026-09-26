@@ -111,7 +111,14 @@ void main() {
     outDist = vec4(dist, 0.0, 0.0, 0.0);
     vec3 rd = normalize(playerPos);
 
-#if defined DIM_NETHER
+#if VL_NEAR_STEPS == 0 || VL_STEPS == 0
+    outScatter = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+#elif defined DIM_NETHER
+#if NETHER_SMOG_STEPS == 0
+    outScatter = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+#else
     // Smog march. Steps grow with distance (dense sampling where the field and billows have detail), the ray
     // stops at the scene or at NETHER_SMOG_RANGE; composite.glsl extends the far remainder analytically.
     if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
@@ -160,6 +167,7 @@ void main() {
     }
     outScatter = vec4(scatter, trans);
     return;
+#endif
 #elif defined DIM_END
     // End storm march (lib/end_atmosphere.glsl): exponential spacing out to 384 blocks, clear near the camera.
     if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
@@ -169,7 +177,8 @@ void main() {
     float stormI = endStormIntensity();
     vec3 scatter = vec3(0.0);
     float trans = 1.0;
-    const int STEPS = 16;
+    const int BASE_VL = PERFORMANCE_PROFILE >= 4 ? 20 : PERFORMANCE_PROFILE == 3 ? 14 : PERFORMANCE_PROFILE == 2 ? 10 : 6;
+    const int STEPS = max(1, (END_STORM_STEPS * VL_STEPS + BASE_VL / 2) / BASE_VL);
     const float expFactor = 11.0;
     float tPrev = 0.0;
     for (int i = 0; i < STEPS; i++) {
@@ -227,13 +236,16 @@ void main() {
     // test filled oceans and shadowed terrain with white scatter from the camera to the surface.
     float caveView = 1.0 - smoothstep(0.45, 0.85, skyExposure);
     float night = 1.0 - smoothstep(-0.12, 0.08, sunDir.y);
-    float dust = CAVE_AIR_GLOW * caveDustDensity() * max(underground, night * 0.3);
+    float caveDust = caveDustDensity();
+    float dust = CAVE_AIR_GLOW * caveDust * max(underground, night * 0.3);
+    float beamDust = enclosed * caveView * caveDust * CAVE_SUNBEAM;
     // Isotropic phase and the field's amplitude scale.
     const float DUST_PHASE = 0.6;
 
     // Near segment: inside shadow range, terrain and cloud shadows both carve the air.
     float nearEnd = min(dist, SHADOW_DIST * 1.4);
-    const int NEAR = 16;
+    const int BASE_VL = PERFORMANCE_PROFILE >= 4 ? 20 : PERFORMANCE_PROFILE == 3 ? 14 : PERFORMANCE_PROFILE == 2 ? 10 : 6;
+    const int NEAR = max(1, (VL_NEAR_STEPS * VL_STEPS + BASE_VL / 2) / BASE_VL);
     float stepLen = nearEnd / float(NEAR);
     for (int i = 0; i < NEAR; i++) {
         vec3 p = rd * (float(i) + dither) * stepLen;
@@ -260,7 +272,6 @@ void main() {
         vec3 sun = envDirect * vis * skyExposure;
         // Underground the same dust that catches torchlight catches daylight falling through an opening: a
         // visible beam. Only where the shadow map says the air is sunlit, so the rest of the cave stays dark.
-        float beamDust = enclosed * caveView * caveDustDensity() * CAVE_SUNBEAM;
         vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase + beamDust * mix(airPhase, 0.08, 0.5)) + mistAmbient * mist * skyExposure;
         float stepT = exp(-mist * stepLen);
         // Energy-conserving integral over the step for the mist part; the thin air term is linear.
@@ -271,7 +282,7 @@ void main() {
     // Far segment: mist only (distant air is the analytic haze), lit through cloud shadows.
     float farEnd = min(dist, 3000.0);
     if (farEnd > nearEnd && amount > 0.01) {
-        const int FAR = 10;
+        const int FAR = max(1, (VL_FAR_STEPS * VL_STEPS + BASE_VL / 2) / BASE_VL);
         float fl = (farEnd - nearEnd) / float(FAR);
         for (int i = 0; i < FAR; i++) {
             vec3 wp = rd * (nearEnd + (float(i) + dither) * fl) + cameraPosition;

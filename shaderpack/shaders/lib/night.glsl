@@ -83,12 +83,17 @@ vec3 auroraEmission(vec3 column, vec3 h, vec3 x, float phase, float seed) {
     float drift = 2.1 * sin(phase * 23.0 + seed) + 0.8 * sin(phase * 61.0);
     vec3 coarse, activity;
     for (int j = 0; j < 3; ++j) {
+#if NIGHT_DETAIL_QUALITY == 0
+        coarse[j] = valueNoise(vec2(x[j] * 0.010 + drift * 0.07, offset[j] + sin(phase * 7.0)));
+        activity[j] = 0.65;
+#else
         // A slow, irregular warp gives each billow a different width. There is
         // no fine-frequency comb underneath the luminous cloth-like sheet.
         float flow = valueNoise(vec2(x[j] * 0.0037 + drift * 0.025, offset[j] * 4.1));
         coarse[j] = valueNoise(vec2(x[j] * 0.010 + 1.6 * flow + drift * 0.07,
                                     offset[j] + sin(phase * 7.0)));
         activity[j] = valueNoise(vec2(x[j] * 0.006 + sin(phase * 3.0), offset[j] + 0.2));
+#endif
     }
     // Continuous emission with broad uneven billows, no narrow parallel pickets.
     vec3 rays = 0.42 + 0.50 * coarse;
@@ -125,7 +130,12 @@ vec3 aurora(vec3 rd, float t) {
     if (dot(monotone, vec3(1.0)) < 0.0001) return vec3(0.0);
     vec3 root = vec3(155.0, 285.0, 445.0) / max(-(rd.z + 0.16 * rd.y), 0.04);
     vec3 dr, cr, h, x, fr;
-    for (int refine = 0; refine < 4; ++refine) {
+#if NIGHT_DETAIL_QUALITY == 0
+    const int AURORA_REFINEMENTS = 2;
+#else
+    const int AURORA_REFINEMENTS = 4;
+#endif
+    for (int refine = 0; refine < AURORA_REFINEMENTS; ++refine) {
         fr = auroraField(root, rd, observer, phase, seed, dr, cr, h, x);
         root = clamp(root - fr / min(dr, vec3(-0.025)), 0.0, 5000.0);
     }

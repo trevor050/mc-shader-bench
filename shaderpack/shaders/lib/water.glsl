@@ -13,7 +13,7 @@ float waterHeight(vec2 p, float t, vec2 dir, float speed) {
     // Small, fixed rotations keep octaves from all lining up (no grid) while staying roughly downwind.
     const mat2 rot = mat2(0.94, -0.34, 0.34, 0.94);
     vec2 d = dir;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < WATER_WAVE_OCTAVES; i++) {
         vec2 q = (p - d * t * speed * (1.0 + float(i) * 0.35)) * freq;
         // Stretch across the wind: ripples are longer along their crest than across it.
         vec2 qs = vec2(dot(q, d), dot(q, vec2(-d.y, d.x)) * 0.55);
@@ -28,6 +28,9 @@ float waterHeight(vec2 p, float t, vec2 dir, float speed) {
 
 // worldPos is the fragment's world position, flatN its geometric normal. strength fades waves with distance.
 vec3 waterNormal(vec3 worldPos, vec3 flatN, float t, float strength) {
+#if WATER_WAVE_OCTAVES == 0
+    return flatN;
+#else
     bool flowing = flatN.y < 0.995;
     vec2 dir = flowing ? normalize(flatN.xz + 1e-5) : WATER_WIND;
     float speed = flowing ? 2.4 : 0.55;
@@ -42,6 +45,7 @@ vec3 waterNormal(vec3 worldPos, vec3 flatN, float t, float strength) {
     vec3 n = normalize(vec3((h - hx) * amp / e, 1.0, (h - hz) * amp / e));
     if (flowing) n = normalize(n + flatN - vec3(0.0, 1.0, 0.0));
     return n;
+#endif
 }
 
 float fresnelSchlick(float cosTheta, float f0) {
@@ -89,7 +93,7 @@ float reflectedCloudDensityAt(vec3 ro, vec3 rd, float y, float maxDist, CloudWea
 // second full volumetric march at every water pixel. SSR supplies exact camera-visible detail for screen hits.
 vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight, vec3 highDirect,
                      vec3 sunDir, vec3 skyLight) {
-#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
+#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END && WATER_CLOUD_REFLECTION_QUALITY > 0
     if (rd.y <= 0.02) return sky;
     CloudWeather w = cloudWeather();
     // Some regional masks are camera-anchored; keep water reflections in the same coordinate frame as the sky march.
@@ -98,8 +102,11 @@ vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight
     float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
     float l0 = 0.0, l0Fade = 0.0, l0Distance = 1e6;
     vec3 p = ro;
-    for (int i = 0; i < 5; i++) {
-        float y = i == 0 ? 163.0 : (i == 1 ? 240.0 : (i == 2 ? 390.0 : (i == 3 ? 700.0 : 1020.0)));
+    const int LOW_TAPS = WATER_CLOUD_REFLECTION_QUALITY > 1 ? 5 : 3;
+    for (int i = 0; i < LOW_TAPS; i++) {
+        float y = WATER_CLOUD_REFLECTION_QUALITY > 1
+            ? (i == 0 ? 163.0 : (i == 1 ? 240.0 : (i == 2 ? 390.0 : (i == 3 ? 700.0 : 1020.0))))
+            : (i == 0 ? 190.0 : (i == 1 ? 360.0 : 800.0));
         float fade, sampleDistance;
         float d = reflectedCloudDensityAt(ro, rd, y, rayLimit, w, 0, cirrusDaylight, fade, sampleDistance);
         if (d > l0) {
@@ -117,8 +124,9 @@ vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight
     float virga = 0.0, virgaFade = 0.0, virgaDistance = 1e6;
     float veil = 0.0, veilFade = 0.0, veilDistance = 1e6;
     float cirrus = 0.0, cirrusFade = 0.0, cirrusDistance = 1e6;
-    for (int i = 0; i < 2; i++) {
-        float f = (float(i) + 1.0) / 3.0;
+    const int DECK_TAPS = WATER_CLOUD_REFLECTION_QUALITY > 1 ? 2 : 1;
+    for (int i = 0; i < DECK_TAPS; i++) {
+        float f = (float(i) + 1.0) / float(DECK_TAPS + 1);
         float fade, sampleDistance;
         float d = reflectedCloudDensityAt(ro, rd, altoStyleValue.alt + altoStyleValue.thick * f,
                                           rayLimit, w, 1, cirrusDaylight, fade, sampleDistance);

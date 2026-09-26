@@ -98,12 +98,18 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D gtexture;
+#if VANILLA_LIGHTING
+uniform sampler2D lightmap;
+#include "/lib/held_light.glsl"
+#endif
 #ifdef PROG_ENTITIES
 uniform vec4 entityColor;
 #endif
 #ifdef PROG_HAND
+#if !VANILLA_LIGHTING
 uniform int heldBlockLightValue;
 uniform int heldBlockLightValue2;
+#endif
 #endif
 #ifdef PROG_TERRAIN
 #include "/lib/cave.glsl"
@@ -185,7 +191,7 @@ void main() {
 #endif
 #if defined PROG_BASIC || defined PROG_DH
     vec4 albedo = glcolor;
-#elif defined PROG_TERRAIN
+#elif defined PROG_TERRAIN && !VANILLA_LIGHTING
     vec4 albedo;
     float lavaEmit = 1.0;
     if (mat == MAT_LAVA) {
@@ -237,6 +243,7 @@ void main() {
 #if defined DIM_END
     if (!endLodVisible(lodDistance, gl_FragCoord.xy, frameCounter)) discard;
 #endif
+#if !VANILLA_LIGHTING
     // Break up flat LOD faces with a little world-space value noise.
     vec3 wp = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
     vec3 cell = floor(wp - worldNormal * 0.5);
@@ -246,7 +253,18 @@ void main() {
         albedo.rgb *= lavaPoolTint(heat);
     }
 #endif
+#endif
 
+#if VANILLA_LIGHTING
+    // Native sprites and Minecraft's current lightmap retain its night, cave, weather and emitter levels.
+    // Iris separateAo carries terrain AO in alpha rather than coverage, so apply it to this direct colour.
+    vec3 nativeLight = texture(lightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb * ao;
+    nativeLight += cheapHeldLightSrgb(relPos, normalize(worldNormal), ao);
+    outAlbedo = vec4(albedo.rgb * nativeLight, 1.0);
+    outNormalLight = vec4(encodeNormal(normalize(worldNormal)), lmcoord);
+    outMaterial = vec4(float(mat) / 255.0, 0.0, ao, 0.0);
+    return;
+#else
     float emissive = 0.0;
     if (mat == MAT_EMISSIVE) emissive = smoothstep(0.45, 0.85, max(albedo.r, max(albedo.g, albedo.b)));
     // Glow berries: the orange fruit glows, the leaves around it do not.
@@ -327,5 +345,6 @@ void main() {
     }
 #endif
     outMaterial = vec4(float(mat) / 255.0, emissive, ao, smoothness);
+#endif
 }
 #endif

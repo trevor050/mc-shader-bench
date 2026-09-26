@@ -276,12 +276,12 @@ float cloudPhase(float mu) {
 
 // Scattered light from one sample, given optical depths toward the light and the sky. Octave series after
 // Photon: each order is weaker, less extinguished and more isotropic.
-vec3 cloudScatter(float lightOD, float skyOD, float groundOD, float mu, float powder,
+vec3 cloudScatterPhase(float lightOD, float skyOD, float groundOD, float phaseBase, float powder,
                   vec3 directLight, vec3 skyLight, vec3 groundLight) {
     vec3 s = vec3(0.0);
     float a = 1.0, b = 1.0, g = 1.0;
     for (int i = 0; i < 5; i++) {
-        float phase = mix(1.0 / (4.0 * PI), cloudPhase(mu), g);
+        float phase = mix(1.0 / (4.0 * PI), phaseBase, g);
         s += directLight * (a * exp(-b * lightOD) * phase * powder);
         s += skyLight * (a * exp(-b * skyOD) * (1.0 / (4.0 * PI)));
         s += groundLight * (a * exp(-b * groundOD) * (1.0 / (4.0 * PI)));
@@ -291,6 +291,45 @@ vec3 cloudScatter(float lightOD, float skyOD, float groundOD, float mu, float po
         powder = mix(powder, 1.0, 0.5);
     }
     return s;
+}
+vec3 cloudScatter(float lightOD, float skyOD, float groundOD, float mu, float powder,
+                  vec3 directLight, vec3 skyLight, vec3 groundLight) {
+    return cloudScatterPhase(lightOD, skyOD, groundOD, cloudPhase(mu), powder, directLight, skyLight, groundLight);
+}
+
+// Fewer illumination taps retain the same sampled optical path, combining adjacent quadrature weights.
+// View density/extinction is unchanged; these controls affect self-shadow detail only.
+float cloudL0LightDepth(vec3 p, vec3 lightDir, CloudWeather w, float dither) {
+    float od = 0.0;
+#if CLOUD_LIGHT_QUALITY >= 3
+    float stride = 12.0;
+    vec3 lp = p;
+    for (int j = 0; j < 4; j++) {
+        lp += lightDir * stride;
+        vec3 q = lp + lightDir * stride * (dither - 0.5);
+        if (q.y <= L0_SLAB_BOTTOM || q.y >= L0_SLAB_TOP) break;
+        od += l0Density(q, w, 2) * stride;
+        stride *= 2.1;
+    }
+#else
+#if CLOUD_LIGHT_QUALITY == 2
+    const int N = 3;
+    const float positions[3] = float[3](12.0, 37.2, 165.40297);
+    const float weights[3] = float[3](12.0, 25.2, 164.052);
+    const float jitters[3] = float[3](12.0, 25.2, 92.35394);
+#else
+    const int N = 2;
+    const float positions[2] = float[2](29.07097, 165.40297);
+    const float weights[2] = float[2](37.2, 164.052);
+    const float jitters[2] = float[2](20.94194, 92.35394);
+#endif
+    for (int j = 0; j < N; j++) {
+        vec3 q = p + lightDir * (positions[j] + jitters[j] * (dither - 0.5));
+        if (q.y <= L0_SLAB_BOTTOM || q.y >= L0_SLAB_TOP) break;
+        od += l0Density(q, w, 2) * weights[j];
+    }
+#endif
+    return od;
 }
 
 // Lightning inside the clouds. During thunder, a flash fires every few seconds somewhere near the camera
@@ -339,10 +378,12 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     if (t0 >= t1) return vec4(0.0, 0.0, 0.0, 1.0);
 
     float mu = dot(rd, lightDir);
+    float phaseBase = cloudPhase(mu);
     const float sigma = 0.07;
     vec3 rad = vec3(0.0);
     float trans = 1.0;
     float dSum = 0.0, wSum = 0.0;
+#if PERFORMANCE_PROFILE >= 3
     float t = t0;
     // Steps grow with distance: fine near the camera (crisp when flying through), coarse far away.
     float stepLen = clamp((t1 - t0) / 40.0, 3.0, 12.0 + t0 * 0.02);
@@ -350,22 +391,24 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     for (int i = 0; i < 64; i++) {
         if (t >= t1 || trans < 0.02) break;
         vec3 p = ro + rd * t;
+#else
+    // Lower tiers integrate every segment in the requested interval. The baseline Ultra/High
+    // 64-iteration path above remains unchanged for visual/performance comparisons.
+    float segmentStart = t0;
+    float nominalStep = max((t1 - t0) / (PERFORMANCE_PROFILE == 2 ? 32.0 : 20.0), max(0.01, t0 * 1e-6));
+    for (int i = 0; i < 128; i++) {
+        if (segmentStart >= t1 || trans < 0.02) break;
+        float stepLen = min(min(nominalStep, (4.0 + segmentStart * 0.06) * CLOUD_MARCH_SCALE), t1 - segmentStart);
+        float t = segmentStart + stepLen * dither;
+        segmentStart += stepLen;
+        vec3 p = ro + rd * t;
+#endif
         int lod = t < 450.0 ? -1 : (t < 3000.0 ? 0 : 1);
         float d = l0Density(p, w, lod);
         if (d > 0.002) {
             d *= cloudDistanceFade(t * length(rd.xz));
             // Light march: growing steps toward the light, shape-only density.
-            float lightOD = 0.0;
-            float ls = 12.0;
-            vec3 lp = p;
-            for (int j = 0; j < 4; j++) {
-                lp += lightDir * ls;
-                vec3 lightP = lp + lightDir * ls * (dither - 0.5);
-                // Once the monotonically advancing light ray leaves the full L0 slab, later taps are empty.
-                if (lightP.y <= bottom || lightP.y >= topAlt) break;
-                lightOD += l0Density(lightP, w, 2) * ls;
-                ls *= 2.1;
-            }
+            float lightOD = cloudL0LightDepth(p, lightDir, w, dither);
             float skyOD = l0Density(p + vec3(0.0, 45.0, 0.0), w, 2) * 70.0;
             float hFrac = saturate((p.y - bottom) / (topAlt - bottom));
             float groundOD = d * hFrac * 120.0;
@@ -373,19 +416,23 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
             // on the lit side (up to pi times brighter); looking toward the light it fades to neutral.
             float powder = PI * d / (d + 0.15);
             powder = mix(powder, 1.0, 0.8 * sqr(mu * 0.5 + 0.5));
-            vec3 s = cloudScatter(lightOD * sigma, skyOD * sigma, groundOD * sigma, mu, powder,
+            vec3 s = cloudScatterPhase(lightOD * sigma, skyOD * sigma, groundOD * sigma, phaseBase, powder,
                                   cloudSunAt(p.y, directLight), skyLight, groundLight);
             float stepT = exp(-d * sigma * stepLen);
             rad += trans * s * (1.0 - stepT);
             dSum += t * trans * (1.0 - stepT);
             wSum += trans * (1.0 - stepT);
             trans *= stepT;
+#if PERFORMANCE_PROFILE >= 3
             t += stepLen;
         } else {
             // Empty air: stride faster until something is found.
             t += stepLen * 1.0;
         }
         stepLen = min(stepLen * 1.035, 12.0 + t * 0.02);
+#else
+        }
+#endif
     }
     if (wSum > 0.0) dist = dSum / wSum;
     return vec4(rad, trans);
@@ -484,8 +531,10 @@ vec4 marchDeck(vec3 ro, vec3 rd, float maxDist, DeckStyle s, vec3 lightDir, vec3
     t0 = max(t0, gCloudNearDistance);
     if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
     float mu = dot(rd, lightDir);
+    float phaseBase = cloudPhase(mu);
+    float fromSun = iridescent ? acos(clamp(mu, -1.0, 1.0)) : 1.0;
     const int N = 14;
-    float nominalStep = (t1 - t0) / float(N);
+    float nominalStep = (t1 - t0) / float(N) * CLOUD_MARCH_SCALE;
     vec3 rad = vec3(0.0);
     float trans = 1.0, dSum = 0.0, wSum = 0.0;
     int lod = t0 < 6000.0 ? 0 : 1;
@@ -507,17 +556,24 @@ vec4 marchDeck(vec3 ro, vec3 rd, float maxDist, DeckStyle s, vec3 lightDir, vec3
         float d = deckDensity(p, s, t, lod) * cloudDistanceFade(t * length(rd.xz));
         if (d <= 0.004) continue;
         // Self-shadowing toward the light, through the deck's own lobes: lit faces and shaded crevices.
-        float lightOD = deckDensity(p + lightDir * 7.0, s, t, 1) * 10.0
+        float lightOD;
+#if CLOUD_LIGHT_QUALITY >= 3
+        lightOD = deckDensity(p + lightDir * 7.0, s, t, 1) * 10.0
                       + deckDensity(p + lightDir * 22.0, s, t, 1) * 22.0
                       + deckDensity(p + lightDir * 60.0, s, t, 2) * 45.0;
+#elif CLOUD_LIGHT_QUALITY == 2
+        lightOD = deckDensity(p + lightDir * 17.3125, s, t, 1) * 32.0
+                + deckDensity(p + lightDir * 60.0, s, t, 2) * 45.0;
+#else
+        lightOD = deckDensity(p + lightDir * 42.25974, s, t, 1) * 77.0;
+#endif
         lightOD *= 2.8;
         float skyOD = d * (top - p.y) * 0.7;
         float powder = mix(PI * d / (d + 0.2), 1.0, 0.75 * sqr(mu * 0.5 + 0.5));
-        vec3 sc = cloudScatter(lightOD * s.sigma, skyOD * s.sigma, 0.0, mu, powder,
+        vec3 sc = cloudScatterPhase(lightOD * s.sigma, skyOD * s.sigma, 0.0, phaseBase, powder,
                                  (p.y < L1_ALT ? cloudSunAt(p.y, directLight) : directLight) * dirW, skyLight, vec3(0.0));
         if (iridescent) {
             // Near the sun, the thin rims (small, uniform droplets) diffract light into faint pastel bands.
-            float fromSun = acos(clamp(mu, -1.0, 1.0));
             if (fromSun < 0.38) {
                 float rim = 1.0 - smoothstep(0.05, 0.4, d);
                 vec3 bands = 0.5 + 0.5 * cos(TAU * (d * 2.5 + fromSun * 7.0) + vec3(0.0, 2.1, 4.2));
@@ -540,6 +596,9 @@ vec4 marchDeck(vec3 ro, vec3 rd, float maxDist, DeckStyle s, vec3 lightDir, vec3
 
 float weatherClock() { return float(worldDay) + float(worldTime) / 24000.0; }
 
+// A pass can fill these flat values from its vertex stage. Other callers evaluate the original weather.
+vec3 gCloudDeckWeather = vec3(-1.0);
+
 // Altocumulus: lumpy mid-level deck, from broken rafts to a sky-filling sheet.
 DeckStyle altoStyle(CloudWeather w) {
     return DeckStyle(L1_ALT, L1_THICK, w.cov1, 800.0, 1.6, 320.0, 0.5, 0.45, 0.18, 0.035, 0.0);
@@ -547,6 +606,7 @@ DeckStyle altoStyle(CloudWeather w) {
 
 // Altostratus veil: a high, smooth, thick sheet, the dim ceiling that lower lit clouds stand against.
 float veilAmount(CloudWeather w) {
+    if (gCloudDeckWeather.x >= 0.0) return gCloudDeckWeather.x;
 #if SKY_PRESET == 1
     return 0.45;
 #elif SKY_PRESET >= 2
@@ -564,6 +624,7 @@ DeckStyle veilStyle(CloudWeather w) {
 
 // Fractus: ragged, torn low cloud with hard lit edges (under a storm shield, and on grey days).
 float fractusAmount(CloudWeather w) {
+    if (gCloudDeckWeather.y >= 0.0) return gCloudDeckWeather.y;
 #if SKY_PRESET == 1
     return 0.3;
 #elif SKY_PRESET >= 2
@@ -627,6 +688,7 @@ vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
 
 // How much of the altocumulus is precipitating today, 0..1 (drifts with the weather clock).
 float virgaAmount(CloudWeather w) {
+    if (gCloudDeckWeather.z >= 0.0) return gCloudDeckWeather.z;
 #ifdef CLOUD_DEBUG_ALTO
     return w.cov1;
 #endif
@@ -863,10 +925,69 @@ vec4 cloudHorizonHaze(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 dire
 // All cloud layers along a ray. Radiance includes aerial perspective toward the horizon haze.
 // lightDirHi/directLight1/directLight2 light the altocumulus and cirrus: higher clouds keep the sun after it has set
 // for the cumulus below them, so at dusk each layer takes its own point on the sunset palette.
+// Potato uses finite, scene-clipped height columns rather than an additional fullscreen march/history.
+// Regional forms still move in world space and use the same weather/deck heights and horizon continuation.
+vec4 renderCloudsCheap(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, vec3 directLight,
+                      vec3 directLight1, vec3 directLight2, vec3 skyLight, CloudWeather w, out float dist) {
+    dist = 1e6;
+    float limit = cloudRayLimit(rd, maxDist);
+    float veil = veilAmount(w), fractus = fractusAmount(w);
+    const float altitudes[5] = float[5](330.0, 660.0, 1280.0, 2040.0, 2600.0);
+    const float widths[5] = float[5](135.0, 65.0, 85.0, 140.0, 60.0);
+    const float scales[5] = float[5](1600.0, 850.0, 1500.0, 4500.0, 5000.0);
+    float amounts[5] = float[5](w.cov0 + w.low * w.lowCov, fractus, w.cov1, veil,
+                                w.cirrus * smoothstep(-0.1, 0.05, sunDir.y));
+    vec3 direct[5] = vec3[5](directLight, directLight, directLight1, directLight2, directLight2);
+    vec3 rad = vec3(0.0);
+    float trans = 1.0, dSum = 0.0, wSum = 0.0;
+    // Sort by ray altitude so the actual closest layer attenuates each farther one.
+    for (int j = 0; j < 5; j++) {
+        int i = rd.y < 0.0 ? 4 - j : j;
+        if (amounts[i] < 0.01) continue;
+        float t = abs(rd.y) < 1e-4 ? min(limit * 0.5, 1200.0)
+                                  : clamp((altitudes[i] - ro.y) / rd.y, 0.0, limit);
+        // The height profile contributes continuously, including a camera inside its layer.
+        float column = cloudHazeColumn(ro, rd, 0.0, limit, altitudes[i], widths[i]);
+        if (column < 0.1) continue;
+        vec3 p = ro + rd * t;
+        vec2 xz = p.xz + cloudWind().xz * (i >= 3 ? 2.4 : 1.0);
+        vec4 n = cloudTex(vec3(xz / scales[i], 0.23 + float(i) * 0.137));
+        float form = smoothstep(1.0 - amounts[i] - 0.12, 1.0 - amounts[i] + 0.20, n.r * 0.7 + n.g * 0.3);
+#if SKY_PRESET == 1
+        form *= smoothstep(-9000.0, -4500.0, p.x - gCloudCamera.x);
+#endif
+        float fade = cloudDistanceFade(t * length(rd.xz));
+        float od = column * form * (i == 4 ? 0.0015 : 0.009) * fade;
+        float stepT = exp(-od);
+        float weight = trans * (1.0 - stepT);
+        vec3 light = direct[i] * (0.055 + 0.05 * n.b) + skyLight * 0.10;
+        // This path feeds an sRGB display without HDR exposure; retain light hue with a daylight luminance cap.
+        float ceiling = mix(0.10, 0.80, smoothstep(-0.12, 0.15, sunDir.y));
+        light *= min(ceiling / max(luminance(light), 1e-5), 1.0);
+        rad += weight * light;
+        dSum += t * weight;
+        wSum += weight;
+        trans *= stepT;
+    }
+    if (wSum > 0.0) dist = dSum / wSum;
+    float distantDistance;
+    vec4 bank = cloudHorizonHaze(ro, rd, maxDist, w, directLight, directLight1, directLight2, skyLight,
+                                  smoothstep(-0.1, 0.05, sunDir.y), smoothstep(-0.10, -0.30, sunDir.y), distantDistance);
+    vec3 sky = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z)), sunDir, SKY_VIEW_STEPS);
+    // Distant cloud radiance follows the same calibrated sky and never reveals a dark radius.
+    bank.rgb = mix(bank.rgb, sky * (1.0 - bank.a), 0.80);
+    rad += trans * bank.rgb;
+    trans *= bank.a;
+    dist = min(dist, distantDistance);
+    return vec4(rad, trans);
+}
+
 vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, vec3 directLight,
-                  vec3 lightDirHi, vec3 directLight1, vec3 directLight2, vec3 skyLight, float dither, out float dist) {
-    CloudWeather w = cloudWeather();
+                  vec3 lightDirHi, vec3 directLight1, vec3 directLight2, vec3 skyLight, float dither, CloudWeather w, out float dist) {
     gCloudCamera = ro;
+#if PERFORMANCE_PROFILE == 0
+    return renderCloudsCheap(ro, rd, maxDist, sunDir, lightDir, directLight, directLight1, directLight2, skyLight, w, dist);
+#endif
     // Composite integrates this first segment at full resolution. Never march its extinction twice.
     vec2 nearInterval = cloudNearInterval(ro, rd, maxDist);
     gCloudNearDistance = nearInterval.y > nearInterval.x ? CLOUD_NEAR_DIST : 0.0;
@@ -878,7 +999,11 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
     float d0, d1 = 1e6, d2 = 1e6;
     vec4 c0 = marchL0(ro, rd, maxDist, w, lightDir, directLight, skyLight, groundLight, dither, d0);
     vec4 c1 = marchL1(ro, rd, maxDist, w, lightDirHi, directLight1, skyLight, dither, d1);
-    vec4 c2 = cirrus(ro, rd, maxDist, w, lightDirHi, directLight2, skyLight, dither, d2);
+    // A completely gated night cirrus layer contributes exactly the identity cloud result.
+    // Do not run its expensive fibre noise only to multiply the result by zero below.
+    float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
+    vec4 c2 = vec4(0.0, 0.0, 0.0, 1.0);
+    if (cirrusDaylight > 0.0) c2 = cirrus(ro, rd, maxDist, w, lightDirHi, directLight2, skyLight, dither, d2);
     float dv = 1e6;
     vec4 cv = marchVirga(ro, rd, maxDist, w, lightDirHi, directLight, skyLight, dither, dv);
     // Veil above the altocumulus and ragged fractus below it.
@@ -886,7 +1011,6 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
     vec4 cVeil = marchDeck(ro, rd, maxDist, veilStyle(w), lightDirHi, directLight2, skyLight, dither, false, dVeil);
     vec4 cFrac = marchDeck(ro, rd, maxDist, fractusStyle(w), lightDir, directLight, skyLight, dither, false, dFrac);
     // Thin ice cloud all but disappears by moonlight; keep it from smearing grey over the stars.
-    float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
     c2 = mix(vec4(0.0, 0.0, 0.0, 1.0), c2, cirrusDaylight);
     if (cirrusDaylight < 0.001) d2 = 1e6;
     // Each layer dissolves at its own distance; a near cloud must not stop a farther deck from fading.
@@ -922,6 +1046,12 @@ vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, v
     dist = min(dist, dHaze);
     // Clouds stay fully opaque at night: stars and the Milky Way show only through real gaps in the deck.
     return c;
+}
+
+vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, vec3 directLight,
+                  vec3 lightDirHi, vec3 directLight1, vec3 directLight2, vec3 skyLight, float dither, out float dist) {
+    return renderClouds(ro, rd, maxDist, sunDir, lightDir, directLight, lightDirHi, directLight1, directLight2,
+                        skyLight, dither, cloudWeather(), dist);
 }
 
 // Transmittance of direct light through the cumulus volume above a world position. Taps are spread over the
@@ -987,10 +1117,9 @@ float cloudNearLightTransmittance(vec3 ro, CloudLightEnv e) {
 
 // Front-to-back near segment: premultiplied radiance and transmittance, like the far march. Sampling the actual
 // ray (bounded by scene depth) keeps clear air before a cloud edge clear and gives every deck its own extinction.
-vec4 cloudNearFog(vec3 ro, vec3 rd, float maxDist, CloudLightEnv e, float lightT, float dither) {
+vec4 cloudNearFog(vec3 ro, vec3 rd, float maxDist, CloudLightEnv e, float lightT, float dither, CloudWeather w) {
     vec2 segment = cloudNearInterval(ro, rd, maxDist);
     if (segment.y <= segment.x) return vec4(0.0, 0.0, 0.0, 1.0);
-    CloudWeather w = cloudWeather();
     gCloudCamera = ro;
     gAltitudeLight = dot(e.lightDir, e.lightDirHi) > 0.9999;
     gLightAlto = e.directLight1;
@@ -1012,6 +1141,13 @@ vec4 cloudNearFog(vec3 ro, vec3 rd, float maxDist, CloudLightEnv e, float lightT
         trans *= stepT;
     }
     return vec4(rad, trans);
+}
+
+vec4 cloudNearFog(vec3 ro, vec3 rd, float maxDist, CloudLightEnv e, float lightT, float dither) {
+    // Preserve the cheap empty-near-interval return for legacy callers.
+    vec2 segment = cloudNearInterval(ro, rd, maxDist);
+    if (segment.y <= segment.x) return vec4(0.0, 0.0, 0.0, 1.0);
+    return cloudNearFog(ro, rd, maxDist, e, lightT, dither, cloudWeather());
 }
 
 float cloudShadow(vec3 worldPos, vec3 lightDir) {

@@ -6,9 +6,15 @@
 
 #ifdef VERTEX
 out vec2 texcoord;
+flat out float frameLum;
+flat out int frameLastMip;
+uniform sampler2D colortex0;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    frameLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
+    ivec2 fullSize = textureSize(colortex0, 0);
+    frameLastMip = int(floor(log2(float(max(fullSize.x, fullSize.y)))));
 }
 #endif
 
@@ -29,6 +35,8 @@ const int colortex3Format = RGBA16F;
 const bool colortex0MipmapEnabled = true;
 
 in vec2 texcoord;
+flat in float frameLum;
+flat in int frameLastMip;
 
 /* RENDERTARGETS: 3,7 */
 layout(location = 0) out vec4 outGlareAndRays;
@@ -42,17 +50,22 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g, out vec3 e) {
     g = vec3(0.0);
     e = vec3(0.0);
     float totalEmit = 0.0;
-    float emitThreshold = max(luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb) * EMITTER_BLOOM_THRESHOLD, 1e-3);
+    float emitThreshold = max(frameLum * EMITTER_BLOOM_THRESHOLD, 1e-3);
     vec2 px = 1.0 / vec2(viewWidth, viewHeight);
     float totalBloom = 0.0;
     float totalGlare = 0.0;
-    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
-    float threshold = max(avgLum * 12.0, 1e-3);
-    ivec2 fullSize = textureSize(colortex0, 0);
-    int lastMip = int(floor(log2(float(max(fullSize.x, fullSize.y)))));
+    float threshold = max(frameLum * 12.0, 1e-3);
     for (int lod = 1; lod <= 9; lod++) {
+#if BLOOM_QUALITY == 2
+        if (lod == 6 || lod == 8) continue;
+#elif BLOOM_QUALITY == 1
+        if ((lod & 1) == 0) continue;
+#elif BLOOM_QUALITY == 0
+        // Retain fine, medium and wide positive cubic blur on Low, avoiding a coarse mip halo grid.
+        if (lod != 2 && lod != 5 && lod != 8) continue;
+#endif
         float scale = exp2(float(lod));
-        int sampleLod = min(lod, lastMip);
+        int sampleLod = min(lod, frameLastMip);
         vec3 bloomSamples = vec3(0.0);
         vec3 glareSamples = vec3(0.0);
         vec3 u, v, wx, wy;
@@ -90,6 +103,7 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g, out vec3 e) {
 // Only open sky within a small radius of the sun feeds the rays. Testing both depth buffers keeps the
 // effect behind vanilla terrain and Distant Horizons terrain while allowing cloud gaps to scatter light.
 vec3 sunRays(vec2 uv) {
+#if SUN_RAY_SAMPLES > 0
     vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
     if (clip.w <= 0.0) return vec3(0.0);
     vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
@@ -98,7 +112,7 @@ vec3 sunRays(vec2 uv) {
     float onScreen = smoothstep(-0.25, 0.05, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
     if (onScreen <= 0.0) return vec3(0.0);
 
-    const int N = 48;
+    const int N = SUN_RAY_SAMPLES;
     vec2 delta = (sunUV - uv) / float(N);
     // Pixels far from the sun get nothing; fade smoothly so the effect never ends in a visible circle.
     float len = length(delta * aspect) * float(N);
@@ -124,9 +138,13 @@ vec3 sunRays(vec2 uv) {
         }
         // The final two taps are symmetric around the sun because the loop samples at 1.5..48.5 steps.
         if (i < N - 2) nearSun *= nearSunStep;
-        decay *= 0.965;
+        // Match the attenuation across the full ray at every tier.
+        decay *= pow(0.965, 48.0 / float(N));
     }
     return acc / float(N) * onScreen * reach;
+#else
+    return vec3(0.0);
+#endif
 }
 
 void main() {

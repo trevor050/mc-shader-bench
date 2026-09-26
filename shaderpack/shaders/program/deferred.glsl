@@ -8,6 +8,9 @@ uniform vec3 sunPosition;
 uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
+#if VANILLA_LIGHTING && !defined DIM_NETHER
+uniform vec3 fogColor;
+#endif
 #include "/lib/atmosphere.glsl"
 #include "/lib/end_portal.glsl"
 #if !defined DIM_NETHER && !defined DIM_END
@@ -75,6 +78,10 @@ flat out vec3 envAmbient;
 #if !defined DIM_NETHER && !defined DIM_END
 flat out vec4 cloudWeather0;
 flat out vec3 cloudWeather1;
+flat out vec3 cloudDeckWeather;
+#if VANILLA_LIGHTING
+flat out CloudLightEnv cheapCloudEnv;
+#endif
 #endif
 
 void main() {
@@ -87,7 +94,13 @@ void main() {
     envAmbient = e.skyAmbient;
 #if !defined DIM_NETHER && !defined DIM_END
     CloudWeather w = cloudWeather();
+    cloudDeckWeather = vec3(veilAmount(w), fractusAmount(w), virgaAmount(w));
+    gCloudDeckWeather = cloudDeckWeather;
+#if VANILLA_LIGHTING
+    cheapCloudEnv = makeCloudLightEnv(sunDir);
+#else
     envAmbient = cloudDomeAmbient(e, sunDir, w);
+#endif
     cloudWeather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
     cloudWeather1 = vec3(w.low, w.lowCov, w.cb);
 #endif
@@ -100,7 +113,7 @@ uniform sampler2D colortex1;
 uniform sampler2D colortex2;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
 #define SHADOWS_AVAILABLE
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
@@ -108,7 +121,7 @@ uniform sampler2D shadowcolor0;
 #endif
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 dhProjectionInverse;
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 #endif
@@ -122,7 +135,7 @@ uniform sampler2D colortex8;
 uniform sampler2D colortex9;
 uniform float viewWidth;
 uniform float viewHeight;
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
 #include "/lib/shadows.glsl"
 #endif
 #ifdef DIM_END
@@ -140,6 +153,10 @@ flat in vec3 envAmbient;
 #if !defined DIM_NETHER && !defined DIM_END
 flat in vec4 cloudWeather0;
 flat in vec3 cloudWeather1;
+flat in vec3 cloudDeckWeather;
+#if VANILLA_LIGHTING
+flat in CloudLightEnv cheapCloudEnv;
+#endif
 #endif
 
 /* RENDERTARGETS: 0,4 */
@@ -148,7 +165,8 @@ layout(location = 1) out vec4 outCopy;
 
 // Hemisphere SSAO in view space; the per-frame dither lets TAA converge it to a smooth result.
 float ssao(vec3 viewPos, vec3 viewN, float dither) {
-    const int SAMPLES = 8;
+#if SSAO_SAMPLES > 0
+    const int SAMPLES = SSAO_SAMPLES;
     const float RADIUS = 0.9;
     float occ = 0.0;
     vec3 t = normalize(abs(viewN.y) < 0.9 ? cross(viewN, vec3(0.0, 1.0, 0.0)) : cross(viewN, vec3(1.0, 0.0, 0.0)));
@@ -179,6 +197,9 @@ float ssao(vec3 viewPos, vec3 viewN, float dither) {
         occ += step(s.z + 0.03, sceneZ) * range;
     }
     return 1.0 - occ / float(SAMPLES);
+#else
+    return 1.0;
+#endif
 }
 
 // Spectral colour across a rainbow band (x = 0 violet ... 1 red).
@@ -198,12 +219,15 @@ vec3 hsv2rgbBow(float x) {
 //    Livingston campus (2026-09-25), orange-red and tall with the sun on the horizon.
 // It sits in front of the clouds, like the rain that makes it. Returns the bow (x) and band darkening (w in .a).
 vec4 rainbow(vec3 dir) {
-    float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
-    float showers = smoothstep(0.03, 0.25, rainStrength) * (1.0 - smoothstep(0.55, 0.95, rainStrength));
-    CloudWeather cw = cloudWeather();
-    if ((wetAir <= 0.0 && showers <= 0.0 && virgaAmount(cw) < 0.02) || sunDir.y < -0.01 || sunDir.y > 0.7) return vec4(0.0);
+    // Only the narrow rainbow cone needs rain-shaft/weather work.
+    if (sunDir.y < -0.01 || sunDir.y > 0.7) return vec4(0.0);
     float a = degrees(acos(clamp(dot(dir, -sunDir), -1.0, 1.0)));
     if (a < 38.0 || a > 56.0) return vec4(0.0);
+    float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
+    float showers = smoothstep(0.03, 0.25, rainStrength) * (1.0 - smoothstep(0.55, 0.95, rainStrength));
+    CloudWeather cw = CloudWeather(cloudWeather0.x, cloudWeather0.y, cloudWeather0.z, cloudWeather0.w,
+                                   cloudWeather1.x, cloudWeather1.y, cloudWeather1.z);
+    if (wetAir <= 0.0 && showers <= 0.0 && virgaAmount(cw) < 0.02) return vec4(0.0);
     float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
     float x2 = (52.5 - a) / 3.2;
     vec3 bow = vec3(0.0);
@@ -246,6 +270,49 @@ vec4 upsampleClouds(vec2 uv, float sceneDist) {
 }
 
 void main() {
+#if !defined DIM_NETHER && !defined DIM_END
+    gCloudDeckWeather = cloudDeckWeather;
+#endif
+#if VANILLA_LIGHTING
+    // Potato surfaces were lit with Minecraft's real sRGB lightmap in the G-buffer. Keep that
+    // color space intact; only sky pixels need the inexpensive atmosphere/cloud replacement.
+    vec3 col = texture(colortex0, texcoord).rgb;
+    float depth = texture(depthtex0, texcoord).r;
+    if (depth >= 1.0 && texture(dhDepthTex0, texcoord).r >= 1.0) {
+        vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
+        vec3 rd = normalize(mat3(gbufferModelViewInverse) * viewDir);
+#if !defined DIM_NETHER && !defined DIM_END
+        vec3 sky = (rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, SKY_VIEW_STEPS) + sunAureole(rd, sunDir))
+                 + sunDisc(rd, sunDir) + moonSky(rd, -sunDir);
+        float night = smoothstep(0.05, -0.15, sunDir.y) * (1.0 - rainStrength);
+        if (night > 0.0 && rd.y > -0.02) {
+            float pixelAngle = 2.0 / (gbufferProjection[1][1] * viewHeight);
+            sky += nightSky(rd, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy,
+                            mat3(gbufferModelView), vec2(gbufferProjection[0][0], gbufferProjection[1][1]),
+                            vec2(viewWidth, viewHeight)) * night;
+            float amount = auroraVisibility(sunDir.y);
+            if (amount > 0.001) sky += aurora(rd, frameTimeCounter) * amount;
+        }
+#ifdef CLOUDS
+        float cloudDist;
+        gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
+        vec4 clouds = renderClouds(cameraPosition, rd, 1e6, sunDir, cheapCloudEnv.lightDir,
+                                  cheapCloudEnv.directLight, cheapCloudEnv.lightDirHi,
+                                  cheapCloudEnv.directLight1, cheapCloudEnv.directLight2,
+                                  cheapCloudEnv.skyLight, 0.5,
+                                  CloudWeather(cloudWeather0.x, cloudWeather0.y, cloudWeather0.z, cloudWeather0.w,
+                                               cloudWeather1.x, cloudWeather1.y, cloudWeather1.z), cloudDist);
+        sky = sky * clouds.a + clouds.rgb;
+#endif
+        col = pow(max(sky, vec3(0.0)) / (vec3(1.0) + max(sky, vec3(0.0))), vec3(1.0 / 2.2));
+#else
+        col = fogColor;
+#endif
+    }
+    // Forward water reads this exact sRGB copy; Potato never consumes disabled HDR histories.
+    outCopy = vec4(col, 1.0);
+    outColor = vec4(col, 1.0);
+#else
     LightEnv env;
     env.sunDir = sunDir;
     env.lightDir = envLightDir;
@@ -530,6 +597,7 @@ void main() {
     }
 #endif
     outColor = vec4(col, 1.0);
+#endif
 }
 #endif
 
@@ -555,8 +623,8 @@ const bool colortex4Clear = true;
 const int shadowMapResolution = 256;
 const float shadowDistance = 80.0;
 #else
-const int shadowMapResolution = 3072;
-const float shadowDistance = 192.0;
+const int shadowMapResolution = SHADOW_MAP_RES;
+const float shadowDistance = SHADOW_DIST;
 #endif
 const float shadowDistanceRenderMul = 1.0;
 // Safe-zone radius for the light field voxelization (shadow.culling=reversed in shaders.properties).

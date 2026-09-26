@@ -44,6 +44,9 @@ float beyondShadowVisibility() {
 
 vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     shadowWaterDepth = 0.0;
+#if SHADOW_SAMPLES == 0
+    return vec3(1.0);
+#else
     float dist2 = dot(playerPos, playerPos);
     if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(beyondShadowVisibility());
     float dist = sqrt(dist2);
@@ -63,20 +66,26 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     float texel = 1.0 / float(SHADOW_MAP_RES);
     float phi = dither * TAU;
     float rotationCos = cos(phi), rotationSin = sin(phi);
+    float penumbra;
+#if SHADOW_BLOCKER_SAMPLES > 0
     float blocker = 0.0, count = 0.0;
-    for (int i = 0; i < 6; i++) {
-        vec2 o = rotateVogel12(i, rotationCos, rotationSin) * 1.41421356237 * texel * 6.0 / f;
+    for (int i = 0; i < SHADOW_BLOCKER_SAMPLES; i++) {
+        vec2 o = rotateVogel12(i, rotationCos, rotationSin) * sqrt(12.0 / float(SHADOW_BLOCKER_SAMPLES)) * texel * 6.0 / f;
         float d = texture(shadowtex0, ds.xy + o).r;
         if (d < ds.z - bias) { blocker += d; count += 1.0; }
     }
     if (count < 0.5) return vec3(mix(1.0, beyondShadowVisibility(), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist)));
     blocker /= count;
     // Wider contact hardening: crisp at contact, soft and diffuse further out, never a hard binary edge.
-    float penumbra = clamp((ds.z - blocker) * 440.0, mix(0.9, 3.2, lowSun), 11.0) * SHADOW_SOFTNESS;
+    penumbra = clamp((ds.z - blocker) * 440.0, mix(0.9, 3.2, lowSun), 11.0) * SHADOW_SOFTNESS;
+#else
+    // A small PCF footprint keeps Low's shadows filtered without a separate blocker-search pass.
+    penumbra = mix(1.4, 3.2, lowSun) * SHADOW_SOFTNESS;
+#endif
 
     vec3 vis = vec3(0.0);
     for (int i = 0; i < SHADOW_SAMPLES; i++) {
-        vec2 o = rotateVogel12(i, rotationCos, rotationSin) * texel * penumbra / f;
+        vec2 o = rotateVogel12(i, rotationCos, rotationSin) * sqrt(12.0 / float(SHADOW_SAMPLES)) * texel * penumbra / f;
         vec3 p = vec3(ds.xy + o, ds.z - bias);
         float d0 = texture(shadowtex0, p.xy).r;
         // Fully lit taps contribute one regardless of solid/color data; water depth is zero here too.
@@ -102,5 +111,6 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     vis /= float(SHADOW_SAMPLES);
     // Fade out near the edge of the shadow distance.
     return mix(vis, vec3(beyondShadowVisibility()), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist));
+#endif
 }
 #endif

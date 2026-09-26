@@ -26,6 +26,7 @@ NIGHT = ROOT / "shaderpack/shaders/lib/night.glsl"
 COMMON = ROOT / "shaderpack/shaders/lib/common.glsl"
 SETTINGS = ROOT / "shaderpack/shaders/lib/settings.glsl"
 STARS = ROOT / "shaderpack/shaders/lib/stars.glsl"
+QUALITY = ROOT / "shaderpack/shaders/lib/performance_quality.glsl"
 MILKYWAY = ROOT / "shaderpack/shaders/textures/milkyway.dat"
 DEFAULT_OUT = ROOT / "work/aurora"
 FUNCTION_RE = re.compile(r"\b(?:float|int|bool|vec[234]|mat[234])\s+(\w+)\s*\([^;{}]*\)\s*\{")
@@ -64,7 +65,7 @@ def stars_setting_float(name: str, default: float) -> float:
     return float(match.group(1)) if match else default
 
 
-def source_fragments(aurora_mode: int | None = None) -> tuple[str, set[str]]:
+def source_fragments(aurora_mode: int | None = None, profile: int | None = None) -> tuple[str, set[str]]:
     night = NIGHT.read_text(encoding="utf-8")
     common = COMMON.read_text(encoding="utf-8")
     # Keep the aurora section and its helpers while excluding unrelated firefly code.
@@ -76,6 +77,12 @@ def source_fragments(aurora_mode: int | None = None) -> tuple[str, set[str]]:
     # constants from unrelated functions later in night.glsl.
     settings = SETTINGS.read_text(encoding="utf-8")
     declarations = ["#define PI 3.14159265", "#define TAU 6.28318531"]
+    profile = int(setting_float("PERFORMANCE_PROFILE", 4)) if profile is None else profile
+    if profile not in range(5):
+        raise ValueError("performance profile must be 0 through 4")
+    # Preserve the actual quality header rather than allowing undefined extracted
+    # macros to silently select the Potato branch during an Ultra verification.
+    declarations += [f"#define PERFORMANCE_PROFILE {profile}", QUALITY.read_text(encoding="utf-8")]
     for name in ("AURORA", "AURORA_BRIGHTNESS", "AURORA_PREVIEW", "AURORA_MODE"):
         match = re.search(rf"^\s*#define\s+{name}\s+([^\r\n]+)", settings, re.M)
         if match:
@@ -326,11 +333,11 @@ def gpu_timing(ctx, core: str, width: int, height: int, active_day: int,
 
 
 def gate_matrix(ctx, active_day: int, inactive_day: int,
-                modes: tuple[int, ...] = (1, 2, 3, 4)) -> dict:
+                modes: tuple[int, ...] = (1, 2, 3, 4), profile: int | None = None) -> dict:
     """Exercise the live visibility GLSL over mode/snow/moon/rain/sun/day inputs."""
     results = {}
     for mode in modes:
-        core, _ = source_fragments(aurora_mode=mode)
+        core, _ = source_fragments(aurora_mode=mode, profile=profile)
         program = ctx.program(vertex_shader=VERTEX, fragment_shader=fragment_shader(core))
         vao = ctx.vertex_array(program, [])
         target = ctx.texture((1, 1), 4, dtype="f4")
@@ -396,7 +403,7 @@ def gate_matrix(ctx, active_day: int, inactive_day: int,
     return results
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--width", type=int, default=640)
@@ -411,9 +418,16 @@ def main() -> int:
     parser.add_argument("--timing-height", type=int, default=1369)
     parser.add_argument("--timing-frames", type=int, default=8, help="measured GPU frames per timing scenario; default 8 plus 3 warmups")
     parser.add_argument("--gate-matrix", action="store_true", help="test all four visibility modes across snow, moon, rain, sun, and day inputs")
-    args = parser.parse_args()
+    parser.add_argument("--profile", choices=("0", "1", "2", "3", "4", "all"),
+                        default=str(int(setting_float("PERFORMANCE_PROFILE", 4))), help="Potato 0 through Ultra 4, or all sequentially")
+    args = parser.parse_args(argv)
+    if args.profile == "all":
+        original_args = sys.argv[1:] if argv is None else argv
+        return max(main(original_args + ["--profile", str(profile), "--output", str(args.output / f"profile-{profile}")])
+                   for profile in range(5))
+    args.profile = int(args.profile)
     args.output.mkdir(parents=True, exist_ok=True)
-    core, funcs = source_fragments()
+    core, funcs = source_fragments(profile=args.profile)
     ctx = make_context(args.backend)
     selection = None
     if "auroraNightRoll" in funcs and "auroraNightActive" in funcs:
@@ -442,6 +456,10 @@ def main() -> int:
     report = {
         "source": str(NIGHT), "gl_version": ctx.info.get("GL_VERSION"), "renderer": ctx.info.get("GL_RENDERER"),
         "source_sha256": hashlib.sha256(NIGHT.read_bytes()).hexdigest(),
+        "performance_profile": args.profile,
+        "performance_profile_name": ("Potato", "Low", "Medium", "High", "Ultra")[args.profile],
+        "quality_header_sha256": hashlib.sha256(QUALITY.read_bytes()).hexdigest(),
+        "compiled_core_sha256": hashlib.sha256(core.encode()).hexdigest(),
         "aurora_brightness_setting": setting_float("AURORA_BRIGHTNESS", 0.09),
         "milkyway_brightness_setting": stars_setting_float("MILKYWAY_BRIGHTNESS", 0.5),
         "aurora_mode_setting": int(setting_float("AURORA_MODE", 3.0)),
@@ -467,7 +485,7 @@ def main() -> int:
             inactive_days = np.flatnonzero(selection[:, 0, 1] <= 0.5) if selection is not None else np.array([], dtype=np.int32)
             if not len(active_days) or not len(inactive_days):
                 raise RuntimeError("mode gate matrix requires both active and inactive days in the selector sample")
-            report["mode_gate_matrix"] = gate_matrix(ctx, int(active_days[0]), int(inactive_days[0]))
+            report["mode_gate_matrix"] = gate_matrix(ctx, int(active_days[0]), int(inactive_days[0]), profile=args.profile)
         else:
             views = ((0, "north_horizon", 0.0), (3, "north_up30", 30.0),
                      (4, "zenith", 90.0), (2, "panorama", 0.0))

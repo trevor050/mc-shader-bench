@@ -13,8 +13,10 @@ uniform float rainStrength;
 uniform float frameTimeCounter;
 uniform ivec2 eyeBrightnessSmooth;
 uniform float rainLocal;
+#if !VANILLA_LIGHTING
 #include "/lib/atmosphere.glsl"
 #include "/lib/lighting.glsl"
+#endif
 
 #ifdef VERTEX
 #include "/lib/jitter.glsl"
@@ -59,23 +61,34 @@ void main() {
     applyJitter(gl_Position);
 
     sunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
+#if VANILLA_LIGHTING
+    envLightDir = sunDir;
+    envDirect = vec3(0.0);
+    envAmbient = vec3(0.0);
+    sunsetLight = vec3(0.0);
+#else
     LightEnv e = makeLightEnv(sunDir);
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
     // Sunset palette light for the sun's path on the water and the clouds reflected in it (same as clouds_march).
     sunsetLight = sunDir.y > -0.16 ? cloudSunsetLight(sunDir) * sunsetWindow(sunDir.y) : vec3(0.0);
+#endif
 }
 #endif
 
 #ifdef FRAGMENT
 uniform int frameCounter;
 uniform sampler2D gtexture;
+#if VANILLA_LIGHTING
+uniform sampler2D lightmap;
+#include "/lib/held_light.glsl"
+#endif
 uniform sampler2D colortex4;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex1;
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
 uniform sampler2D shadowcolor0;
@@ -91,15 +104,17 @@ uniform float far;
 uniform int isEyeInWater;
 uniform sampler2D colortex9;
 uniform sampler2D colortex8;
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
 #include "/lib/shadows.glsl"
 #endif
+#if !VANILLA_LIGHTING
 #include "/lib/clouds.glsl"
 #include "/lib/night.glsl"
 #include "/lib/water.glsl"
 #include "/lib/rain.glsl"
 #include "/lib/portal.glsl"
 #include "/lib/ice.glsl"
+#endif
 #if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
 #include "/lib/voxel.glsl"
 uniform usampler3D voxelSampler;
@@ -158,7 +173,7 @@ vec3 viewFromDepth(vec2 uv, float depth) {
 
 // Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
 vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
-#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
+#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
     if (isEyeInWater == 1 || mat == MAT_ENTITY) return col;
     vec2 bufferRes = vec2(textureSize(colortex9, 0));
     vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
@@ -174,6 +189,7 @@ vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
 // Screen-space reflection against the opaque depth buffer. Returns rgb and hit confidence in a.
 vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 #ifdef WATER_SSR
+#if REFLECTION_STEPS > 0
     float stepLen = 0.5 + length(viewPos) * 0.03;
     vec3 p = viewPos + viewDir * stepLen * dither;
     vec3 prev = viewPos;
@@ -190,7 +206,7 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
         if (s.z > sceneDepth) {
             vec3 a = prev, b = p;
             vec3 hs = s;
-            for (int j = 0; j < 6; j++) {
+            for (int j = 0; j < REFLECTION_REFINEMENT; j++) {
                 vec3 m = (a + b) * 0.5;
                 vec3 ms = projectAndDivide(gbufferProjection, m) * 0.5 + 0.5;
                 float sampleDepth = texture(depthtex1, ms.xy).r;
@@ -215,6 +231,7 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
         }
     }
 #endif
+#endif
     return vec4(0.0);
 }
 
@@ -222,11 +239,13 @@ void main() {
 #ifdef PROG_WATER
     outMat = vec4(0.0);
 #endif
+#if !VANILLA_LIGHTING
     LightEnv env;
     env.sunDir = sunDir;
     env.lightDir = envLightDir;
     env.directLight = envDirect;
     env.skyAmbient = envAmbient;
+#endif
 
     vec2 uv = gl_FragCoord.xy / vec2(viewWidth, viewHeight);
     vec3 rd = normalize(playerPos);
@@ -244,6 +263,59 @@ void main() {
     if (chunkDepth < 1.0 && length(viewFromDepth(uv, chunkDepth)) < dist) discard;
 #endif
 
+#if VANILLA_LIGHTING
+#ifdef PROG_DH
+    vec4 native = glcolor;
+#else
+    vec4 native = texture(gtexture, texcoord) * glcolor;
+#endif
+    if (native.a < 0.02) discard;
+    vec3 nativeLight = texture(lightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb;
+    nativeLight += cheapHeldLightSrgb(playerPos, normalize(worldNormal), 1.0);
+    vec3 cheapColor = native.rgb * nativeLight;
+    if (mat == MAT_WATER) {
+        // Two scene/depth reads, no noise, shadow map, cloud reflection or screen-space march.
+        // Preserve DH's independent water depth and the player occlusion test above this branch.
+#ifdef PROG_DH
+        float waterBehind = texture(dhDepthTex1, uv).r;
+        float waterDepth = waterBehind >= 1.0 ? 24.0
+            : max(length(projectAndDivide(dhProjectionInverse, vec3(uv, waterBehind) * 2.0 - 1.0)) - dist, 0.0);
+#else
+        float waterBehind = texture(depthtex1, uv).r;
+        float waterDepth = waterBehind >= 1.0 ? 24.0 : max(length(viewFromDepth(uv, waterBehind)) - dist, 0.0);
+#endif
+        vec3 tint = glcolor.rgb / max(max(glcolor.r, glcolor.g), max(glcolor.b, 0.001));
+        vec3 through = texture(colortex4, uv).rgb;
+        float bodyShare = 1.0 - exp(-(waterDepth + WATER_SURFACE_VEIL * 0.3) * (0.10 * WATER_TURBIDITY / 0.18));
+        vec3 body = mix(through * mix(vec3(1.0), tint, 0.22), cheapColor, bodyShare * 0.86);
+        vec3 n = normalize(worldNormal);
+        float facing = 1.0 - saturate(abs(dot(-rd, n)));
+        float facing2 = facing * facing;
+        float F = 0.02 + 0.98 * facing2 * facing2 * facing;
+        float day = smoothstep(-0.12, 0.12, sunDir.y);
+        vec3 r = reflect(rd, n);
+        vec3 sky = mix(vec3(0.025, 0.035, 0.075), mix(vec3(0.58, 0.70, 0.84), vec3(0.28, 0.48, 0.75), saturate(abs(r.y))), day);
+#ifdef DIM_NETHER
+        sky = vec3(0.16, 0.055, 0.025);
+#elif defined DIM_END
+        sky = vec3(0.095, 0.055, 0.14);
+#endif
+        float skyVis = lmcoord.y * lmcoord.y;
+        if (isEyeInWater == 1) { F *= 0.12; skyVis = 0.0; }
+        outColor = vec4(mix(body, sky * max(nativeLight, vec3(0.08)), F * skyVis), 1.0);
+    } else {
+        // Native ice, glass, portal and lava sprites retain Minecraft's functional alpha/lightmap behavior.
+        outColor = vec4(cheapColor, native.a);
+    }
+#ifdef PROG_HAND
+    // Preserve the hand's opaque output contract even when a held sprite has a fractional texture alpha.
+    outColor.a = 1.0;
+#endif
+#if defined PROG_WATER || defined PROG_ENTITIES_TRANSLUCENT
+    if (mat == MAT_ENTITY) outMat = vec4(float(MAT_ENTITY) / 255.0, 0.0, 1.0, 0.0);
+#endif
+    return;
+#else
     if (mat == MAT_WATER) {
 #ifndef PROG_DH
         // Side faces at the render edge expose the ocean's cross-section; DH water covers beyond.
@@ -527,6 +599,7 @@ void main() {
 #else
     // Preserve the material's blend alpha while compositing only cloud radiance in front of the surface.
     outColor = vec4(applyCloudsInFront(col, uv, dist), a);
+#endif
 #endif
 #endif
 }

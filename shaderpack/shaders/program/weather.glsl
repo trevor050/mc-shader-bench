@@ -17,11 +17,18 @@ uniform float frameTimeCounter;
 #ifdef VERTEX
 out vec2 texcoord;
 out vec4 glcolor;
+#if VANILLA_LIGHTING
+out vec2 lmcoord;
+#endif
 flat out vec3 skyLight;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     glcolor = gl_Color;
+#if VANILLA_LIGHTING
+    lmcoord = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;
+    skyLight = vec3(0.0);
+#else
 #if defined DIM_NETHER || defined DIM_END
     skyLight = vec3(0.0);
 #else
@@ -29,10 +36,15 @@ void main() {
     // Average of the overhead and horizon sky: what a falling drop refracts toward the eye.
     skyLight = (skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) + skyRadiance(normalize(vec3(sunDir.x, 0.15, sunDir.z) + vec3(0.0, 0.0, 1e-3)), sunDir, 4)) * 0.5;
 #endif
+#endif
 }
 #endif
 #ifdef FRAGMENT
 uniform sampler2D gtexture;
+#if VANILLA_LIGHTING
+uniform sampler2D lightmap;
+in vec2 lmcoord;
+#endif
 uniform ivec2 eyeBrightnessSmooth;
 in vec2 texcoord;
 in vec4 glcolor;
@@ -46,6 +58,9 @@ void main() {
 #endif
     vec4 c = texture(gtexture, texcoord) * glcolor;
     if (c.a < 0.05) discard;
+#if VANILLA_LIGHTING
+    outColor = vec4(c.rgb * texture(lightmap, lmcoord).rgb, c.a);
+#else
     bool rain = c.b > c.r * 1.25;
     float open = 0.3 + 0.7 * float(eyeBrightnessSmooth.y) / 240.0;
     vec3 sky = vec3(luminance(skyLight)) * mix(vec3(1.0), vec3(0.9, 0.95, 1.05), 0.6);
@@ -53,5 +68,6 @@ void main() {
     float alpha = rain ? c.a * 0.5 : c.a * 0.75;
     // Drops are brighter than the sky they refract only at the rims; snow is a diffuse white lit by the sky.
     outColor = vec4(tint * sky * open * 1.6 + 0.004, alpha);
+#endif
 }
 #endif

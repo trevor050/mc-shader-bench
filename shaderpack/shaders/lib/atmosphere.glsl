@@ -59,6 +59,11 @@ vec3 sunTransmittance(vec3 lightDir) {
 }
 
 vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
+    // Every view sample is at most 320 km from a 6360 km sphere and above the ground.
+    // Its up-vector can differ from vertical by no more than path/radius. Below this bound
+    // every terminator and sky-self gate is exactly zero, so the entire nested integral is zero.
+    // This removes the invisible moon in daylight and invisible sunlight on fully dark nights.
+    if (lightDir.y + 0.05032 <= -0.12) return vec3(0.0);
     vec3 ro = vec3(0.0, ATM_GROUND + 200.0, 0.0);
     // Keep below-horizon rays from sampling the planet: bend them just above the horizon.
     rd.y = max(rd.y, 0.0) + 0.0005;
@@ -304,7 +309,25 @@ vec3 endSky(vec3 rd) {
 
 // The visible sky and its fog continuation must use identical quadrature at the horizon.
 // Eight haze steps versus twelve sky steps made a 4–7% radiance jump at eye level.
+#if SKY_QUALITY >= 2
 const int SKY_VIEW_STEPS = 12;
+#else
+const int SKY_VIEW_STEPS = 8;
+#endif
+
+vec3 skyRadianceCheap(vec3 rd, vec3 sunDir) {
+    float up = max(rd.y, 0.0);
+    float daylight = smoothstep(-0.14, 0.12, sunDir.y);
+    vec3 zenith = mix(vec3(0.009, 0.018, 0.034), vec3(0.38, 0.61, 0.96), daylight);
+    vec3 horizon = mix(vec3(0.018, 0.026, 0.041), vec3(0.68, 0.75, 0.81), daylight);
+    vec3 sky = toLinear(mix(horizon, zenith, sqrt(up)));
+    // Keep the shared continuous dusk event and biome haze without a nested atmospheric integral.
+    sky += twilightGlow(rd, sunDir) * 0.12;
+    float haze = saturate((skyAerosolScale() - 0.7) / 0.95);
+    sky = mix(sky, toLinear(horizon), exp(-up * 8.0) * haze * 0.16);
+    vec3 overcast = toLinear(mix(vec3(0.020, 0.026, 0.038), vec3(0.50, 0.53, 0.55), daylight));
+    return mix(sky, overcast, rainStrength * 0.85);
+}
 
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
@@ -312,6 +335,11 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
     return netherHaze(rd, 90.0);
 #elif defined DIM_END
     return endSky(rd);
+#endif
+#if SKY_QUALITY == 0
+    return skyRadianceCheap(rd, sunDir);
+#elif SKY_QUALITY == 1
+    steps = min(steps, SKY_VIEW_STEPS);
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
@@ -340,6 +368,8 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
 #if defined DIM_NETHER || defined DIM_END
     return vec3(0.0);
 #endif
+    float up = smoothstep(-0.06, 0.02, sunDir.y);
+    if (up <= 0.0) return vec3(0.0);
     float a = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
     // Low sun: longer air path, more haze, a much larger and relatively stronger glow.
     float low = 1.0 - smoothstep(0.0, 0.5, sunDir.y);
@@ -357,7 +387,6 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
     float strength = core + halo + skirt + band;
     vec3 t = sunTransmittance(sunDir);
     // Fades as the sun sets below the horizon, and is washed out by overcast.
-    float up = smoothstep(-0.06, 0.02, sunDir.y);
     return t * SUN_ILLUMINANCE * strength * up * (1.0 - 0.85 * rainStrength);
 }
 

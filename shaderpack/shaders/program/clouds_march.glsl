@@ -22,6 +22,9 @@ flat out vec3 skyLight;
 flat out vec3 envLightDirHi;
 flat out vec3 envDirect1;
 flat out vec3 envDirect2;
+flat out vec4 weather0;
+flat out vec3 weather1;
+flat out vec3 deckWeather;
 void main() {
     gl_Position = ftransform();
     sunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
@@ -32,6 +35,10 @@ void main() {
     envDirect1 = e.directLight1;
     envDirect2 = e.directLight2;
     skyLight = e.skyLight;
+    CloudWeather w = cloudWeather();
+    weather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
+    weather1 = vec3(w.low, w.lowCov, w.cb);
+    deckWeather = vec3(veilAmount(w), fractusAmount(w), virgaAmount(w));
 }
 #endif
 
@@ -52,6 +59,9 @@ flat in vec3 skyLight;
 flat in vec3 envLightDirHi;
 flat in vec3 envDirect1;
 flat in vec3 envDirect2;
+flat in vec4 weather0;
+flat in vec3 weather1;
+flat in vec3 deckWeather;
 
 /* RENDERTARGETS: 7,8,3 */
 layout(location = 0) out vec4 outClouds;
@@ -91,8 +101,10 @@ void main() {
     // By moonlight the bright rim toward the moon is what makes a night cloud: silver its edges.
     gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
     float dist;
+    CloudWeather w = CloudWeather(weather0.x, weather0.y, weather0.z, weather0.w, weather1.x, weather1.y, weather1.z);
+    gCloudDeckWeather = deckWeather;
     vec4 c = renderClouds(cameraPosition, rd, sceneDist, sunDir, envLightDir, envDirect, envLightDirHi, envDirect1, envDirect2,
-                          skyLight, dither, dist);
+                          skyLight, dither, w, dist);
     outClouds = c;
     outDist = vec4(min(dist, 1e6), sceneDist, 0.0, 0.0);
     // colortex3 is RGBA16F. Scaling keeps the no-cloud sentinel finite without allocating another target.

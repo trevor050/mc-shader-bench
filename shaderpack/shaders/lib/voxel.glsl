@@ -101,6 +101,8 @@ FieldLight sampleLightField(vec3 playerPos, vec3 n) {
     vec3 h = amp + BLOCKLIGHT_COLOR * 0.004;
     f.hue = h / luminance(h);
     if (l0 < 1e-4) return f;
+    f.radiance = amp * LIGHT_FIELD_GAIN;
+#if PERFORMANCE_PROFILE >= 3
     vec3 texel = 0.75 / vec3(VOXEL_SIZE);
     vec3 g = vec3(luminance(sqrt(max(lightFieldTapRaw(uvw + vec3(texel.x, 0.0, 0.0)).rgb, 0.0))),
                   luminance(sqrt(max(lightFieldTapRaw(uvw + vec3(0.0, texel.y, 0.0)).rgb, 0.0))),
@@ -109,7 +111,7 @@ FieldLight sampleLightField(vec3 playerPos, vec3 n) {
     f.dir = gl > 1e-6 ? g / gl : vec3(0.0);
     // Relative gradient: close to a source the field changes fast relative to its value.
     f.focus = saturate(gl / l0 * 1.6);
-    f.radiance = amp * LIGHT_FIELD_GAIN;
+#endif
     return f;
 }
 #endif

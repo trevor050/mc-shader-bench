@@ -90,8 +90,7 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
     float emission = at_midBlock.w;
     uint data;
     if (emission > 0.5) {
-        vec2 mid = (gl_TextureMatrix[0] * vec4(mc_midTexCoord, 0.0, 1.0)).xy;
-        vec3 c = emitterColor((gl_TextureMatrix[0] * gl_MultiTexCoord0).xy, mid);
+        vec3 c;
         uint extra = 0u;
         // Lava and portals throw extra light beyond Minecraft's range (lava seas light whole caverns); their
         // colours are fixed so the lava's yellow blobs cannot wash its light out to amber.
@@ -99,7 +98,12 @@ void voxelize(int mat, vec3 worldPos, vec3 normal) {
         // Glow berries give a soft golden light, not the fire orange their warm sprite would select.
         else if (mat == MAT_GLOWBERRY) c = vec3(1.0, 0.78, 0.36);
         else if (mat == MAT_PORTAL) { c = vec3(0.72, 0.22, 1.0); extra = 2u; }
-        else if (c.r > 0.9 && c.b < 0.35) extra = 1u;
+        else {
+            // These fixed-colour sources never use the sprite estimate. Avoid its 36 atlas reads entirely.
+            vec2 mid = (gl_TextureMatrix[0] * vec4(mc_midTexCoord, 0.0, 1.0)).xy;
+            c = emitterColor((gl_TextureMatrix[0] * gl_MultiTexCoord0).xy, mid);
+            if (c.r > 0.9 && c.b < 0.35) extra = 1u;
+        }
         data = packVoxel(VOXEL_EMITTER, uint(emission + 0.5), c, extra);
     } else if (mat == MAT_SCULK) {
         // Sculk seeps a faint teal into the light field: the air above sculk fields glows.

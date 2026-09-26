@@ -19,10 +19,11 @@ vec3 reflViewFromDepth(vec2 uv, float depth) {
 
 // Returns the reflected colour in rgb and its confidence (0 = miss) in a.
 vec4 traceReflection(vec3 viewPos, vec3 viewDir, float dither) {
+#if REFLECTION_STEPS > 0
     float stepLen = 0.25 + 0.02 * -viewPos.z;
     vec3 p = viewPos + viewDir * stepLen * dither;
     vec3 prev = p;
-    for (int i = 0; i < 28; i++) {
+    for (int i = 0; i < REFLECTION_STEPS; i++) {
         prev = p;
         p += viewDir * stepLen;
         stepLen *= 1.2;
@@ -33,7 +34,7 @@ vec4 traceReflection(vec3 viewPos, vec3 viewDir, float dither) {
         if (d >= 1.0 || d < 0.56) continue;
         if (s.z > d) {
             vec3 a = prev, b = p, hs = s;
-            for (int j = 0; j < 6; j++) {
+            for (int j = 0; j < REFLECTION_REFINEMENT; j++) {
                 vec3 m = (a + b) * 0.5;
                 vec3 ms = projectAndDivide(gbufferProjection, m) * 0.5 + 0.5;
                 if (ms.z > texture(depthtex0, ms.xy).r) { b = m; hs = ms; } else a = m;
@@ -46,5 +47,6 @@ vec4 traceReflection(vec3 viewPos, vec3 viewDir, float dither) {
             return vec4(texture(colortex0, hs.xy).rgb, edge.x * edge.y * facing);
         }
     }
+#endif
     return vec4(0.0);
 }

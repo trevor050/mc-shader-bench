@@ -338,43 +338,7 @@ vec3 shadeSurface(LightEnv env, vec3 albedo, vec3 n, vec3 viewDir, vec2 lm, floa
     return col;
 }
 
-uniform int heldBlockLightValue;
-uniform int heldBlockLightValue2;
-uniform int heldItemId;
-uniform int heldItemId2;
-
-// Colour of the light held in hand (item.properties), matching what the placed block casts through the light
-// field: fire orange, soul cyan, redstone red and so on. The brighter hand decides. Saturated colours are partly
-// luminance-normalized like placed emitters, so a held redstone torch still lights its surroundings.
-vec3 heldLightColor() {
-    int id = heldBlockLightValue >= heldBlockLightValue2 ? heldItemId : heldItemId2;
-    vec3 c = vec3(1.0, 0.40, 0.09);                 // fire (default for unlisted light items)
-    if (id == 2) c = vec3(0.25, 0.78, 1.0);         // soul fire
-    else if (id == 3) c = vec3(1.0, 0.12, 0.05);    // redstone
-    else if (id == 4) c = vec3(1.0, 0.72, 0.30);    // glowstone, shroomlight
-    else if (id == 5) c = vec3(0.55, 0.95, 1.0);    // sea lantern, beacon
-    else if (id == 6) c = vec3(1.0, 0.88, 0.92);    // end rod
-    else if (id == 7) c = vec3(0.55, 1.0, 0.45);    // verdant froglight, sea pickle
-    else if (id == 8) c = vec3(0.70, 0.30, 1.0);    // crying obsidian, amethyst
-    vec3 e = c * c;
-    e /= mix(1.0, max(luminance(e), 0.05), 0.65);
-    return sqrt(e) * (luminance(BLOCKLIGHT_COLOR) / max(luminance(sqrt(e)), 1e-3)) * 0.85;
-}
-
-// Handheld light: a torch (or any light-emitting item) in either hand lights the surroundings like a placed
-// block would, fading one light level per block, with a soft wrap so it also reaches surfaces edge-on.
-// Requires uniforms heldBlockLightValue, heldBlockLightValue2 (dynamicHandLight=true in shaders.properties).
-vec3 handheldLight(vec3 playerPos, vec3 n, float ao) {
-    float level = float(max(heldBlockLightValue, heldBlockLightValue2));
-    if (level <= 0.0) return vec3(0.0);
-    // The item is held a little below and in front of the eye.
-    vec3 toLight = vec3(0.0, -0.3, 0.0) - playerPos;
-    float d = length(toLight);
-    float lm = saturate((level - d) / 15.0);
-    if (lm <= 0.0) return vec3(0.0);
-    float wrap = saturate(dot(n, toLight / max(d, 1e-3)) * 0.75 + 0.25);
-    return heldLightColor() * blockLightLevel(lm) * wrap * mix(ao, 1.0, 0.3) * 0.7;
-}
+#include "/lib/held_light.glsl"
 
 #ifdef DIM_NETHER
 // Volcanic glass reflects the charcoal smoke overhead and a restrained ember band at the horizon. Keeping the

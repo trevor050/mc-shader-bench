@@ -14,7 +14,9 @@
 uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
+#if POSTFX_ENABLED
 #include "/lib/atmosphere.glsl"
+#endif
 
 #ifdef VERTEX
 out vec2 texcoord;
@@ -23,13 +25,19 @@ flat out float sunsetGrade;
 flat out float duskOpen;
 flat out vec3 veilColor;
 flat out vec2 veilUV;
+flat out float frameExposure;
+flat out float frameAdaptedLog;
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
 uniform float viewHeight;
+#if POSTFX_ENABLED
 uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
+uniform sampler2D colortex5;
+uniform ivec2 eyeBrightnessSmooth;
+#endif
 
 // Veiling glare of a blinding sun, evaluated once per frame (every vertex computes the same value): how much of
 // the disc is visible past terrain and leaves, and dimmed by clouds using the sun's absolute brightness rather
@@ -37,7 +45,7 @@ uniform sampler2D dhDepthTex0;
 void computeVeil(vec3 sd) {
     veilColor = vec3(0.0);
     veilUV = vec2(-10.0);
-#if !defined DIM_NETHER && !defined DIM_END
+#if !defined DIM_NETHER && !defined DIM_END && POSTFX_ENABLED
     vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
     if (clip.w <= 0.0) return;
     vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
@@ -66,6 +74,15 @@ void computeVeil(vec3 sd) {
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+#if !POSTFX_ENABLED
+    whiteBalance = vec3(1.0);
+    sunsetGrade = 0.0;
+    duskOpen = 0.0;
+    veilColor = vec3(0.0);
+    veilUV = vec2(-10.0);
+    frameExposure = 1.0;
+    frameAdaptedLog = 0.0;
+#else
     // Eyes adapt to the colour of daylight: sunlight filtered through the air is slightly warm, but a white
     // cloud at noon still looks white. Neutralize most of that tint by day; let golden hour stay golden.
     vec3 sd = normalize(mat3(gbufferModelViewInverse) * sunPosition);
@@ -80,21 +97,38 @@ void main() {
     computeVeil(sd);
     whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
     whiteBalance /= luminance(whiteBalance);
+    // Adaptation and enclosure are frame-wide. Four fullscreen vertices evaluate this exact old
+    // fragment formula, avoiding a meter fetch, logarithms and clamps at every output pixel.
+    frameAdaptedLog = texelFetch(colortex5, ivec2(0), 0).a;
+    const float refLog = -0.75;
+    float slope = frameAdaptedLog > refLog ? 0.45 : mix(0.36, 0.6, duskOpen);
+    frameExposure = exp2(log2(EXPOSURE_KEY * mix(1.0, DUSK_EXPOSURE, duskOpen)) - slope * (frameAdaptedLog - refLog));
+#if !defined DIM_NETHER && !defined DIM_END
+    float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
+    frameExposure = clamp(frameExposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
+#else
+    frameExposure = clamp(frameExposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN_OTHERWORLD, EXPOSURE_MAX_OTHERWORLD);
+#endif
+#endif
 }
 #endif
 
 #ifdef FRAGMENT
+#if POSTFX_ENABLED
 #include "/lib/bloom_filter.glsl"
-uniform sampler2D colortex0;
 uniform sampler2D colortex3;
 uniform sampler2D colortex7;
+#endif
+uniform sampler2D colortex0;
 // Rain and snow from gbuffers_weather: premultiplied colour, coverage in alpha. Cleared to zero every frame.
 uniform sampler2D colortex13;
 /*
 const int colortex13Format = RGBA16F;
 const vec4 colortex13ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
 */
+#if POSTFX_ENABLED
 uniform sampler2D colortex5;
+#endif
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
@@ -110,6 +144,7 @@ uniform vec3 upPosition;
 // of uneven brightness and length, a handful of longer ones, all slowly shimmering. Strength follows how much
 // of the sun is actually visible (sampled against terrain depth and the sun's measured brightness, so clouds
 // dim it), so walking behind a tree switches them off.
+#if POSTFX_ENABLED
 vec3 sunStreaks(vec2 uv) {
     vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
     if (clip.w <= 0.0) return vec3(0.0);
@@ -160,6 +195,7 @@ vec3 sunStreaks(vec2 uv) {
     vec3 tint = src / max(luminance(src), 1e-4);
     return tint * avgLum * streak * fade * vis * (1.0 + 1.6 * lowSun);
 }
+#endif
 
 in vec2 texcoord;
 flat in vec3 whiteBalance;
@@ -167,6 +203,8 @@ flat in float sunsetGrade;
 flat in float duskOpen;
 flat in vec3 veilColor;
 flat in vec2 veilUV;
+flat in float frameExposure;
+flat in float frameAdaptedLog;
 layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -296,6 +334,14 @@ void main() {
     // Precipitation over the fogged scene (see weather.glsl).
     vec4 weather = texture(colortex13, texcoord);
     col = col * (1.0 - saturate(weather.a)) + max(weather.rgb, 0.0);
+#if !POSTFX_ENABLED
+    // The Potato path carries display-space native texture/lightmap colour throughout the scene.
+    // A mild polynomial contrast lift keeps the inexpensive lighting readable without HDR adaptation.
+    col = saturate(col);
+    col = mix(col, col * col * (3.0 - 2.0 * col), clamp(0.08 * GRADE_CONTRAST / 0.28, 0.0, 1.0));
+    col = saturate(mix(vec3(luminance(col)), col, SATURATION / 1.08));
+    fragColor = vec4(col, 1.0);
+#else
     // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
     col += sampleBloomCubic(colortex3, texcoord, 0);
@@ -304,7 +350,7 @@ void main() {
     // sun, produce a visible glow; everything else just softens very slightly.
     col = mix(col, sampleBloomCubic(colortex7, texcoord, 0), BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
-    col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
+    if (SUN_STREAK_STRENGTH > 0.0) col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
     // A blinding sun veils the view around it: a smooth analytic glare (no mip blockiness), added after the
     // exposure meter so looking toward the sun does not make the exposure lurch.
     if (veilColor.r + veilColor.g + veilColor.b > 0.0) {
@@ -314,22 +360,7 @@ void main() {
     }
 
     // Eye adaptation (see taa.glsl): expose so the adapted scene brightness maps to a mid tone.
-    float adaptedLog = texelFetch(colortex5, ivec2(0), 0).a;
-    // Partial adaptation around a daylight reference: bright views (the sun) darken steeply, dark views
-    // (night, caves) open up gently so night still reads as night.
-    const float refLog = -0.75;
-    float slope = adaptedLog > refLog ? 0.45 : mix(0.36, 0.6, duskOpen);
-    float exposure = exp2(log2(EXPOSURE_KEY * mix(1.0, DUSK_EXPOSURE, duskOpen)) - slope * (adaptedLog - refLog));
-#if !defined DIM_NETHER && !defined DIM_END
-    // Underground the eye may not open all the way: dark caves must stay dark, torch-lit ones stay readable.
-    float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
-    exposure = clamp(exposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
-#else
-    // A narrow range: glowing lava and lit smoke must not stop the eye down until the rock around them goes black
-    // (Trevor, comparing with Solas, where the Nether's rock stays readable beside blazing lava).
-    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN_OTHERWORLD, EXPOSURE_MAX_OTHERWORLD);
-#endif
-    col *= exposure;
+    col *= frameExposure;
 #if !defined DIM_NETHER && !defined DIM_END
     col *= whiteBalance;
 #endif
@@ -352,6 +383,8 @@ void main() {
     col = mix(col, pow(max(exposed, 0.0), vec3(1.0 / 2.2)), darkLift * 0.75);
     col = mix(col, vec3(luminance(col)), darkLift * 0.25);
     col = colorGrade(col);
+    // The accepted default remains identical; the saturation control also applies to the active Hejl path.
+    col = saturate(mix(vec3(luminance(col)), col, SATURATION / 1.08));
 
     vec2 v = texcoord - 0.5;
     col *= 1.0 - dot(v, v) * 0.35;
@@ -361,7 +394,8 @@ void main() {
 #ifdef EXPOSURE_DEBUG
     // Corner readout for calibration: red = adapted log2 brightness, green = log2 exposure (both /20 + 0.5).
     if (gl_FragCoord.x < 12.0 && gl_FragCoord.y < 12.0)
-        fragColor = vec4(adaptedLog / 20.0 + 0.5, log2(exposure) / 20.0 + 0.5, 0.0, 1.0);
+        fragColor = vec4(frameAdaptedLog / 20.0 + 0.5, log2(frameExposure) / 20.0 + 0.5, 0.0, 1.0);
+#endif
 #endif
 }
 #endif
