@@ -156,11 +156,12 @@ float sunsetWindow(float e) {
 // Colour of the sunlight reaching clouds and the land as the sun sinks: gold, then orange, coral pink,
 // magenta, and a last crimson-violet glow on the highest clouds.
 vec3 sunsetLightTint(float e) {
-    const vec3 gold    = vec3(1.00, 0.66, 0.30);
-    const vec3 orange  = vec3(1.00, 0.44, 0.15);
-    const vec3 coral   = vec3(1.00, 0.33, 0.30);
-    const vec3 magenta = vec3(1.00, 0.28, 0.36);
-    const vec3 crimson = vec3(0.80, 0.14, 0.16);
+    // After real dusk skies: the last light on high cloud is a soft rose-lilac, not a dark crimson.
+    const vec3 gold    = vec3(1.00, 0.68, 0.34);
+    const vec3 orange  = vec3(1.00, 0.50, 0.22);
+    const vec3 coral   = vec3(1.00, 0.44, 0.36);
+    const vec3 magenta = vec3(1.00, 0.40, 0.52);
+    const vec3 crimson = vec3(0.78, 0.40, 0.80);
     vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.07, e));
     c = mix(c, coral, smoothstep(-0.07, -0.015, e));
     c = mix(c, orange, smoothstep(-0.015, 0.05, e));
@@ -171,13 +172,15 @@ vec3 sunsetLightTint(float e) {
 // Sunlight on clouds: they sit hundreds of blocks up and keep catching the sun for a while after it has set
 // for the ground. Intensity follows the transmittance of a just-above-horizon path, fading out as the sun sinks
 // far enough that even the highest clouds are in Earth's shadow.
-vec3 cloudSunsetLight(vec3 sunDir) {
-    float e = sunDir.y;
+// lift raises the effective sun elevation for clouds higher up (they see the sun longer).
+vec3 cloudSunsetLight(vec3 sunDir, float lift) {
+    float e = sunDir.y + lift;
     vec3 tPhys = sunTransmittance(normalize(vec3(sunDir.x, max(e, 0.015), sunDir.z)));
     float lum = max(luminance(tPhys), 0.02);
     float lit = smoothstep(-0.14, -0.03, e);
     return sunsetLightTint(e) * lum * 2.2 * lit * SUN_ILLUMINANCE;
 }
+vec3 cloudSunsetLight(vec3 sunDir) { return cloudSunsetLight(sunDir, 0.0); }
 
 vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     float e = sunDir.y;
@@ -211,6 +214,13 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     float shadowTop = mix(0.0, 0.14, dusk);
     float belt = exp(-sqr((up - shadowTop - 0.07) / 0.07)) * pow(away, 1.5);
     col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * smoothstep(0.1, 0.0, e);
+    // Periwinkle zenith: through golden hour and dusk the sky overhead goes blue-violet (ozone absorbs the orange out
+    // of the long, sunlit path), which is the backdrop that makes peach and pink clouds glow.
+    col += vec3(0.42, 0.46, 1.0) * pow(up, 1.3) * mix(0.035, 0.06, dusk) * (0.6 + 0.4 * away);
+    // Purple light: a soft violet glow some 25 degrees above the set sun, brightest soon after sunset.
+    float fromSun = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
+    float purple = exp(-sqr((fromSun - 0.5) / 0.3)) * smoothstep(0.02, -0.02, e) * smoothstep(-0.13, -0.05, e);
+    col += vec3(0.78, 0.48, 1.0) * purple * up * 0.14;
     return col * w * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0 * SUNSET_VIVIDNESS;
 }
 

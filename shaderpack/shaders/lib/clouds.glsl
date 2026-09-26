@@ -22,7 +22,7 @@ uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exi
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
 #define L1_ALT 1150.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
-#define L1_THICK 220.0        // deep enough to read as volume from below, not a painted band
+#define L1_THICK 110.0        // a thin sheet of cloudlets (mackerel sky)
 #define L2_ALT 2600.0         // high, fibrous cirrus volume
 #define L2_THICK 180.0
 #define CLOUD_MAX_DIST 18000.0
@@ -317,16 +317,86 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     return vec4(rad, trans);
 }
 
-// Altocumulus: broken, soft-edged puffs in a shallow mid-level band. Track the contributing sample
-// distance rather than only the band entry; a zero entry distance while inside the band makes TAA
-// reproject the cloud through the camera and smear it when flying through.
+// ---- Altocumulus: the mackerel sky ----
+// A thin sheet of small, tightly packed cloudlets at mid level. From below it is a field of hundreds of cells with
+// blue gaps between them, arranged in loose rows across the wind (billows); on some days it covers the whole sky.
+// At sunset each cloudlet is lit from the side and from underneath, so the field turns into rows of glowing
+// peach-pink puffs with lavender shadows. Cells are procedural (jittered-grid Worley), so they stay crisp at any
+// distance until they shrink below a pixel, where they blend into the mean texture of the sheet.
+
+vec2 cellHash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// Nearest (x) and second-nearest (y) jittered cell point distances. y - x is the distance to the lane between
+// two cells. Cells are about one unit wide.
+vec2 cloudletCells(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float f1 = 8.0, f2 = 8.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(x, y);
+            vec2 r = o + 0.1 + cellHash(i + o) * 0.8 - f;
+            float d = dot(r, r);
+            if (d < f1) { f2 = f1; f1 = d; }
+            else if (d < f2) f2 = d;
+        }
+    return sqrt(vec2(f1, f2));
+}
+
+// Density of the altocumulus sheet at p. lod 0 includes the fine texture, lod 1 only the large forms.
+// The sheet is one continuous layer of fbm cloud; the cell pattern only carves thin lanes into it. Where the sheet
+// is thick the lanes close and cells merge into rippled banks; where it thins, the lanes widen into gaps and
+// cells break into separate cloudlets. So the field reads as texture with structure, never as a grid of dots.
+float altocumulusDensity(vec3 p, CloudWeather w, float dist, int lod) {
+    float h = (p.y - L1_ALT) / L1_THICK;
+    if (h <= 0.0 || h >= 1.0) return 0.0;
+    vec3 wind = cloudWind() * 1.6;
+    vec2 xz = p.xz + wind.xz;
+    // Where the sheet exists: broad patches; on high-coverage days it spreads edge to edge.
+    float patchN = cloudTex(vec3(xz / 22000.0, 0.13)).r;
+    float cov = w.cov1 * smoothstep(0.2, 0.6, patchN);
+    if (cov <= 0.01) return 0.0;
+    // Align with the upper wind: billow rows run across it, streaks along it.
+    const vec2 dir = vec2(0.82, 0.57);
+    vec2 q = vec2(dot(xz, dir), dot(xz, vec2(-dir.y, dir.x)));
+    // The sheet itself: fbm stretched along the wind, so it forms streaks and ripples at the scale of many cells.
+    vec4 s0 = cloudTex(vec3(q.x / 3800.0, q.y / 1700.0, 0.29));
+    vec4 s1 = cloudTex(vec3(q.x / 900.0, q.y / 520.0, 0.61));
+    float sheet = s0.r * 0.55 + s0.g * 0.2 + s1.r * 0.25;
+    // Cells, gently warped so rows wander and no two share a shape.
+    float wave = sin(q.x / 210.0 + s0.b * 6.0) * 12.0;
+    vec2 cp = vec2(q.x / 44.0, (q.y + wave) / 62.0) + (vec2(s1.g, s1.b) - 0.5) * 1.2;
+    vec2 c = cloudletCells(cp);
+    float lane = c.y - c.x;
+    // Soft cell body: dense near its centre, thinning toward the lanes.
+    float body = smoothstep(0.0, 0.45, lane) * (1.0 - 0.45 * smoothstep(0.2, 0.75, c.x));
+    // Coverage sets how much of the sheet survives; the lanes are carved harder where the sheet is thin.
+    float field = sheet * 0.9 + body * 0.55;
+    float d = saturate(remap(field, 1.15 - cov * 0.85, 1.45 - cov * 0.5, 0.0, 1.0));
+    // Flat base, softly domed top that follows the cell body.
+    float top = mix(0.4, 1.0, body * saturate(d * 1.5));
+    d *= smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(top * 0.55, top, h));
+    if (lod == 0 && d > 0.0) {
+        // Fuzz: fine fibres and puffs eat into the edges, so the cells have soft, torn rims.
+        vec4 f = cloudTex(vec3(xz / 160.0, 0.83 + h * 0.2));
+        d = saturate(remap(d, (f.g * 0.6 + f.b * 0.4) * 0.45, 1.0, 0.0, 1.0));
+    }
+    // Far away the cells are smaller than a pixel; blend toward the sheet's average so they do not shimmer.
+    float far = smoothstep(7000.0, 22000.0, dist);
+    float mean = saturate(remap(sheet * 0.9 + 0.3, 1.15 - cov * 0.85, 1.45 - cov * 0.5, 0.0, 1.0)) * 0.6
+               * smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(0.45, 0.85, h));
+    return mix(d, mean, far);
+}
+
 vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec3 directLight,
              vec3 skyLight, float dither, out float dist) {
     dist = 1e6;
     if (w.cov1 < 0.02) return vec4(0.0, 0.0, 0.0, 1.0);
     float t0, t1;
     if (abs(rd.y) < 1e-4) {
-        // A horizontal ray inside the layer still travels through cloud; one outside it never enters.
         if (ro.y < L1_ALT || ro.y > L1_ALT + L1_THICK) return vec4(0.0, 0.0, 0.0, 1.0);
         t0 = 0.0;
         t1 = min(maxDist, 900.0);
@@ -335,54 +405,73 @@ vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
         t0 = max(min(ta, tb), 0.0);
         t1 = max(ta, tb);
     }
-    if (t1 <= t0 || t0 >= maxDist) return vec4(0.0, 0.0, 0.0, 1.0);
+    if (t1 <= t0 || t0 >= maxDist || t0 > 45000.0) return vec4(0.0, 0.0, 0.0, 1.0);
     t1 = min(t1, min(t0 + 900.0, maxDist));
     if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
-    if (t0 > 40000.0) return vec4(0.0, 0.0, 0.0, 1.0);
-    vec3 wind = cloudWind() * 1.6;
     float mu = dot(rd, lightDir);
-    const int N = 6;
+    const int N = 10;
+    const float sigma = 0.035;
     float stepLen = (t1 - t0) / float(N);
     vec3 rad = vec3(0.0);
     float trans = 1.0, dSum = 0.0, wSum = 0.0;
+    int lod = t0 < 5000.0 ? 0 : 1;
     for (int i = 0; i < N; i++) {
+        if (trans < 0.03) break;
         float t = t0 + (float(i) + dither) * stepLen;
         vec3 p = ro + rd * t;
-        float h = saturate((p.y - L1_ALT) / L1_THICK);
-        // Broad cell spacing and a slower weather field make layered banks rather than rows of tiny puffs.
-        vec2 q = (p.xz + wind.xz) / 2400.0;
-        float big = cloudTex(vec3(q * 0.30, 0.13)).r;
-        vec4 n = cloudTex(vec3(q * 1.8, 0.5));
-        float cells = n.r * 0.65 + n.g * 0.35;
-        float weatherCoverage = w.cov1 * mix(0.56, 1.0, smoothstep(0.05, 0.6, rainStrength));
-        float cov = weatherCoverage * smoothstep(0.18, 0.64, big);
-        float local = saturate(remap(cells, 1.0 - cov - 0.13, 1.0 - cov + 0.09, 0.0, 1.0));
-        // Cloud cells reach different heights. Bases stay broad while ragged, lobe-shaped tops leave
-        // visible openings between banks when seen from above.
-        float cellTop = mix(0.38, 1.0, smoothstep(0.3, 0.84, cells));
-        if (h >= cellTop) continue;
-        float hn = h / cellTop;
-        float profile = smoothstep(0.0, 0.12, hn) * (1.0 - smoothstep(0.45, 1.0, hn));
-        float d = saturate(local * profile - cloudTex(vec3(q * 5.5, 0.71)).b * 0.16) * 1.2;
-        if (d <= 0.0) continue;
-        float lightOD = d * 25.0 / max(lightDir.y, 0.1) * 0.5;
-        const float sigma = 0.01;
-        vec3 s = cloudScatter(lightOD * sigma, d * 15.0 * sigma, 0.0, mu, 1.0, directLight, skyLight, vec3(0.0));
+        float d = altocumulusDensity(p, w, t, lod);
+        if (d <= 0.004) continue;
+        // Self-shadowing toward the light: at a low sun it runs sideways through the neighbouring cloudlets, which
+        // lights one flank of each puff and leaves the other in lavender shade.
+        float lightOD = altocumulusDensity(p + lightDir * 9.0, w, t, 1) * 12.0
+                      + altocumulusDensity(p + lightDir * 26.0, w, t, 1) * 26.0
+                      + altocumulusDensity(p + lightDir * 65.0, w, t, 1) * 40.0;
+        lightOD *= 2.2;
+        float skyOD = d * (L1_ALT + L1_THICK - p.y) * 0.8;
+        float powder = mix(PI * d / (d + 0.2), 1.0, 0.75 * sqr(mu * 0.5 + 0.5));
+        vec3 s = cloudScatter(lightOD * sigma, skyOD * sigma, 0.0, mu, powder, directLight, skyLight, vec3(0.0));
         float stepT = exp(-d * sigma * stepLen);
         float weight = trans * (1.0 - stepT);
-        rad += trans * s * (1.0 - stepT);
+        rad += s * weight;
         dSum += t * weight;
         wSum += weight;
         trans *= stepT;
     }
     if (wSum > 0.0) dist = dSum / wSum;
-    float fade = 1.0 - smoothstep(20000.0, 40000.0, t0);
+    float fade = 1.0 - smoothstep(25000.0, 45000.0, t0);
     return vec4(rad * fade, mix(1.0, trans, fade));
 }
 
-// Cirrus: a shallow high-altitude volume of thin, fibrous ice streaks combed out by high winds ("mares' tails").
-// Its projected pattern stays continuous through the band, so it reads from above and while flying through.
-// Mostly forward-scattering ice, so it glows near the sun and nearly vanishes against the dark sky opposite.
+// ---- Cirrus: feathers, mares' tails and fans ----
+// High ice cloud combed into long fibres by the jet stream. The fibres follow a slowly curving flow field, so strokes
+// bend and sweep instead of running in straight parallel lines; long parallel streaks converge toward the horizon in
+// perspective, which is what makes cirrus fan out across the sky. Tufts (the dense heads where ice falls out) sit
+// along the strokes. Ice scatters strongly forward, and at this height the sun sets last, so cirrus is the last
+// cloud to glow gold and pink at dusk.
+
+float cirrusFlowAngle(vec2 p) {
+    return 0.38 + (cloudTex(vec3(p / 26000.0, 0.2)).g - 0.5) * 2.2 + (valueNoise(p / 7000.0 + 3.1) - 0.5) * 0.9;
+}
+
+float cirrusDensity(vec2 p, float h, CloudWeather w, float dist) {
+    float patchN = cloudTex(vec3(p / 17000.0, 0.9)).r;
+    float patch = saturate((patchN - 0.66 + w.cirrus * 0.34) / 0.16);
+    if (patch <= 0.0) return 0.0;
+    float a = cirrusFlowAngle(p);
+    vec2 dir = vec2(cos(a), sin(a));
+    vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+    // Fibres: very stretched noise, three octaves; the fine ones fade out with distance to avoid shimmer.
+    float fineFade = 1.0 - smoothstep(5000.0, 22000.0, dist);
+    float fib = valueNoise(vec2(q.x / 5200.0, q.y / 110.0 + h * 0.6)) * 0.55
+              + mix(0.5, valueNoise(vec2(q.x / 2300.0, q.y / 42.0) + 7.7), fineFade) * 0.3
+              + mix(0.5, valueNoise(vec2(q.x / 900.0, q.y / 17.0) + 19.1), fineFade) * 0.15;
+    // Strokes: long bands that start and end, brightest at their tufted heads.
+    float stroke = valueNoise(vec2(q.x / 7000.0, q.y / 900.0) + 5.3);
+    float tuft = smoothstep(0.55, 0.85, valueNoise(p / 2400.0 + 11.0));
+    float d = saturate((fib - 0.46) / 0.26) * smoothstep(0.3, 0.65, stroke) * (0.55 + 0.9 * tuft);
+    return d * patch;
+}
+
 vec4 cirrus(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir,
             vec3 directLight, vec3 skyLight, float dither, out float dist) {
     dist = 1e6;
@@ -399,7 +488,6 @@ vec4 cirrus(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir,
         t1 = max(ta, tb);
     }
     if (t1 <= t0 || t0 >= maxDist || t0 > 60000.0) return vec4(0.0, 0.0, 0.0, 1.0);
-    // Bound grazing-angle work while retaining enough depth for a smooth, stable veil.
     t1 = min(t1, min(t0 + 600.0, maxDist));
     if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
     const int N = 3;
@@ -408,25 +496,16 @@ vec4 cirrus(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir,
     vec3 rad = vec3(0.0);
     vec3 wind = cloudWind() * 4.0;
     float mu = dot(rd, lightDir);
-    const vec2 wdir = vec2(0.93, 0.37);
-    float phase = 0.45 * hgPhase(mu, 0.6) + 0.55 / (4.0 * PI);
+    // Ice: a strong forward lobe and a faint back lobe.
+    float phase = 0.55 * hgPhase(mu, 0.7) + 0.2 * hgPhase(mu, -0.2) + 0.25 / (4.0 * PI);
     for (int i = 0; i < N; i++) {
         float t = t0 + (float(i) + dither) * stepLen;
-        vec3 samplePos = ro + rd * t;
-        float h = saturate((samplePos.y - bottom) / L2_THICK);
-        vec2 p = samplePos.xz + wind.xz;
-        vec2 q = vec2(dot(p, wdir), dot(p, vec2(-wdir.y, wdir.x)));
-        float patch = saturate((cloudTex(vec3(q / 16000.0, 0.9)).r - 0.68 + w.cirrus * 0.16) / 0.14);
-        float bend = cloudTex(vec3(q / 12000.0, 0.2)).g - 0.5;
-        vec2 f = vec2(q.x / 9000.0, (q.y + bend * 1700.0 + (h - 0.5) * 180.0) / 380.0);
-        float fineFade = 1.0 - smoothstep(6000.0, 20000.0, t);
-        float fib = valueNoise(f) * 0.6 + mix(0.5, valueNoise(f * vec2(1.7, 2.6) + 13.1), fineFade) * 0.4;
-        float d = saturate((fib - 0.47) / 0.3) * patch * 0.75;
-        d *= smoothstep(0.3, 0.7, valueNoise(vec2(q.x / 4000.0, q.y / 1800.0) + 7.7));
-        d *= smoothstep(0.0, 0.18, h) * (1.0 - smoothstep(0.78, 1.0, h));
+        vec3 sp = ro + rd * t;
+        float h = saturate((sp.y - bottom) / L2_THICK);
+        float d = cirrusDensity(sp.xz + wind.xz, h, w, t) * smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(0.75, 1.0, h));
         if (d <= 0.0) continue;
-        float T = exp(-d * 0.001 * stepLen);
-        vec3 s = (directLight * phase * 1.2 + skyLight * (0.35 / (4.0 * PI))) * (1.0 - T);
+        float T = exp(-d * 0.0024 * stepLen);
+        vec3 s = (directLight * phase * 1.6 + skyLight * (0.4 / (4.0 * PI))) * (1.0 - T);
         float weight = trans * (1.0 - T);
         rad += trans * s;
         dSum += t * weight;
@@ -446,15 +525,17 @@ vec4 mergeClouds(vec4 a, float da, vec4 b, float db, out float d) {
 }
 
 // All cloud layers along a ray. Radiance includes aerial perspective toward the horizon haze.
+// lightDirHi/directLight1/directLight2 light the altocumulus and cirrus: higher clouds keep the sun after it has set
+// for the cumulus below them, so at dusk each layer takes its own point on the sunset palette.
 vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, vec3 directLight,
-                  vec3 skyLight, float dither, out float dist) {
+                  vec3 lightDirHi, vec3 directLight1, vec3 directLight2, vec3 skyLight, float dither, out float dist) {
     CloudWeather w = cloudWeather();
     // Ground bounce: land reflects a warm, slightly green share of the direct light back up at cloud bases.
     vec3 groundLight = directLight * max(lightDir.y, 0.0) * vec3(0.14, 0.14, 0.12) + skyLight * 0.05;
     float d0, d1 = 1e6, d2 = 1e6;
     vec4 c0 = marchL0(ro, rd, maxDist, w, lightDir, directLight, skyLight, groundLight, dither, d0);
-    vec4 c1 = marchL1(ro, rd, maxDist, w, lightDir, directLight, skyLight, dither, d1);
-    vec4 c2 = cirrus(ro, rd, maxDist, w, lightDir, directLight, skyLight, dither, d2);
+    vec4 c1 = marchL1(ro, rd, maxDist, w, lightDirHi, directLight1, skyLight, dither, d1);
+    vec4 c2 = cirrus(ro, rd, maxDist, w, lightDirHi, directLight2, skyLight, dither, d2);
     // Thin ice cloud all but disappears by moonlight; keep it from smearing grey over the stars.
     float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
     c2 = mix(vec4(0.0, 0.0, 0.0, 1.0), c2, cirrusDaylight);

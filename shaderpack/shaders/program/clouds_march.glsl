@@ -17,6 +17,9 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 skyLight;
+flat out vec3 envLightDirHi;
+flat out vec3 envDirect1;
+flat out vec3 envDirect2;
 void main() {
     gl_Position = ftransform();
     sunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
@@ -31,11 +34,26 @@ void main() {
         envLightDir = sunDir;
         envDirect = mix(e.directLight, cloudSunsetLight(sunDir), sw);
     }
+    // Altocumulus and cirrus sit far higher: they see the sun set later, so each gets the palette a little behind
+    // the cumulus (gold on the cirrus while the cumulus is already pink, rose-lilac on it after the rest have gone grey).
+    envLightDirHi = envLightDir;
+    envDirect1 = envDirect;
+    envDirect2 = envDirect;
+    {
+        float sw1 = sunsetWindow(sunDir.y + 0.035), sw2 = sunsetWindow(sunDir.y + 0.07);
+        if ((sw1 > 0.0 || sw2 > 0.0) && sunDir.y > -0.23) {
+            envLightDirHi = sunDir;
+            envDirect1 = mix(e.directLight, cloudSunsetLight(sunDir, 0.035), sw1);
+            envDirect2 = mix(e.directLight, cloudSunsetLight(sunDir, 0.07), sw2);
+        }
+    }
     // Light arriving from the sky dome above a cloud (hemisphere integral of the zenith radiance).
     skyLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * TAU * 0.9;
     // At golden hour the direct light is deep orange; shaded cloud sides are lit by the still-blue sky
     // overhead, which is what turns them lilac instead of brown.
     skyLight *= mix(1.0, 1.4, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
+    // The dusk sky overhead is periwinkle-lavender, and that is the colour of every cloud flank the sun misses.
+    skyLight = mix(skyLight, vec3(luminance(skyLight)) * vec3(0.86, 0.8, 1.25), sw * 0.6);
     // Moonlit clouds read a little brighter and cooler than the physical moonlight alone gives them.
     float moonNight = smoothstep(-0.06, -0.2, sunDir.y);
     envDirect *= mix(vec3(1.0), vec3(1.05, 1.15, 1.3), moonNight);
@@ -57,6 +75,9 @@ flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 skyLight;
+flat in vec3 envLightDirHi;
+flat in vec3 envDirect1;
+flat in vec3 envDirect2;
 
 /* RENDERTARGETS: 7,8 */
 layout(location = 0) out vec4 outClouds;
@@ -94,7 +115,8 @@ void main() {
     // By moonlight the bright rim toward the moon is what makes a night cloud: silver its edges.
     gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
     float dist;
-    vec4 c = renderClouds(cameraPosition, rd, sceneDist, sunDir, envLightDir, envDirect, skyLight, dither, dist);
+    vec4 c = renderClouds(cameraPosition, rd, sceneDist, sunDir, envLightDir, envDirect, envLightDirHi, envDirect1, envDirect2,
+                          skyLight, dither, dist);
     outClouds = c;
     outDist = vec4(min(dist, 1e6), sceneDist, 0.0, 0.0);
 }

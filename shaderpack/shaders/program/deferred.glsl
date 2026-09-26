@@ -156,6 +156,36 @@ vec3 hsv2rgbBow(float x) {
     return saturate(p - 1.0);
 }
 
+#if !defined DIM_NETHER && !defined DIM_END
+// Rainbow around the antisolar point: primary bow at about 42 degrees (red outside, violet inside), a faint
+// secondary at 51 degrees with reversed colours and the darker Alexander's band between them. Two sources:
+//  - after rain, while the air is still wet: a whole, clean bow;
+//  - passing showers while the sun shines: fragments standing in the rain shafts below the clouds, strongest at a
+//    low sun, when the bow is tall and lit orange-red (the sunset rainbows of real evenings).
+// It sits in front of the clouds, like the rain that makes it. Returns the bow (x) and band darkening (w in .a).
+vec4 rainbow(vec3 dir) {
+    float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
+    float showers = smoothstep(0.03, 0.25, rainStrength) * (1.0 - smoothstep(0.55, 0.95, rainStrength));
+    if ((wetAir <= 0.0 && showers <= 0.0) || sunDir.y < -0.01 || sunDir.y > 0.7) return vec4(0.0);
+    float a = degrees(acos(clamp(dot(dir, -sunDir), -1.0, 1.0)));
+    if (a < 38.0 || a > 56.0) return vec4(0.0);
+    float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
+    float x2 = (52.5 - a) / 3.2;
+    vec3 bow = vec3(0.0);
+    if (x1 > -0.3 && x1 < 1.3) bow += hsv2rgbBow(x1) * smoothstep(-0.3, 0.1, x1) * smoothstep(1.3, 0.9, x1);
+    if (x2 > -0.3 && x2 < 1.3) bow += hsv2rgbBow(x2) * smoothstep(-0.3, 0.1, x2) * smoothstep(1.3, 0.9, x2) * 0.35;
+    float band = smoothstep(42.5, 43.5, a) * smoothstep(50.5, 49.5, a);
+    // Showers: the bow only exists where a rain shaft hangs, in pieces along its arc, and fades up into the cloud base.
+    float az = atan(dir.z, dir.x);
+    float shafts = smoothstep(0.4, 0.72, valueNoise(vec2(az * 3.2 + float(worldDay) * 1.7, frameTimeCounter * 0.004)));
+    float amount = max(wetAir, showers * shafts * (1.0 - smoothstep(0.12, 0.42, dir.y)));
+    amount *= smoothstep(0.0, 0.08, dir.y + 0.02) * smoothstep(0.7, 0.3, sunDir.y);
+    // Lit by the sun as it is: white by day, orange-red at sunset.
+    vec3 light = envDirect + cloudSunsetLight(sunDir) * sunsetWindow(sunDir.y) * 0.35;
+    return vec4(bow * light * 0.022 * amount, band * amount * 0.15);
+}
+#endif
+
 // Joint-bilateral upsample of the half-resolution cloud history: taps whose scene distance differs from this
 // pixel's (a tree edge in front of a cloud) are down-weighted so clouds do not bleed across silhouettes.
 vec4 upsampleClouds(vec2 uv, float sceneDist) {
@@ -219,23 +249,6 @@ void main() {
         col += moonSky(starDir, -sunDir);
 #endif
 #if !defined DIM_NETHER && !defined DIM_END
-        // Rainbow: after rain, while the air is still wet and the rain itself has passed, a bow of about 42
-        // degrees around the point opposite the sun, red outside and violet inside, with a faint secondary
-        // bow at 51 degrees (colours reversed) and a darker band between them (Alexander's band).
-        {
-            float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
-            if (wetAir > 0.0 && sunDir.y > 0.0 && sunDir.y < 0.7) {
-                float a = degrees(acos(clamp(dot(starDir, -sunDir), -1.0, 1.0)));
-                float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
-                float x2 = (52.5 - a) / 3.2;
-                vec3 bow = vec3(0.0);
-                if (x1 > -0.3 && x1 < 1.3) bow += hsv2rgbBow(x1) * smoothstep(-0.3, 0.1, x1) * smoothstep(1.3, 0.9, x1);
-                if (x2 > -0.3 && x2 < 1.3) bow += hsv2rgbBow(x2) * smoothstep(-0.3, 0.1, x2) * smoothstep(1.3, 0.9, x2) * 0.35;
-                float band = smoothstep(42.5, 43.5, a) * smoothstep(50.5, 49.5, a);
-                float strength = wetAir * smoothstep(0.0, 0.08, starDir.y + 0.02) * smoothstep(0.7, 0.3, sunDir.y);
-                col = col * mix(1.0, 0.85, band * wetAir) + bow * envDirect * 0.02 * strength;
-            }
-        }
 #endif
 #ifndef DIM_NETHER
         // The Nether has no sky: no stars or Milky Way (found by Codex's perf audit).
@@ -465,6 +478,10 @@ void main() {
         float sceneDist = (depth >= 1.0 && !isLod) ? 1e6 : length(playerPos);
         vec4 clouds = upsampleClouds(texcoord, sceneDist);
         col = col * clouds.a + clouds.rgb;
+        if (depth >= 1.0 && !isLod) {
+            vec4 bow = rainbow(rd);
+            col = col * (1.0 - bow.a) + bow.rgb;
+        }
         // Lightning lights the clouds after temporal accumulation (history would average a flash away).
         vec4 flash = cloudFlash(cameraPosition);
         if (flash.w > 0.0 && clouds.a < 0.98) {

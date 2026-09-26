@@ -35,9 +35,10 @@ CloudWeather cloudWeather() {
     float c = noise1(t * 1.1 + 41.0);
     w.cov0 = mix(0.31, 0.58, a) * CLOUD_COVERAGE / 0.34;
     w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
-    w.cov1 = mix(0.0, 0.45, b);
-    // Cirrus stays a light accent: at full strength the thin high sheet read as flat and painted.
-    w.cirrus = mix(0.0, 0.5, c);
+    // Altocumulus ranges from absent to a mackerel sky that fills the whole dome.
+    w.cov1 = mix(0.0, 0.95, smoothstep(0.15, 0.9, b));
+    // Cirrus is fibrous (curving strokes and tufts), so it can reach near full strength without reading as a flat sheet.
+    w.cirrus = mix(0.0, 0.95, smoothstep(0.1, 0.85, c));
     // Regimes: some days bring a low grey deck over the valleys, some build afternoon thunderstorms.
     w.low = mix(0.05, 0.75, smoothstep(0.3, 0.8, noise1(t * 0.8 + 131.0)));
     w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
