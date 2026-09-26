@@ -13,6 +13,7 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
+#include "/lib/bloom_filter.glsl"
 uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
@@ -35,8 +36,7 @@ layout(location = 1) out vec4 outBloom;
 // The former cloud/VL scratch buffer is dead by composite4, so its slot holds bloom for final.
 
 // Sum of progressively blurrier copies of the frame. Keeping this in the half-resolution pass removes
-// 81 explicit LOD samples per final pixel; the final pass linearly reconstructs the smooth HDR result.
-// Quality risk: half-resolution evaluation can soften the smallest bloom variations versus per-pixel sampling.
+// the mip work per final pixel; the final pass reconstructs these smooth HDR targets separately from the scene.
 void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g, out vec3 e) {
     b = vec3(0.0);
     g = vec3(0.0);
@@ -48,40 +48,43 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g, out vec3 e) {
     float totalGlare = 0.0;
     float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
     float threshold = max(avgLum * 12.0, 1e-3);
+    ivec2 fullSize = textureSize(colortex0, 0);
+    int lastMip = int(floor(log2(float(max(fullSize.x, fullSize.y)))));
     for (int lod = 1; lod <= 9; lod++) {
         float scale = exp2(float(lod));
+        int sampleLod = min(lod, lastMip);
         vec3 bloomSamples = vec3(0.0);
         vec3 glareSamples = vec3(0.0);
-        for (int y = -1; y <= 1; y++)
-            for (int x = -1; x <= 1; x++) {
-                float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
-                vec3 c = textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb;
+        vec3 u, v, wx, wy;
+        // Coarse mip texels cover many screen pixels. Reconstruct their blur smoothly, folding the cubic
+        // kernel into nine normalized linear taps rather than evaluating four fetches for each old tap.
+        bloomBlurCoordinates(colortex0, uv, sampleLod, px * scale * 0.75, u, v, wx, wy);
+        for (int y = 0; y < 3; y++)
+            for (int x = 0; x < 3; x++) {
+                float w = wx[x] * wy[y];
+                vec3 c = textureLod(colortex0, vec2(u[x], v[y]), float(sampleLod)).rgb;
                 bloomSamples += c * w;
-                // Emitter glow: only what is well above the frame's average (lava, glowstone, lanterns), with a soft knee.
-                if (lod >= 2 && lod <= 7) {
-                    float l = luminance(c);
-                    e += c * (max(l - emitThreshold, 0.0) / max(l, 1e-5)) * w * (1.0 / 16.0);
-                }
-                if (lod >= 4) {
-                    // Soft knee keeps glare from switching on abruptly.
-                    float l = luminance(c);
-                    glareSamples += c * (max(l - threshold, 0.0) / max(l, 1e-5)) * w;
-                }
             }
+        // Threshold the fully reconstructed blur. Applying a nonlinear threshold to the paired reads
+        // would expose their moving grouping boundaries as rectangular seams around large emitters.
+        if (lod >= 2 && lod <= 7)
+            e += bloomBrightPass(bloomSamples, emitThreshold);
+        if (lod >= 4)
+            glareSamples = bloomBrightPass(bloomSamples, threshold);
         // Nearly flat weights: the wide levels carry the big soft glow around very bright sources.
         float bloomWeight = pow(0.86, float(lod - 1));
-        b += bloomSamples / 16.0 * bloomWeight;
-        if (lod >= 2 && lod <= 7) totalEmit += 9.0;
+        b += bloomSamples * bloomWeight;
+        if (lod >= 2 && lod <= 7) totalEmit += 1.0;
         totalBloom += bloomWeight;
         if (lod >= 4) {
             float glareWeight = float(lod - 3);
-            g += glareSamples / 16.0 * glareWeight;
+            g += glareSamples * glareWeight;
             totalGlare += glareWeight;
         }
     }
     b /= totalBloom;
     g /= totalGlare;
-    e /= max(totalEmit / 9.0, 1.0);
+    e /= max(totalEmit, 1.0);
 }
 
 // Only open sky within a small radius of the sun feeds the rays. Testing both depth buffers keeps the

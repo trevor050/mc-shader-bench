@@ -84,6 +84,7 @@ void main() {
 #endif
 
 #ifdef FRAGMENT
+#include "/lib/bloom_filter.glsl"
 uniform sampler2D colortex0;
 uniform sampler2D colortex3;
 uniform sampler2D colortex7;
@@ -297,11 +298,11 @@ void main() {
     col = col * (1.0 - saturate(weather.a)) + max(weather.rgb, 0.0);
     // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
-    col += texture(colortex3, texcoord).rgb;
+    col += sampleBloomCubic(colortex3, texcoord, 0);
     // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
     // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
     // sun, produce a visible glow; everything else just softens very slightly.
-    col = mix(col, texture(colortex7, texcoord).rgb, BLOOM_STRENGTH);
+    col = mix(col, sampleBloomCubic(colortex7, texcoord, 0), BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
     // A blinding sun veils the view around it: a smooth analytic glare (no mip blockiness), added after the

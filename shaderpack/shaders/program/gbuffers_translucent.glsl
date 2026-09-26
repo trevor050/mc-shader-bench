@@ -72,6 +72,7 @@ void main() {
 uniform int frameCounter;
 uniform sampler2D gtexture;
 uniform sampler2D colortex4;
+uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex1;
 #if !defined DIM_NETHER && !defined DIM_END
@@ -94,6 +95,7 @@ uniform sampler2D colortex8;
 #include "/lib/shadows.glsl"
 #endif
 #include "/lib/clouds.glsl"
+#include "/lib/night.glsl"
 #include "/lib/water.glsl"
 #include "/lib/rain.glsl"
 #include "/lib/portal.glsl"
@@ -138,7 +140,7 @@ flat in vec3 envDirect;
 flat in vec3 sunsetLight;
 flat in vec3 envAmbient;
 
-#ifdef PROG_WATER
+#if defined PROG_WATER || defined PROG_ENTITIES_TRANSLUCENT
 // Terrain translucents also tag the nether portal in the material buffer, so TAA can reproject its parallax
 // interior at the depth it appears to be at. colortex2 blends with SRC_ALPHA / ONE_MINUS_SRC_ALPHA on colour and
 // keeps the destination alpha (shaders.properties): alpha 0 leaves the opaque material underneath untouched.
@@ -152,6 +154,21 @@ layout(location = 0) out vec4 outColor;
 
 vec3 viewFromDepth(vec2 uv, float depth) {
     return projectAndDivide(gbufferProjectionInverse, vec3(uv, depth) * 2.0 - 1.0);
+}
+
+// Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
+vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
+#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
+    if (isEyeInWater == 1 || mat == MAT_ENTITY) return col;
+    vec2 bufferRes = vec2(textureSize(colortex9, 0));
+    vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
+    // Cloud history was rendered against opaque depth. A cloud behind this surface must not cover it.
+    if (texture(colortex8, cuv).r >= surfaceDist - 0.5) return col;
+    vec4 c = texture(colortex9, cuv);
+    return col * c.a + c.rgb;
+#else
+    return col;
+#endif
 }
 
 // Screen-space reflection against the opaque depth buffer. Returns rgb and hit confidence in a.
@@ -190,27 +207,15 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
             vec2 edge = smoothstep(0.0, 0.08, hs.xy) * (1.0 - smoothstep(0.92, 1.0, hs.xy));
             // Rays heading back toward the camera have little information on screen; fade them.
             float facing = 1.0 - smoothstep(-0.2, 0.1, viewDir.z);
-            return vec4(texture(colortex4, hs.xy).rgb, edge.x * edge.y * facing);
+            vec3 hitColor = texture(colortex4, hs.xy).rgb;
+            float hitDist = length(viewFromDepth(hs.xy, texture(depthtex1, hs.xy).r));
+            // colortex4 excludes clouds, so restore camera-visible clouds only when they precede the SSR hit.
+            hitColor = applyCloudsInFront(hitColor, hs.xy, hitDist);
+            return vec4(hitColor, edge.x * edge.y * facing);
         }
     }
 #endif
     return vec4(0.0);
-}
-
-// Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
-vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
-#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
-    if (isEyeInWater == 1) return col;
-    vec2 bufferRes = vec2(textureSize(colortex9, 0));
-    vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
-    // The cloud history was rendered against the opaque scene before translucent surfaces existed.
-    // A cloud behind a portal or water surface must not be pasted over its foreground pixels.
-    if (texture(colortex8, cuv).r >= surfaceDist - 0.5) return col;
-    vec4 c = texture(colortex9, cuv);
-    return col * c.a + c.rgb;
-#else
-    return col;
-#endif
 }
 
 void main() {
@@ -233,8 +238,9 @@ void main() {
 #if defined DIM_END
     if (!endLodVisible(dist, gl_FragCoord.xy, frameCounter)) discard;
 #endif
-    // DH depth-tests only against LOD depth, so reject fragments hidden behind real chunks.
-    float chunkDepth = texture(depthtex1, uv).r;
+    // DH has a separate depth attachment. The pre-translucent snapshot omits late player skin layers,
+    // so also test the current vanilla depth before drawing distant water over them.
+    float chunkDepth = min(texture(depthtex0, uv).r, texture(depthtex1, uv).r);
     if (chunkDepth < 1.0 && length(viewFromDepth(uv, chunkDepth)) < dist) discard;
 #endif
 
@@ -338,16 +344,22 @@ void main() {
         vec3 r = reflect(rd, n);
         r.y = abs(r.y);
         vec3 rRough = normalize(r + vec3(0.0, rough * 1.4, 0.0));
+        vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
+        vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
         vec3 skyRefl = vec3(0.0);
         if (skyVis != 0.0) {
             skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
+#if !defined DIM_NETHER && !defined DIM_END
+            // Aurora belongs to the sky fallback. The cloud reflection below occludes it with the same cloud field,
+            // while an SSR hit remains a scene reflection and receives no extra aurora layer.
+            float auroraAmount = auroraVisibility(sunDir.y);
+            if (auroraAmount > 0.001) skyRefl += aurora(rRough, frameTimeCounter) * auroraAmount;
+#endif
             bool sunsetClouds = sunsetLight.r + sunsetLight.g + sunsetLight.b > 0.0;
             skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, sunsetClouds ? sunDir : envLightDir,
                                       sunsetClouds ? mix(envDirect, sunsetLight, sunsetWindow(sunDir.y)) : envDirect,
-                                      skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
+                                      sunsetClouds ? sunsetLight : envDirect, sunDir, envAmbient) * skyVis;
         }
-        vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
-        vec4 ssr = underwater ? vec4(0.0) : traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
         vec3 refl = mix(skyRefl, ssr.rgb, ssr.a * (1.0 - saturate(rough * 2.5)));
 
         float fres = underwater ? 0.15 : fresnelSchlick(dot(-rd, n), 0.02) * mix(1.0, 0.5, saturate(rough * 2.5));
@@ -426,6 +438,8 @@ void main() {
             vec3 glow = iceAlbedo * (envAmbient * skyAbove * skyAbove / PI + envDirect * topShadow * saturate(envLightDir.y) / PI);
             iceLit = glow * vec3(0.8, 0.95, 1.05);
         }
+        // Apply held light after the underside skylight override; this early return skips the generic translucent path.
+        iceLit += iceAlbedo * handheldLight(playerPos, n0, 1.0);
         vec3 body = mix(refracted * iceTransmit(thickness), iceLit, below ? 0.6 : 0.55 + 0.35 * frost);
 
         float skyVis = lmcoord.y * lmcoord.y;
@@ -462,6 +476,8 @@ void main() {
         PortalSurface portal = shadePortal(q, viewPlane, spriteLum, portalFrameEdge(wp, alongX), grazing, frameTimeCounter);
 #ifdef PROG_WATER
         outMat = vec4(float(MAT_PORTAL) / 255.0, 1.0, 1.0, 1.0);
+#elif defined PROG_ENTITIES_TRANSLUCENT
+        outMat = vec4(float(MAT_ENTITY) / 255.0, 0.0, 1.0, 0.0);
 #endif
         // The portal stays legible when its upper blocks enter a cloud bank. Let some cloud
         // pass in front, but never erase the violet sheet into a flat patch of sky colour.
@@ -504,16 +520,14 @@ void main() {
     outColor = vec4(col, 1.0);
 #else
     float a = mix(albedo.a, 1.0, fres * 0.5);
-    // Blending happens after this, so fold the clouds in front into the straight colour as seen over the
-    // scene (which already has them): only add their own light, weighted by this surface's coverage.
-    vec4 cl = vec4(0.0, 0.0, 0.0, 1.0);
-#if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
-    {
-        vec2 bufferRes = vec2(textureSize(colortex9, 0));
-        cl = texture(colortex9, clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes);
-    }
+#ifdef PROG_ENTITIES_TRANSLUCENT
+    // Entity bodies are foreground geometry; retain their blend alpha and tag them for deferred cloud guards.
+    outColor = vec4(col, a);
+    outMat = vec4(float(MAT_ENTITY) / 255.0, 0.0, 1.0, 0.0);
+#else
+    // Preserve the material's blend alpha while compositing only cloud radiance in front of the surface.
+    outColor = vec4(applyCloudsInFront(col, uv, dist), a);
 #endif
-    outColor = vec4(col * cl.a + cl.rgb, a);
 #endif
 }
 #endif

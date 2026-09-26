@@ -91,6 +91,7 @@
 #define TAA
 
 // ---- Overworld V6: clouds, weather, night, water, bloom ----
+#define CLOUD_RENDER_DISTANCE 6000.0 // [3000.0 4500.0 6000.0 8192.0 12000.0] cloud range in blocks, with a soft horizon fade
 #define CLOUD_SPEED 1.8           // multiplier on cloud drift (and so on how fast cloud shadows sweep the land)
 #define CLOUD_INSIDE_FOG 1.0      // wet grey-white mist when the camera is inside a cloud
 #define CLOUD_MOON_SILVER 1.5     // moonlit clouds: boost of the bright forward-scattered rim toward the moon
@@ -98,8 +99,9 @@
 #define LIGHTNING_GROUND 1.0      // how strongly a lightning flash lights the landscape
 #define STORM_DARKNESS 0.45       // how much a thunderstorm darkens the sky and the light under it
 #define FIREFLIES 0.0             // fireflies over warm, humid land at night (0 disables)
-#define AURORA 1.0                // aurora over snowy biomes on clear nights (0 disables)
-#define AURORA_BRIGHTNESS 0.09
+#define AURORA 1.0                // rare northern aurora, all Overworld biomes (0 disables)
+#define AURORA_BRIGHTNESS 0.09     // [0.0 0.03 0.06 0.09 0.12 0.18]
+#define AURORA_MODE 3             // [1 2 3 4] snow / snow + full moon / random 10% / every night
 #define CAUSTIC_STRENGTH 1.4      // caustics on shallow water floors
 #define SHORE_FOAM 1.0            // foam where water laps at the shore
 #define STORM_WAVES 1.5           // extra wave height in rain and thunder

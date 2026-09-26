@@ -293,8 +293,8 @@ void main() {
                             vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
         }
 #if !defined DIM_END
-        // Aurora over snowy lands on clear nights. It sits behind the clouds (composited below).
-        float auroraAmt = AURORA * inSnowy * night * (1.0 - rainStrength) * smoothstep(-0.12, -0.3, sunDir.y);
+        // Rare northern display, additive behind the same opaque clouds as the stars.
+        float auroraAmt = auroraVisibility(sunDir.y);
         if (auroraAmt > 0.001) col += aurora(starDir, frameTimeCounter) * auroraAmt;
 #endif
 #endif

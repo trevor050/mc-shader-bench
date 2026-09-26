@@ -1,0 +1,13 @@
+option.AURORA_MODE=Aurora Appearance
+screen.SKY=Sky and Aurora
+option.AURORA_MODE.comment=All modes require a dark Overworld sky. Rain and clouds obscure the display. Random mode averages one night in ten and never selects consecutive nights.
+value.AURORA_MODE.1=Snowy Biomes
+value.AURORA_MODE.2=Snowy Biomes + Full Moon
+value.AURORA_MODE.3=Random (10%)
+value.AURORA_MODE.4=Every Night
+option.AURORA=Aurora Borealis
+option.AURORA_BRIGHTNESS=Aurora Brightness
+option.MILKYWAY_BRIGHTNESS=Milky Way Brightness
+option.MILKYWAY_BRIGHTNESS.comment=The Milky Way emerges gradually through deep twilight. Moonlight reduces its contrast.
+option.CLOUD_RENDER_DISTANCE=Cloud Render Distance
+option.CLOUD_RENDER_DISTANCE.comment=Horizontal cloud range in blocks, limited to the terrain LOD range. Distant clouds fade smoothly; high clouds directly overhead remain visible.

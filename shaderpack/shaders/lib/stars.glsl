@@ -9,10 +9,14 @@
 
 uniform sampler2D starmap;
 uniform sampler2D milkyway;
+#ifndef MOON_PHASE_UNIFORM
+#define MOON_PHASE_UNIFORM
+uniform int moonPhase;
+#endif
 
 const vec3 CELESTIAL_NORTH = vec3(0.0, 0.42262, -0.90631);
 #define STAR_BRIGHTNESS 3.0e-5
-#define MILKYWAY_BRIGHTNESS 0.5
+#define MILKYWAY_BRIGHTNESS 0.28 // [0.14 0.21 0.28 0.35 0.5 0.7]
 #define MILKYWAY_SATURATION 1.1
 
 vec3 starColor(float bv) {
@@ -69,12 +73,19 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
             mw *= mix(1.0, 0.3 + 0.7 * smoothstep(0.2, 0.62, wisp), band * 0.55);
         }
     }
-    // Let the band emerge as the last twilight drains away. It stays restrained near the horizon,
-    // where atmospheric glow is strongest, and reaches full contrast in a genuinely dark sky.
-    // The band needs a truly dark sky: bright stars show first while twilight drains away, then the Milky Way
-    // emerges slowly, a faint glow that deepens into the full band well after sunset (sun 7 to 30 degrees below).
-    float darkSky = smoothstep(-0.12, -0.5, sunDir.y);
+    // The diffuse galaxy needs deep darkness. A quintic ease (zero slope at both
+    // ends), squared, reveals the bright core slowly while the last twilight fades.
+    // Bright catalogue stars retain their independent, earlier visibility below.
+    float darkProgress = saturate((-sunDir.y - 0.16) / 0.53);
+    float darkSky = darkProgress * darkProgress * darkProgress
+                  * (darkProgress * (darkProgress * 6.0 - 15.0) + 10.0);
     darkSky *= darkSky;
+    // Moonlit air washes out diffuse detail. New-moon nights retain the richest
+    // view; a high full moon has 40% of that diffuse contrast, without dimming stars.
+#if !defined DIM_NETHER && !defined DIM_END
+    float moonIllum = 0.5 + 0.5 * cos(float(moonPhase) / 8.0 * TAU);
+    darkSky *= mix(1.0, 0.40, moonIllum * smoothstep(0.0, 0.45, -sunDir.y));
+#endif
     vec3 col = mw * MILKYWAY_BRIGHTNESS * darkSky;
 
     // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
@@ -148,8 +159,6 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     col *= exp(-0.2 / max(rd.y + 0.03, 0.02)) * smoothstep(-0.02, 0.05, rd.y);
     return col;
 }
-
-uniform int moonPhase;
 
 // A round moon instead of the square vanilla sprite: a lit sphere whose terminator follows the moon phase,
 // with darker maria, faint earthshine on the unlit side, and a soft halo from forward scattering in the air.

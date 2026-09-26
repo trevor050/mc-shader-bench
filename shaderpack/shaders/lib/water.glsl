@@ -61,19 +61,110 @@ float fresnelDielectric(float cosI, float eta) {
     return 0.5 * (rs * rs + rp * rp);
 }
 
-// Cheap reflection of the cumulus layer for water: the cloud field sampled once where the reflected ray
-// crosses the layer, shaded from its thickness. It follows the real clouds, unlike a separate 2D layer.
-vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight, vec3 skyLight) {
+// Sample a cloud model at the point where a reflected sky ray crosses one layer.
+float reflectedCloudDensityAt(vec3 ro, vec3 rd, float y, float maxDist, CloudWeather w, int layer,
+                              float cirrusDaylight, out float distanceFade, out float rayDistance) {
+    float t = (y - ro.y) / rd.y;
+    distanceFade = 0.0;
+    rayDistance = 1e6;
+    if (t <= 0.0 || t >= maxDist) return 0.0;
+    vec3 p = ro + rd * t;
+    float d = 0.0;
+    if (layer == 0) d = l0Density(p, w, 2);
+    else if (layer == 1) d = altocumulusDensity(p, w, t, 2);
+    else if (layer == 2) d = deckDensity(p, fractusStyle(w), t, 2);
+    else if (layer == 3) d = virgaDensity(p, w, virgaAmount(w));
+    else if (layer == 4) d = deckDensity(p, veilStyle(w), t, 2);
+    else {
+        vec3 wind = cloudWind() * 4.0;
+        float h = saturate((p.y - (L2_ALT - 0.5 * L2_THICK)) / L2_THICK);
+        d = cirrusDensity(p.xz + wind.xz, h, w, t) * cirrusDaylight;
+    }
+    distanceFade = cloudDistanceFade(t * length(rd.xz));
+    rayDistance = t;
+    return d;
+}
+
+// Reflect the same cloud layers as the sky, with a small set of representative vertical taps instead of a
+// second full volumetric march at every water pixel. SSR supplies exact camera-visible detail for screen hits.
+vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight, vec3 highDirect,
+                     vec3 sunDir, vec3 skyLight) {
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     if (rd.y <= 0.02) return sky;
     CloudWeather w = cloudWeather();
-    float y = L0_BASE + 70.0;
-    vec3 p = ro + rd * max((y - ro.y) / rd.y, 0.0);
-    float d = l0Density(p, w, 2) + l0Density(p + vec3(0.0, 60.0, 0.0), w, 2) * 0.7;
-    if (d <= 0.01) return sky;
-    float cover = 1.0 - exp(-d * 3.0);
+    // Some regional masks are camera-anchored; keep water reflections in the same coordinate frame as the sky march.
+    gCloudCamera = cameraPosition;
+    float rayLimit = cloudRayLimit(rd, 1e6);
+    float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
+    float l0 = 0.0, l0Fade = 0.0, l0Distance = 1e6;
+    vec3 p = ro;
+    for (int i = 0; i < 5; i++) {
+        float y = i == 0 ? 163.0 : (i == 1 ? 240.0 : (i == 2 ? 390.0 : (i == 3 ? 700.0 : 1020.0)));
+        float fade, sampleDistance;
+        float d = reflectedCloudDensityAt(ro, rd, y, rayLimit, w, 0, cirrusDaylight, fade, sampleDistance);
+        if (d > l0) {
+            l0 = d;
+            l0Fade = fade;
+            l0Distance = sampleDistance;
+            p = ro + rd * sampleDistance;
+        }
+    }
+    DeckStyle altoStyleValue = altoStyle(w);
+    DeckStyle fractusStyleValue = fractusStyle(w);
+    DeckStyle veilStyleValue = veilStyle(w);
+    float alto = 0.0, altoFade = 0.0, altoDistance = 1e6;
+    float fractus = 0.0, fractusFade = 0.0, fractusDistance = 1e6;
+    float virga = 0.0, virgaFade = 0.0, virgaDistance = 1e6;
+    float veil = 0.0, veilFade = 0.0, veilDistance = 1e6;
+    float cirrus = 0.0, cirrusFade = 0.0, cirrusDistance = 1e6;
+    for (int i = 0; i < 2; i++) {
+        float f = (float(i) + 1.0) / 3.0;
+        float fade, sampleDistance;
+        float d = reflectedCloudDensityAt(ro, rd, altoStyleValue.alt + altoStyleValue.thick * f,
+                                          rayLimit, w, 1, cirrusDaylight, fade, sampleDistance);
+        if (d > alto) { alto = d; altoFade = fade; altoDistance = sampleDistance; }
+        d = reflectedCloudDensityAt(ro, rd, fractusStyleValue.alt + fractusStyleValue.thick * f,
+                                    rayLimit, w, 2, cirrusDaylight, fade, sampleDistance);
+        if (d > fractus) { fractus = d; fractusFade = fade; fractusDistance = sampleDistance; }
+        d = reflectedCloudDensityAt(ro, rd, L1_ALT - VIRGA_DEPTH + VIRGA_DEPTH * f,
+                                    rayLimit, w, 3, cirrusDaylight, fade, sampleDistance);
+        if (d > virga) { virga = d; virgaFade = fade; virgaDistance = sampleDistance; }
+        d = reflectedCloudDensityAt(ro, rd, veilStyleValue.alt + veilStyleValue.thick * f,
+                                    rayLimit, w, 4, cirrusDaylight, fade, sampleDistance);
+        if (d > veil) { veil = d; veilFade = fade; veilDistance = sampleDistance; }
+        d = reflectedCloudDensityAt(ro, rd, L2_ALT - 0.5 * L2_THICK + L2_THICK * f,
+                                    rayLimit, w, 5, cirrusDaylight, fade, sampleDistance);
+        if (d > cirrus) { cirrus = d; cirrusFade = fade; cirrusDistance = sampleDistance; }
+    }
+    float cover = (1.0 - exp(-l0 * 3.0)) * l0Fade;
+    float cloudDistance = l0Distance;
+    float layerCover = (1.0 - exp(-alto * 1.6)) * altoFade;
+    if (layerCover > cover) { cover = layerCover; cloudDistance = altoDistance; }
+    layerCover = (1.0 - exp(-fractus * 1.6)) * fractusFade;
+    if (layerCover > cover) { cover = layerCover; cloudDistance = fractusDistance; }
+    layerCover = (1.0 - exp(-virga * 2.0)) * virgaFade;
+    if (layerCover > cover) { cover = layerCover; cloudDistance = virgaDistance; }
+    layerCover = (1.0 - exp(-veil * 1.6)) * veilFade;
+    if (layerCover > cover) { cover = layerCover; cloudDistance = veilDistance; }
+    layerCover = (1.0 - exp(-cirrus * 1.6)) * cirrusFade;
+    if (layerCover > cover) { cover = layerCover; cloudDistance = cirrusDistance; }
+    if (rd.y < 0.25) {
+        float hazeDist;
+        float hazeNight = smoothstep(-0.10, -0.30, sunDir.y);
+        vec4 horizon = cloudHorizonHaze(ro, rd, 1e6, w, directLight, highDirect, highDirect,
+                                        skyLight, cirrusDaylight, hazeNight, hazeDist);
+        sky = sky * horizon.a + horizon.rgb;
+    }
+    if (cover <= 0.01) return sky;
     float lit = exp(-l0Density(p + lightDir * 80.0, w, 2) * 1.5);
     vec3 col = directLight * (0.08 + 0.1 * lit) + skyLight * 0.08;
+    if (cloudDistance < 1e5) {
+        float air = 1.0 - exp(-cloudDistance * mix(0.000055, 0.0003, rainStrength));
+        float detailAir = 1.0 - cloudDistanceFade(cloudDistance * length(rd.xz));
+        air = 1.0 - (1.0 - air) * (1.0 - detailAir);
+        vec3 haze = hazeColor(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z)), sunDir);
+        col = mix(col, haze, air);
+    }
     float fade = smoothstep(0.02, 0.15, rd.y);
     return mix(sky, col, cover * fade);
 #else

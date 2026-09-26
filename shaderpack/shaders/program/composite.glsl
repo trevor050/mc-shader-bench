@@ -7,8 +7,10 @@ uniform vec3 sunPosition;
 uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
+uniform vec3 cameraPosition;
 #include "/lib/atmosphere.glsl"
 #include "/lib/lighting.glsl"
+#include "/lib/clouds.glsl"
 
 #ifdef VERTEX
 out vec2 texcoord;
@@ -16,7 +18,8 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
-flat out vec3 zenithLight;
+flat out CloudLightEnv nearCloudLight;
+flat out float nearCloudLightT;
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -25,8 +28,8 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
-    // Light arriving at a cloud from the sky dome (as in the cloud march), for mist around a camera inside a cloud.
-    zenithLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9;
+    nearCloudLight = makeCloudLightEnv(sunDir);
+    nearCloudLightT = cloudNearLightTransmittance(cameraPosition, nearCloudLight);
 }
 #endif
 
@@ -34,6 +37,8 @@ void main() {
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
+uniform sampler2D colortex3;
+uniform sampler2D colortex9;
 uniform sampler2D depthtex0;
 uniform sampler2D depthtex1;
 uniform sampler2D dhDepthTex0;
@@ -42,13 +47,11 @@ uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
 uniform int frameCounter;
 uniform mat4 dhProjectionInverse;
-uniform vec3 cameraPosition;
 uniform int isEyeInWater;
 uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
 uniform float rainLocal;
-#include "/lib/clouds.glsl"
 #include "/lib/cave.glsl"
 #if defined DIM_NETHER
 #include "/lib/voxel.glsl"
@@ -67,7 +70,8 @@ flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
-flat in vec3 zenithLight;
+flat in CloudLightEnv nearCloudLight;
+flat in float nearCloudLightT;
 #include "/lib/night.glsl"
 uniform float fireflyBiome;
 
@@ -86,6 +90,40 @@ vec4 adaptMeter(vec3 c) { return vec4(min(luminance(c), 4.0)); }
 layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
+
+// Restore the same premultiplied foreground cloud layer after fogging its background. Cloud distances survive
+// in c3 until this pass; c8 now belongs to VL and cannot identify the clouds seen by deferred/forward surfaces.
+vec4 cloudForegroundAt(vec2 uv, float sceneDist, bool entity) {
+#if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
+    if (entity) return vec4(0.0, 0.0, 0.0, 1.0);
+    ivec2 size = textureSize(colortex9, 0);
+    vec2 p = uv * vec2(size) - 0.5;
+    ivec2 i0 = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec4 acc = vec4(0.0);
+    float wSum = 0.0;
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        ivec2 t = clamp(i0 + o, ivec2(0), size - 1);
+        vec2 depths = texelFetch(colortex3, t, 0).rg * 65536.0;
+        vec2 bw = mix(1.0 - f, f, vec2(o));
+        float rel = abs(depths.y - sceneDist) / max(min(depths.y, sceneDist), 1.0);
+        float weight = bw.x * bw.y * (exp(-rel * 6.0) + 1e-3);
+        vec4 cloud = depths.x < sceneDist - 0.5 ? texelFetch(colortex9, t, 0) : vec4(0.0, 0.0, 0.0, 1.0);
+        acc += cloud * weight;
+        wSum += weight;
+    }
+    return acc / max(wSum, 1e-5);
+#else
+    return vec4(0.0, 0.0, 0.0, 1.0);
+#endif
+}
+
+vec3 fogBehindClouds(vec3 color, vec3 fogColor, float amount, vec4 clouds) {
+    // If color = background * cloudT + cloudRGB, this equals fog(background) * cloudT + cloudRGB.
+    // No division by transmittance is needed, so an opaque cloud stays stable and retains its radiance.
+    return color * (1.0 - amount) + (fogColor * clouds.a + clouds.rgb) * amount;
+}
 
 #if 1
 uniform sampler2D colortex11;
@@ -267,22 +305,21 @@ void main() {
         return;
     }
 
+    vec4 foregroundClouds = vec4(0.0, 0.0, 0.0, 1.0);
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
-    // Inside a cloud: the near field fills with wet, bright grey-white mist lit from the cloud around it. The cloud
-    // march covers the view beyond; this adds the droplets right around the eye, so entering a cloud is a gradual
-    // whiteout and leaving it through the top is a burst into sunlight.
-    if (cameraPosition.y > L0_SLAB_BOTTOM && cameraPosition.y < L0_SLAB_TOP && CLOUD_INSIDE_FOG > 0.0) {
+    bool cloudEntity = !sky && int(texture(colortex2, texcoord).r * 255.0 + 0.5) == MAT_ENTITY;
+    // Clear sky outside snowy biomes has no background fog below, so it needs no extra cloud-history taps.
+    if (!sky || inSnowy > 0.001)
+        foregroundClouds = cloudForegroundAt(texcoord, sky ? 1e6 : dist, cloudEntity);
+    // The half-resolution cloud march excludes this near segment. Integrate the real droplets at full resolution,
+    // only in front of the closest scene surface; the hand already returned before world-space effects.
+    if (!cloudEntity && cloudNearRange(cameraPosition) > 0.0) {
         vec3 mrd = sky ? normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0))
                        : normalize(playerPos);
-        vec2 mist = cloudMistAt(cameraPosition, mrd, envLightDir, cloudWeather());
-        if (mist.x > 0.0) {
-            float mu = dot(mrd, envLightDir);
-            // Multiple scattering keeps the inside of a cloud bright and nearly directionless, with a glow toward the
-            // light and the sun's warmth where the cloud above thins out.
-            vec3 mistCol = (envDirect * mist.y * mix(1.0 / (4.0 * PI), cloudPhase(mu), 0.35) + zenithLight / (4.0 * PI)) * 2.4;
-            float amt = 1.0 - exp(-mist.x * 0.07 * min(sky ? 60.0 : dist, 60.0) * 1.6 * CLOUD_INSIDE_FOG);
-            col = mix(col, mistCol, amt);
-        }
+        gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
+        vec4 mist = cloudNearFog(cameraPosition, mrd, sky ? 1e6 : dist, nearCloudLight, nearCloudLightT, ignTemporal(gl_FragCoord.xy, frameCounter));
+        col = col * mist.a + mist.rgb;
+        foregroundClouds = vec4(mist.rgb + mist.a * foregroundClouds.rgb, mist.a * foregroundClouds.a);
     }
 #endif
     // Aerial perspective: blend toward the horizon sky with height-dependent density. Nether haze skips the
@@ -331,7 +368,7 @@ void main() {
             // dozen blocks. The far fog whitens by the same share as the sky's horizon (below) so they still meet.
             vec3 white = snowWhiteout(haze);
             float wDensity = 0.0019 + 0.028 * rainStrength;
-            col = mix(col, white, (1.0 - exp(-dist * wDensity)) * inSnowy * open);
+            col = fogBehindClouds(col, white, (1.0 - exp(-dist * wDensity)) * inSnowy * open, foregroundClouds);
             haze = mix(haze, white, inSnowy * snowHorizonShare());
         }
         if (open < 1.0) {
@@ -340,10 +377,10 @@ void main() {
             // every opening).
             float caveY = 0.5 * (cameraPosition.y + worldY);
             float caveAmt = 1.0 - exp(-dist * caveFogDensity(caveY));
-            col = mix(col, haze, saturate(fogAmt) * open);
-            col = mix(col, caveAirColor(caveY), caveAmt * (1.0 - open));
+            col = fogBehindClouds(col, haze, saturate(fogAmt) * open, foregroundClouds);
+            col = fogBehindClouds(col, caveAirColor(caveY), caveAmt * (1.0 - open), foregroundClouds);
         } else
-            col = mix(col, haze, saturate(fogAmt));
+            col = fogBehindClouds(col, haze, saturate(fogAmt), foregroundClouds);
 #else
         col = mix(col, hazeColor(rd, sunDir), saturate(fogAmt));
 #endif
@@ -354,7 +391,10 @@ void main() {
         // The whiteout also swallows the sky's lower band, matching the far fog's whitening at the horizon.
         vec3 viewDir = normalize(mat3(gbufferModelViewInverse) * projectAndDivide(gbufferProjectionInverse, vec3(texcoord, 1.0) * 2.0 - 1.0));
         float band = exp(-max(viewDir.y, 0.0) * 7.0);
-        col = mix(col, snowWhiteout(col), inSnowy * snowHorizonShare() * band);
+        // Sky and DH terrain share one background whiteout. Recoloring the already-composited sky cloud
+        // here changed its moonlit radiance exactly at the DH depth boundary, even with terrain fog fixed.
+        vec3 white = snowWhiteout(hazeColor(viewDir, sunDir));
+        col = fogBehindClouds(col, white, inSnowy * snowHorizonShare() * band, foregroundClouds);
     }
 #endif
 

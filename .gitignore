@@ -5,3 +5,7 @@ harness/benchcam/build/
 harness/benchcam/.gradle/
 harness/benchcam/run/
 *.log
+
+# Local shader diagnostics and Python bytecode
+/work/
+shaderpack/tools/__pycache__/

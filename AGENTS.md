@@ -5,7 +5,7 @@ Iris shaderpack written from scratch as an AI benchmark + automated screenshot h
 ## Layout
 - shaderpack/shaders/program/*.glsl : ALL real code. Root/world-1/world1 *.vsh/*.fsh are generated stubs: edit `shaderpack/tools/gen_stubs.py`, never the stubs.
 - shaderpack/shaders/lib/ : settings, common (materials, encoding, dithers), atmosphere (sky, haze, stars), clouds (volumetric + cloud shadow + caustics), shadows, lighting, water, waving, jitter.
-- Pipeline: gbuffers_solid -> G-buffer (c0 albedo, c1 normal+lm, c2 mat/emissive/ao) -> deferred (lighting+sky+clouds; writes c0 and copy c4) -> gbuffers_translucent (water/glass/hand forward, reads c4) -> composite (fog/VL/underwater) -> composite1 TAA (history c5, never cleared) -> final (bloom, glare, AgX).
+- Pipeline: G-buffer -> deferred cloud march -> deferred1 cloud history -> deferred2 lighting + pre-cloud copy c4 -> forward translucents -> composite VL -> composite1 VL history -> composite2 fog/near-cloud/meter -> composite3 TAA -> composite4 bloom/glare -> final.
 - tools/gen_cloud_noise.py bakes textures/cloudnoise.dat (64^3 RGBA16, customTexture in shaders.properties). 8-bit banded visibly.
 - Junctioned into instance: %APPDATA%\PrismLauncher\instances\ShaderBench\minecraft\shaderpacks\ClaudeBench
 - harness/benchcam/ : Fabric client mod, TCP 127.0.0.1:25599 (ping/status/cmd/hud/closescreen/wait/waitchunks/shot/reload/shaders on|off/mouse grab|free/window x y). Forces inactivityFpsLimit=MINIMIZED (AFK limiter caps 30fps otherwise).
@@ -86,7 +86,7 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 
 ## Overworld V6 pass (2026-09-24)
 - New libs: night.glsl (aurora in deferred sky, fireflies in composite; custom uniform fireflyBiome from temperature/rainfall), rain.glsl (rainRipples for puddles + water).
-- In-cloud mist: composite cloudMistAt() near field; moon rims via global gCloudRim set in clouds_march before renderClouds.
+- In-cloud mist: composite2 cloudNearFog owns the first 60 blocks; the far cloud march excludes that interval. Real density and illumination cover all cloud decks; stop at the nearest scene surface.
 - thunderStrength is declared under THUNDER_UNIFORM guard in both atmosphere.glsl and cloud_weather.glsl; never redeclare it unguarded.
 - Portal tag: gbuffers_water (PROG_WATER only) writes colortex2 via outMat; blend.gbuffers_water.colortex2 keeps dst alpha. outMat must default to vec4(0). TAA reprojects MAT_PORTAL 1.3 blocks deeper; composite skips SSR for it.
 - Deferred half-resolution clouds must skip MAT_ENTITY pixels. Depth alone lets clouds wash over a third-person player even when the player is in front; keep the material guard in deferred.glsl.
@@ -95,3 +95,11 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Ground rain effects (wet, puddles, ripples, rain fog) use custom uniforms rainLocal/wetLocal (zero where biome_precipitation is NONE). Vanilla draws no rain in dry biomes; "rain only over water" there is vanilla behaviour.
 - Emitter light colour samples the whole 16-texel sprite (atlas grid assumption); per-face UV sampling made wall soul torches flicker red.
 - upsampleVL falls back to best-depth texel when no bilinear tap matches (removed smog glow outlines around Nether blocks).
+
+## Aurora / cloud repair (2026-09-26)
+- c3.rg preserves cloud/scene distances divided by 65536 through composite2, then composite4 overwrites it with glare. c8 is already reused by VL before composite2; never read its old cloud distances there.
+- Fog the background around premultiplied foreground cloud radiance: `color*(1-f)+(haze*cloudT+cloudRGB)*f`. Fogging the finished cloud color painted the DH coverage rectangle into the sky, including the snowy sky-only path.
+- DH water uses its own depth attachment. Reject it against min(vanilla depthtex0, depthtex1); the depthtex1 snapshot omits late forward player skin. Entity material targets must not alpha blend. This fixed cloud-reflection bands on the player's legs.
+- Aurora modes 1 snowy / 2 snowy full moon / 3 random10% / 4 nightly, default3. Stable day hash excludes adjacent random events. Keep fine rays subordinate to continuous sheets; altitude-strata marching produced visible dotted lattices. `verify_aurora.py` exercises real GLSL gates/motion; timings are synthetic, not game FPS.
+- Detailed clouds share a horizontal distance fade; broad atmospheric continuation supplies the horizon beyond it. Reflection fallback samples inside each real deck (DeckStyle.alt is its bottom). Preserve this with any weather changes.
+- Held light must be added explicitly after the ice underside override because that branch returns before generic forward illumination. Bloom uses positive cubic reconstruction to avoid coarse halo grids.

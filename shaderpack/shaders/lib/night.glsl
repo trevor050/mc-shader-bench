@@ -1,35 +1,150 @@
-// Night-time sky and air effects: aurora curtains and fireflies.
-// Requires common.glsl (hash12, valueNoise) and settings.glsl.
+// Night-time sky and air effects. Requires common/settings, cloud weather uniforms,
+// cameraPosition. Aurora geometry is in kilometres, in a north-facing magnetic frame.
 
-// Aurora: folded curtains of light hanging from a layer high above the ground. Each of the stacked layers is the
-// same sheet pattern seen at a greater height, so a fold reads as a tall curtain with vertical rays; green at the
-// base, fading through teal into a violet-pink crown. rd is the world-space view direction; t is time in seconds.
-vec3 aurora(vec3 rd, float t) {
-    if (rd.y < 0.02) return vec3(0.0);
-    const int LAYERS = 14;
-    vec3 acc = vec3(0.0);
-    float dither = hash12(rd.xz * 811.0 + rd.y * 97.0);
-    for (int i = 0; i < LAYERS; i++) {
-        float h = (float(i) + dither) / float(LAYERS);
-        // Position on a flat layer at altitude 1 + 1.4 h (arbitrary units; only the ratio matters).
-        vec2 p = rd.xz / rd.y * (1.0 + h * 1.4) * 0.35;
-        // A slowly writhing fold line: a warped stripe field whose crests are the curtains.
-        vec2 q = p + vec2(t * 0.006, t * 0.002);
-        float warp = valueNoise(q * 0.9 + vec2(t * 0.015, 0.0)) * 2.4 + valueNoise(q * 2.3 - vec2(0.0, t * 0.02)) * 0.7;
-        float phase = q.x * 1.3 + q.y * 0.45 + warp;
-        float sheet = pow(1.0 - abs(sin(phase * 1.6)), 10.0);
-        // Rays: brightness varies along the curtain but not with height.
-        float rays = 0.35 + 0.65 * valueNoise(vec2(phase * 18.0, t * 0.12));
-        // Broad patches of activity so the curtains come and go across the sky.
-        float activity = smoothstep(0.35, 0.75, valueNoise(q * 0.45 + vec2(-t * 0.004, t * 0.003)));
-        // Brightest near the lower edge, fading up the curtain.
-        float fall = exp(-h * 2.6) * smoothstep(0.0, 0.08, h + 0.02);
-        vec3 c = mix(vec3(0.15, 1.0, 0.45), vec3(0.1, 0.75, 0.8), smoothstep(0.1, 0.45, h));
-        c = mix(c, vec3(0.75, 0.25, 0.9), smoothstep(0.45, 0.95, h));
-        acc += c * sheet * rays * activity * fall;
+#ifndef MOON_PHASE_UNIFORM
+#define MOON_PHASE_UNIFORM
+uniform int moonPhase;
+#endif
+
+// Integer avalanche: stable on shader reload, across biomes, and across the midnight tick.
+float auroraNightRoll(int day) {
+    uint x = uint(day) ^ 0xa511e9b3u;
+    x ^= x >> 16u; x *= 0x7feb352du;
+    x ^= x >> 15u; x *= 0x846ca68bu;
+    x ^= x >> 16u;
+    return float(x >> 8u) * (1.0 / 16777216.0);
+}
+
+float auroraNightActive(int day) {
+    // p(1-p) = 0.10. A veto by yesterday's proposal prevents back-to-back displays
+    // without a save file or stateful mod. worldDay advances at dawn, not midnight.
+    const float proposal = 0.1127016654;
+    return auroraNightRoll(day) < proposal && auroraNightRoll(day - 1) >= proposal ? 1.0 : 0.0;
+}
+
+float auroraVisibility(float sunHeight) {
+    float dark = 1.0 - smoothstep(-0.32, -0.08, sunHeight);
+    #if AURORA_MODE == 1
+    float event = inSnowy;
+#elif AURORA_MODE == 2
+    float event = inSnowy * (moonPhase == 0 ? 1.0 : 0.0);
+#elif AURORA_MODE == 4
+    float event = 1.0;
+#else
+    float event = auroraNightActive(worldDay);
+#endif
+    return AURORA * event * dark * dark * (1.0 - rainStrength);
+}
+
+// Height shell intersection on a 6371 km sphere. Rationalized to retain precision
+// near zenith; unlike rd.xz/rd.y, it stays finite at the horizon.
+float auroraShell(vec3 rd, float h) {
+    float b = 6371.0 * rd.y;
+    float c = h * (12742.0 + h);
+    return c / (sqrt(b * b + c) + b);
+}
+
+// Smooth sheets with a bounded spatial slope. Every visible curtain has a
+// unique ray crossing, so three roots can be solved together without a march.
+vec3 auroraField(vec3 s, vec3 rd, vec2 observer, float phase, float seed,
+                 out vec3 derivative, out vec3 curvature, out vec3 h, out vec3 x) {
+    vec3 radius = sqrt(vec3(6371.0 * 6371.0) + s * (12742.0 * rd.y + s));
+    h = s * (12742.0 * rd.y + s) / (radius + 6371.0);
+    vec3 dh = (6371.0 * rd.y + s) / radius;
+    vec3 ddh = (6371.0 * 6371.0) * (1.0 - rd.y * rd.y) / (radius * radius * radius);
+    x = s * rd.x + observer.x - 0.10 * h;
+    vec3 z = s * rd.z + observer.y + 0.16 * h;
+    vec3 offset = vec3(0.0, 2.17, 4.61) + seed;
+    vec3 bend = x * 0.0036 + offset + sin(phase * 5.0) * 0.35;
+    vec3 ripple = x * 0.0075 + offset * 1.7 - phase * 11.0;
+    vec3 fold = sin(bend) * vec3(42.0, 60.0, 76.0) + sin(ripple) * vec3(5.0, 7.0, 9.0);
+    vec3 slope = cos(bend) * vec3(0.1512, 0.216, 0.2736) + cos(ripple) * vec3(0.0375, 0.0525, 0.0675);
+    vec3 dSlope = -sin(bend) * vec3(0.00054432, 0.0007776, 0.00098496)
+                 -sin(ripple) * vec3(0.00028125, 0.00039375, 0.00050625);
+    vec3 dx = rd.x - 0.10 * dh;
+    derivative = rd.z + 0.16 * dh - slope * dx;
+    curvature = (0.16 + 0.10 * slope) * ddh - dSlope * dx * dx;
+    return z - (vec3(-155.0, -285.0, -445.0) + fold);
+}
+
+// Normal CDF, used to integrate a finite-width Gaussian sheet analytically.
+// Partial crossings at bracket/altitude boundaries remain continuous.
+vec3 auroraGaussianCDF(vec3 x) {
+    vec3 a = abs(x) * 0.70710678118;
+    vec3 k = 1.0 / (1.0 + 0.3275911 * a);
+    vec3 polynomial = (((((1.061405429 * k - 1.453152027) * k)
+                        + 1.421413741) * k - 0.284496736) * k + 0.254829592) * k;
+    return 0.5 + 0.5 * sign(x) * (1.0 - polynomial * exp(-a * a));
+}
+
+// Radiance is evaluated at an actual sheet footpoint (or its stationary closest
+// approach). No emission coordinate depends on a root-search bracket boundary.
+vec3 auroraEmission(vec3 column, vec3 h, vec3 x, float phase, float seed) {
+    vec3 offset = vec3(0.0, 2.17, 4.61) + seed;
+    float drift = 2.1 * sin(phase * 23.0 + seed) + 0.8 * sin(phase * 61.0);
+    vec3 coarse, fine, detail, activity;
+    for (int j = 0; j < 3; ++j) {
+        coarse[j] = valueNoise(vec2(x[j] * 0.016 + drift * 0.07, offset[j] + sin(phase * 7.0)));
+        float flow = valueNoise(vec2(x[j] * 0.017 + drift * 0.09, offset[j] * 4.1));
+        // Slowly varying domain compression clusters strands into unequal fans.
+        // This keeps coherent rays while avoiding equally spaced noise-cell bars.
+        float strand = x[j] * 0.34 + 4.0 * flow + drift;
+        fine[j] = valueNoise(vec2(strand, offset[j] * 3.0 + sin(phase * 13.0)));
+        detail[j] = valueNoise(vec2(strand * 2.47 + coarse[j] * 2.0, offset[j] * 5.0 + sin(phase * 19.0)));
+        activity[j] = valueNoise(vec2(x[j] * 0.006 + sin(phase * 3.0), offset[j] + 0.2));
     }
-    float horizon = smoothstep(0.02, 0.22, rd.y);
-    return acc / float(LAYERS) * horizon * AURORA_BRIGHTNESS * 6.0;
+    // The luminous sheet carries the image. Unequal broad fans shape its body;
+    // fine field-aligned strands only modulate it instead of painting dark gaps.
+    vec3 rays = 0.36 + 0.45 * coarse + 0.23 * fine * fine + 0.07 * detail * detail;
+    vec3 activityPatch = 0.10 + 0.90 * smoothstep(vec3(0.18), vec3(0.82), activity);
+    vec3 surge = 0.78 + 0.22 * sin(phase * 31.0 + x * 0.008 + offset);
+    vec3 edge = 1.0 - smoothstep(vec3(380.0), vec3(780.0), abs(x));
+    vec3 lip = 103.0 + 10.0 * coarse + 3.0 * sin(x * 0.022 + phase * 11.0 + offset);
+    vec3 green = smoothstep(lip - 7.0, lip + 8.0, h)
+               * exp(-max(h - lip - 8.0, 0.0) / (23.0 + 54.0 * coarse));
+    vec3 red = exp(-((h - 220.0) / 58.0) * ((h - 220.0) / 58.0)) * 0.12
+             * (1.0 - smoothstep(vec3(270.0), vec3(320.0), h));
+    vec3 violet = exp(-((h - 104.0) / 7.0) * ((h - 104.0) / 7.0)) * 0.035;
+    vec3 energy = column * vec3(1.0, 0.74, 0.48) * rays * activityPatch * surge * edge;
+    return vec3(0.13, 1.0, 0.34) * dot(energy, green)
+         + vec3(1.0, 0.055, 0.075) * dot(energy, red)
+         + vec3(0.32, 0.09, 0.65) * dot(energy, violet);
+}
+
+vec3 aurora(vec3 rd, float t) {
+    if (rd.y <= 0.0 || rd.z > -0.08) return vec3(0.0);
+    const vec3 WIDTH = vec3(2.4, 3.1, 3.8);
+    float phase = t * (TAU / 3600.0);
+    float seed = auroraNightRoll(worldDay + 7919) * TAU;
+    float strength = mix(0.65, 1.2, auroraNightRoll(worldDay + 104729));
+    vec2 observer = 20.0 * sin(cameraPosition.xz * (0.001 / 200.0));
+    float nearS = auroraShell(rd, 94.0), farS = auroraShell(rd, 320.0);
+    float dhNear = (6371.0 * rd.y + nearS) / 6465.0;
+    float dhFar = (6371.0 * rd.y + farS) / 6691.0;
+    float dxBound = max(abs(rd.x - 0.10 * dhNear), abs(rd.x - 0.10 * dhFar));
+    // The maximum fold slopes are proven from the two sinusoid amplitudes.
+    // Fade only directions where a sheet could turn back along the ray.
+    vec3 upperDerivative = rd.z + 0.16 * dhFar + vec3(0.1887, 0.2685, 0.3411) * dxBound;
+    vec3 monotone = smoothstep(vec3(0.025), vec3(0.10), -upperDerivative);
+    if (dot(monotone, vec3(1.0)) < 0.0001) return vec3(0.0);
+    vec3 root = vec3(155.0, 285.0, 445.0) / max(-(rd.z + 0.16 * rd.y), 0.04);
+    vec3 dr, cr, h, x, fr;
+    for (int refine = 0; refine < 4; ++refine) {
+        fr = auroraField(root, rd, observer, phase, seed, dr, cr, h, x);
+        root = clamp(root - fr / min(dr, vec3(-0.025)), 0.0, 5000.0);
+    }
+    fr = auroraField(root, rd, observer, phase, seed, dr, cr, h, x);
+    vec3 opticalSlope = sqrt(dr * dr + WIDTH * abs(cr) * 0.03 + 0.00001);
+    vec3 column = (auroraGaussianCDF((farS - root) * opticalSlope / WIDTH)
+                 -auroraGaussianCDF((nearS - root) * opticalSlope / WIDTH))
+                * (2.50662827463 * WIDTH / opticalSlope);
+    column *= monotone * exp(-0.5 * (fr / WIDTH) * (fr / WIDTH));
+    if (dot(column, vec3(1.0)) < 0.0001) return vec3(0.0);
+    vec3 acc = auroraEmission(column, h, x, phase, seed);
+    acc *= AURORA_BRIGHTNESS * 0.45 * strength;
+    acc /= 1.0 + luminance(acc) / 1.1;
+    float air = exp(-0.12 / max(rd.y + 0.025, 0.025));
+    return acc * air * smoothstep(0.0, 0.045, rd.y);
 }
 
 // Fireflies: soft yellow-green points drifting a block or two above the ground near the camera, blinking on and off.
