@@ -26,6 +26,7 @@ from livingston_build import GROUND_Y, HALF, ORIGIN_MC, project  # noqa: E402
 from PIL import ExifTags  # noqa: E402
 
 EYE = 1.62
+CAMERA_NUDGE = {"lilac_brick": (-22.0, 6.0)}
 
 PHOTOS = Path.home() / "Downloads" / "Claude"
 OUT = Path(__file__).parent / "out" / "livingston"
@@ -153,6 +154,9 @@ def capture(tag: str, names: list) -> None:
         tick = tick_for_elevation(elev)
         photo_path = next(PHOTOS.glob(prefix + "*"))
         wx, wz = photo_position(photo_path)
+        # Phone GPS is good to ~10-20 m; nudge cameras that land inside a tree or wall (east, south metres).
+        ox, oz = CAMERA_NUDGE.get(name, (0.0, 0.0))
+        wx, wz = wx + ox, wz + oz
         b.send(f"cmd tp @s {wx:.2f} {GROUND_Y + 1} {wz:.2f}")
         if first:
             b.send("waitchunks 30")

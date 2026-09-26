@@ -298,12 +298,12 @@ def build(only=None):
     from bench import Bench
     lines = (DATA / "commands.txt").read_text(encoding="utf-8").splitlines()
     if only:
-        lines = [ln for ln in lines if ln.split("	")[1] == only]
+        lines = [ln for ln in lines if ln.split("\t")[1] == only]
     b = Bench()
     b.send("cmd gamerule sendCommandFeedback false")
     current = None
     for i, line in enumerate(lines):
-        key, cmd = line.split("\t")
+        key, _, cmd = line.split("\t")
         if key != current:
             current = key
             tx, tz = (int(v) for v in key.split())
