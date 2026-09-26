@@ -9,7 +9,29 @@ uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
 #include "/lib/atmosphere.glsl"
+#include "/lib/end_portal.glsl"
+#if !defined DIM_NETHER && !defined DIM_END
+#include "/lib/cloud_weather.glsl"
+#endif
+#if defined FRAGMENT && defined LIGHT_FIELD
+#define VOXEL_READ
+#define FIELD_SHADING
+uniform sampler3D lightFieldSamplerA;
+uniform sampler3D lightFieldSamplerB;
+uniform vec3 cameraPositionFract;
+#ifdef LIGHT_FIELD_DEBUG
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+#endif
+#endif
+#ifdef FRAGMENT
+uniform int frameCounter;
+#endif
+#ifdef LIGHT_FIELD
+#include "/lib/voxel.glsl"
+#endif
 #include "/lib/lighting.glsl"
+#include "/lib/ice.glsl"
 
 #ifdef VERTEX
 out vec2 texcoord;
@@ -17,6 +39,10 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+flat out vec4 cloudWeather0;
+flat out vec3 cloudWeather1;
+#endif
 
 void main() {
     gl_Position = ftransform();
@@ -26,11 +52,15 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+    CloudWeather w = cloudWeather();
+    cloudWeather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
+    cloudWeather1 = vec3(w.low, w.lowCov, w.cb);
+#endif
 }
 #endif
 
 #ifdef FRAGMENT
-uniform int frameCounter;
 uniform sampler2D colortex0;
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
@@ -49,7 +79,10 @@ uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 #endif
 uniform vec3 cameraPosition;
-uniform float wetness;
+// Wetness and rain level where the player is: zero in biomes without precipitation (deserts, savannas), where
+// vanilla draws no rain either (custom uniforms, shaders.properties). The sky and clouds keep the global rain level.
+uniform float wetLocal;
+uniform float rainLocal;
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferModelView;
 uniform sampler2D colortex8;
@@ -60,14 +93,22 @@ uniform float viewHeight;
 #include "/lib/shadows.glsl"
 #endif
 #include "/lib/clouds.glsl"
+#ifdef DIM_END
+#include "/lib/end_atmosphere.glsl"
+#endif
 #include "/lib/stars.glsl"
-#include "/lib/lava.glsl"
+#include "/lib/night.glsl"
+#include "/lib/rain.glsl"
 
 in vec2 texcoord;
 flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
+#if !defined DIM_NETHER && !defined DIM_END
+flat in vec4 cloudWeather0;
+flat in vec3 cloudWeather1;
+#endif
 
 /* RENDERTARGETS: 0,4 */
 layout(location = 0) out vec4 outColor;
@@ -163,7 +204,8 @@ void main() {
     vec3 col;
     if (depth >= 1.0 && !isLod) {
         // Sky. colortex0 holds whatever the sky programs drew (stars, moon) in linear light.
-        col = rd.y < 0.0 ? hazeColor(rd, sunDir) : skyRadiance(rd, sunDir, 12) + sunAureole(rd, sunDir) + sunDisc(rd, sunDir);
+        // The sun is drawn below the eye-level horizon too: from high ground the land's edge is lower still.
+        col = rd.y < 0.0 ? hazeColor(rd, sunDir) + (rd.y > -0.15 ? sunDisc(rd, sunDir) : vec3(0.0)) : skyRadiance(rd, sunDir, 12) + sunAureole(rd, sunDir) + sunDisc(rd, sunDir);
 #ifdef DIM_END
         float night = 1.0;
 #else
@@ -173,7 +215,7 @@ void main() {
         // Reconstructing the direction from the far-plane depth loses precision; stars need an exact ray.
         vec3 viewDir = normalize(vec3((texcoord * 2.0 - 1.0) / vec2(gbufferProjection[0][0], gbufferProjection[1][1]), -1.0));
         vec3 starDir = normalize(mat3(gbufferModelViewInverse) * viewDir);
-#ifndef DIM_END
+#if !defined DIM_END && !defined DIM_NETHER
         col += moonSky(starDir, -sunDir);
 #endif
 #if !defined DIM_NETHER && !defined DIM_END
@@ -181,7 +223,7 @@ void main() {
         // degrees around the point opposite the sun, red outside and violet inside, with a faint secondary
         // bow at 51 degrees (colours reversed) and a darker band between them (Alexander's band).
         {
-            float wetAir = saturate(wetness * 1.4 - rainStrength * 2.0);
+            float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
             if (wetAir > 0.0 && sunDir.y > 0.0 && sunDir.y < 0.7) {
                 float a = degrees(acos(clamp(dot(starDir, -sunDir), -1.0, 1.0)));
                 float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
@@ -195,10 +237,18 @@ void main() {
             }
         }
 #endif
+#ifndef DIM_NETHER
+        // The Nether has no sky: no stars or Milky Way (found by Codex's perf audit).
         if (night > 0.0 && rainStrength < 1.0 && starDir.y > -0.02) {
             col += nightSky(starDir, sunDir, pixelAngle, frameTimeCounter, gl_FragCoord.xy, mat3(gbufferModelView),
                             vec2(gbufferProjection[0][0], gbufferProjection[1][1]), vec2(viewWidth, viewHeight)) * night * (1.0 - rainStrength);
         }
+#if !defined DIM_END
+        // Aurora over snowy lands on clear nights. It sits behind the clouds (composited below).
+        float auroraAmt = AURORA * inSnowy * night * (1.0 - rainStrength) * smoothstep(-0.12, -0.3, sunDir.y);
+        if (auroraAmt > 0.001) col += aurora(starDir, frameTimeCounter) * auroraAmt;
+#endif
+#endif
 #if defined DIM_NETHER || defined DIM_END
         col += gAlbedo.rgb;
 #endif
@@ -210,6 +260,8 @@ void main() {
         // Very dark textures (obsidian, blackstone) crush to pure black with a plain 2.2 decode; ease the
         // curve at the bottom so their texture and hue survive.
         vec3 albedo = pow(gAlbedo.rgb, vec3(mix(1.75, 2.2, smoothstep(0.0, 0.25, luminance(gAlbedo.rgb)))));
+        // Packed and blue ice: vanilla's saturated blue reads as plastic; pull it toward a paler, icier tone.
+        if (mat == MAT_ICE_SOLID) albedo = mix(vec3(luminance(albedo)), albedo, 0.55) * 1.15;
         float NdotL = dot(n, envLightDir);
         vec3 shadow = vec3(1.0);
         bool foliage = mat == MAT_FOLIAGE || mat == MAT_LEAVES || mat == MAT_TALL_UPPER;
@@ -217,27 +269,65 @@ void main() {
         // sample unrelated places. Shade it from its sky light level instead.
         bool isHand = mat == MAT_HAND;
         vec3 wp = playerPos + cameraPosition;
+        if (mat == MAT_LAVA && isLod) {
+            // DH supplies a flat vertex colour instead of the Minecraft atlas UVs. Keep its emissive
+            // G-buffer colour, then add broad, world-anchored variation as a cheap nonperiodic fallback.
+            vec3 an = abs(n);
+            vec2 p = an.y >= max(an.x, an.z) ? wp.xz : (an.x >= an.z ? wp.zy : wp.xy);
+            float broad = valueNoise(p * 0.035 + wp.y * 0.017);
+            float flicker = valueNoise(p * 0.21 + vec2(frameTimeCounter * 0.08, -frameTimeCounter * 0.05));
+            albedo *= 0.78 + 0.24 * broad + 0.08 * flicker;
+        }
         if (isHand) shadow = vec3(smoothstep(0.6, 0.95, nl.w));
 #if !defined DIM_NETHER && !defined DIM_END
-        if (!isLod && !isHand && (NdotL > 0.0 || foliage)) {
+        // The hand has its own projection, so it cannot look up its own pixels in the shadow map. Use the shadow
+        // next to the player instead (one value for the whole hand): standing in shade darkens it, instead of
+        // the sky-light guess that kept it sunlit under trees and overhangs. The point sits a block toward the sun
+        // so the player's own body, which is in the shadow map, never shades it.
+        if (isHand) shadow = sampleShadow(vec3(0.0, -0.3, 0.0) + envLightDir * 1.1, envLightDir, 1.0, 0.5) * smoothstep(0.3, 0.8, nl.w);
+        if (!isLod && !isHand && (NdotL > -0.4 || foliage)) {
             shadow = sampleShadow(playerPos, foliage ? envLightDir : n, abs(NdotL), ignTemporal(gl_FragCoord.xy, frameCounter));
             if (shadowWaterDepth > 0.05) {
                 // Project along the light onto the water plane so the pattern slides with the sun.
                 vec2 cuv = (wp.xz + envLightDir.xz / max(envLightDir.y, 0.2) * shadowWaterDepth) / 5.0;
                 float c = caustics(cuv, frameTimeCounter * 0.6);
-                shadow *= mix(1.0, 0.35 + c * 3.0, saturate(shadowWaterDepth * 0.7));
+                // Strongest over shallow floors (a block or a few deep), where the focused light is still tight.
+                float cAmt = saturate(shadowWaterDepth * 1.4) * mix(1.0, 0.55, smoothstep(3.0, 12.0, shadowWaterDepth));
+                shadow *= mix(1.0, 0.3 + c * 3.0 * CAUSTIC_STRENGTH, cAmt);
             }
         }
-        if (!isHand) shadow *= cloudShadow(wp, envLightDir);
+        {
+            CloudWeather w = CloudWeather(cloudWeather0.x, cloudWeather0.y, cloudWeather0.z,
+                                          cloudWeather0.w, cloudWeather1.x, cloudWeather1.y,
+                                          cloudWeather1.z);
+            shadow *= cloudShadow(isHand ? cameraPosition : wp, envLightDir, w);
+        }
 #endif
 
+#ifdef DIM_END
+        // The islands are lit from the vortex core overhead, through the storm: its clumps cast soft shadows that
+        // sweep across the ground as the vortex turns.
+        if (!isHand && !isLod) {
+            vec3 toCore = normalize(END_CORE_LIGHT - wp);
+            env.lightDir = toCore;
+            float occ = endStorm(wp + toCore * 25.0, frameTimeCounter).x * 30.0
+                      + endStorm(wp + toCore * 70.0, frameTimeCounter).x * 60.0
+                      + endStorm(wp + toCore * 150.0, frameTimeCounter).x * 100.0;
+            // The core's heartbeat reaches the ground too.
+            shadow = vec3(exp(-occ * 1.2)) * (0.92 + 0.15 * endPulse(frameTimeCounter));
+        }
+#endif
         // Rain: sky-exposed surfaces darken and turn glossy; flat ground pools into puddles.
-        float wet = isHand ? 0.0 : wetness * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
+        float wet = isHand ? 0.0 : wetLocal * smoothstep(0.82, 0.97, nl.w) * (foliage ? 0.4 : 1.0);
         float puddle = 0.0;
         if (wet > 0.0 && n.y > 0.9 && !foliage) {
             float pn = valueNoise(wp.xz * 0.12) * 0.65 + valueNoise(wp.xz * 0.5) * 0.35;
             puddle = smoothstep(0.52, 0.62, pn) * wet;
         }
+        // While it is still raining, drops land in the puddles: rings of ripples on the mirror.
+        vec2 ripple = vec2(0.0);
+        if (puddle > 0.0 && rainLocal > 0.01 && length(playerPos) < 64.0)
+            ripple = rainRipples(wp.xz, frameTimeCounter) * RAIN_RIPPLES * rainLocal * (1.0 - length(playerPos) / 64.0);
         // Standing water hides the surface color underneath, so puddles read as dark, glossy patches.
         albedo *= mix(1.0, 0.55, wet * 0.8) * mix(1.0, 0.25, puddle);
         float ao = m.b;
@@ -254,85 +344,88 @@ void main() {
         // Water lowers Minecraft's sky light by one level per block, so a seafloor looks like a sealed cave to
         // the sky-light gates in shadeSurface. When the shadow map shows light arriving through water, the
         // surface is open to the sky above that water; its absorption is already applied via the shadow term.
-        // The same applies under ice or glass. Sealed caves never trip this: rock blocks the shadow map there.
+        // Only water triggers this. Trusting any lit shadow sample made caves glow: the shadow map is not a
+        // reliable occluder underground (casters beyond its depth range or culled chunks read as open sky), and
+        // lifting the sky light there also re-enabled direct sun, which lit whole cave walls blue-white next to
+        // pitch-black faces. Glass does not reduce vanilla sky light, so it needs no lift.
 #if !defined DIM_NETHER && !defined DIM_END
         vec2 lm = nl.zw;
-        float reaching = saturate(luminance(shadow) * 8.0);
-        if (!isLod && !isHand && (shadowWaterDepth > 0.05 || reaching > 0.0)) lm.y = max(lm.y, 0.8 * max(reaching, step(0.05, shadowWaterDepth)));
+        // Only surfaces really under the water: some sky light of their own and a plausible water depth. The shadow
+        // map only says that water lies somewhere along the sun ray, so a cave under a lake got full sky light
+        // (a lake-shaped glowing patch on the cave floor with no visible source).
+        if (!isLod && !isHand && shadowWaterDepth > 0.05 && shadowWaterDepth < 20.0 && lm.y > 0.12) lm.y = max(lm.y, 0.8);
 #else
         vec2 lm = nl.zw;
 #endif
-        col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
-#ifdef DIM_NETHER
-        if (!isHand) col += albedo * netherUplight(playerPos + cameraPosition, n, ao) / PI;
+        float fieldWeight = 0.0;
+#ifdef FIELD_SHADING
+        surfaceField = FieldLight(vec3(0.0), BLOCKLIGHT_COLOR / luminance(BLOCKLIGHT_COLOR), 0.0, 0.0, vec3(0.0), 0.0, 0.0);
+        if (!isHand && !isLod) surfaceField = sampleLightField(playerPos, n);
+        // The hand's depth is not a world position, but the hand is at the eye: read the colour field there.
+        if (isHand) surfaceField = sampleLightField(vec3(0.0, -0.4, 0.0), n);
+        fieldWeight = surfaceField.weight;
 #endif
+        col = shadeSurface(env, albedo, n, -rd, lm, ao, mat, shadow, m.g);
 #if !defined DIM_NETHER && !defined DIM_END
-        // Snow glitter: tiny ice crystals, each tilted its own way, flash when one happens to mirror the sun
-        // toward the eye. One crystal per 1/16-block texel; they twinkle as the view moves and vanish in shade.
+        // Snow: sparse point glints from individual crystals (lib/ice.glsl), plus the forward-scattering sheen
+        // that makes sunlit snow glow when looking toward the sun across it.
         if (mat == MAT_SNOW && !isLod) {
-            vec3 wp = playerPos + cameraPosition;
-            vec3 cell = floor(wp * 16.0 + n * 0.5);
-            float seed = hash12(cell.xz + vec2(cell.y * 17.13, cell.y * 3.71));
-            float h = hash12(vec2(seed * 91.7, 3.3));
-            vec3 tilt = normalize(n + (vec3(hash12(vec2(seed * 57.1, 1.1)), hash12(vec2(seed * 33.9, 7.7)),
-                                            hash12(vec2(seed * 71.3, 4.9))) - 0.5) * 0.5);
+            float d = length(playerPos);
+            col += envDirect * shadow * snowGlint(wp, n, rd, envLightDir, d) * 60.0 * saturate(dot(n, envLightDir) * 4.0);
+            float toward = saturate(dot(rd, envLightDir));
+            col += envDirect * shadow * albedo * pow(toward, 6.0) * pow(1.0 - saturate(dot(n, -rd)), 3.0) * 0.12;
+        }
+        // Packed and blue ice: polished, with a clear sky reflection and a tight sun highlight. Light also
+        // travels through ice, so its shaded faces glow a luminous blue instead of dropping to near-black.
+        if (mat == MAT_ICE_SOLID && !isLod) {
+            vec3 rr = reflect(rd, n);
+            float F = iceFresnel(dot(-rd, n));
             vec3 hv = normalize(envLightDir - rd);
-            float flash = pow(saturate(dot(tilt, hv)), 140.0) * step(0.35, h);
-            col += envDirect * shadow * flash * 40.0 * saturate(dot(n, envLightDir) * 4.0);
+            float nh = saturate(dot(n, hv));
+            const float a2 = 0.004;
+            float dd = nh * nh * (a2 - 1.0) + 1.0;
+            col += envDirect * shadow * a2 / (PI * dd * dd) * iceFresnel(dot(hv, -rd)) * saturate(dot(n, envLightDir)) * 0.25;
         }
 #endif
-        // Glassy dark stone (obsidian, blackstone, basalt): very dark albedos get a glossy sky reflection,
-        // so they read as polished volcanic glass instead of a black hole.
+        // Generic dark rock is not a mirror in the Nether. The old horizon reflection put an orange
+        // Fresnel rim on every netherrack and basalt silhouette, even with no visible lava source.
+#ifndef DIM_NETHER
+        // Outside the Nether, very dark albedos retain a subtle sky reflection.
         float darkness = 1.0 - smoothstep(0.02, 0.07, luminance(gAlbedo.rgb));
-        if (darkness > 0.0 && !isHand && mat != MAT_LAVA) {
+        if (darkness > 0.0 && !isHand && mat != MAT_LAVA && mat != MAT_GLASSY && mat != MAT_POLISHED) {
             vec3 rr = reflect(rd, n);
             float fr = 0.04 + 0.96 * pow(1.0 - saturate(dot(-rd, n)), 5.0);
             vec3 env = skyRadiance(normalize(vec3(rr.x, max(rr.y, 0.05), rr.z)), sunDir, 4);
-#if !defined DIM_NETHER && !defined DIM_END
+#ifndef DIM_END
             env *= lm.y * lm.y;
 #endif
             col += env * fr * darkness * ao * 0.8;
         }
-        if (mat == MAT_LAVA) col = lavaRadiance(playerPos + cameraPosition, n, frameTimeCounter, rd, length(playerPos));
+#endif
         if (mat == MAT_ENDPORTAL) {
-            // End portal: a window into deep space. Star and nebula layers sit at increasing depths behind the
-            // surface; each is sampled where the view ray would reach it, so they slide past one another with
-            // parallax as the camera moves, and the portal reads as a bottomless hole instead of a sticker.
-            vec3 wp = playerPos + cameraPosition;
-            vec3 pn = abs(n);
-            vec2 base = pn.y > 0.5 ? wp.xz : (pn.x > 0.5 ? wp.zy : wp.xy);
-            vec2 dir2 = pn.y > 0.5 ? rd.xz : (pn.x > 0.5 ? rd.zy : rd.xy);
-            float into = max(abs(dot(rd, n)), 0.08);
-            vec3 space = vec3(0.004, 0.001, 0.012);
-            for (int layer = 0; layer < 4; layer++) {
-                float depth = 6.0 + float(layer * layer) * 14.0;
-                vec2 uv = base + dir2 / into * depth + frameTimeCounter * 0.08 * vec2(1.0, 0.6) * (1.0 + float(layer));
-                float neb = endFbm(uv * 0.06 + float(layer) * 3.7);
-                space += vec3(0.30, 0.07, 0.45) * smoothstep(0.45, 0.9, neb) * 0.05 / (1.0 + float(layer));
-                space += vec3(0.04, 0.22, 0.26) * smoothstep(0.6, 0.95, neb) * 0.03;
-                vec2 sc = uv * (1.6 - float(layer) * 0.25);
-                vec2 cell = floor(sc);
-                float h = hash12(cell + float(layer) * 19.1);
-                if (h > 0.93) {
-                    vec2 f = fract(sc) - 0.5;
-                    float tw = 0.7 + 0.3 * sin(frameTimeCounter * 3.0 + h * 50.0);
-                    space += mix(vec3(0.7, 0.8, 1.0), vec3(0.9, 0.7, 1.0), hash12(cell + 5.0)) * exp(-dot(f, f) * 60.0) * tw
-                           * 1.2 / (1.0 + float(layer) * 0.8);
-                }
-            }
-            col = space * 4.0;
+            col = endPortalRadiance(wp, n, rd);
         }
         if (!isLod && !isHand) col += albedo * handheldLight(playerPos, n, ao);
+        // A torch (or any light) held in either hand lights the hands themselves; vanilla's light level there does
+        // not include it, so in a dark cave the hand holding a torch rendered black.
+        if (isHand) {
+            float held = float(max(heldBlockLightValue, heldBlockLightValue2)) / 15.0;
+            if (held > 0.0) col += albedo * heldLightColor() * blockLightLevel(held * 0.92) * (0.55 + 0.45 * saturate(n.y * 0.5 + 0.5)) * 0.4;
+        }
 #if !defined DIM_NETHER && !defined DIM_END && defined CLOUDS
         {
             // Lightning briefly lights the landscape: cold light from the sky, strongest on open ground.
             vec4 fl = cloudFlash(cameraPosition);
-            if (fl.w > 0.0) col += albedo * vec3(0.7, 0.78, 1.0) * fl.w * 0.03 * lm.y * lm.y * (0.6 + 0.4 * n.y) * ao;
+            // The flash comes from one place in the sky, so faces turned toward it light up more.
+            if (fl.w > 0.0) {
+                float facing = 0.55 + 0.45 * saturate(dot(n, normalize(fl.xyz - wp)));
+                col += albedo * vec3(0.7, 0.78, 1.0) * fl.w * 0.07 * LIGHTNING_GROUND * lm.y * lm.y * facing * ao;
+            }
         }
 #endif
 
         if (wet > 0.0 && !isLod) {
-            vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
+            vec3 rn = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle) + vec3(ripple.x, 0.0, ripple.y) * 0.18 * puddle);
             vec3 r = reflect(rd, rn);
             float fres = 0.02 + 0.98 * pow(1.0 - saturate(dot(-rd, rn)), 5.0);
             vec3 refl = (skyRadiance(r, sunDir, 6) + sunAureole(r, sunDir)) * nl.w * nl.w;
@@ -341,6 +434,23 @@ void main() {
         }
     }
 
+#if defined LIGHT_FIELD_DEBUG && defined FIELD_SHADING
+    // Diagnostics: red/green/blue = raw light field in front of the surface (log-scaled); a cyan tint marks
+    // surfaces whose block is voxelized as solid, magenta marks emitters. Sky stays black.
+    if (depth < 1.0) {
+        vec3 dn = decodeNormal(texture(colortex1, texcoord).xy);
+        vec3 f = lightFieldTap(voxelUVW(playerPos + dn * 0.55, cameraPositionFract));
+        // Saturated HDR categories (grey debug values get scrambled by exposure and AgX):
+        // green = field, blue = solid voxel, magenta = emitter voxel, red = outside the grid.
+        col = vec3(0.0, log2(1.0 + luminance(f)) * 2.0, 0.0);
+        ivec3 vb = worldBlockToVoxel(ivec3(floor(playerPos + cameraPosition - dn * 0.5)), cameraPositionInt);
+        if (voxelInside(vb)) {
+            uint t = voxelType(texelFetch(voxelSampler, vb, 0).r);
+            if (t == VOXEL_SOLID) col.b += 4.0;
+            if (t == VOXEL_EMITTER) col += vec3(4.0, 0.0, 4.0);
+        } else col.r += 4.0;
+    } else col = vec3(0.0);
+#endif
     // Water and glass read this copy for refraction and draw clouds in front of themselves, so it must not
     // already contain the clouds (they would show through twice, or vanish behind the water surface).
     outCopy = vec4(col, 1.0);
@@ -348,7 +458,10 @@ void main() {
     // Clouds cover the sky and, when the camera is inside or above them, terrain behind them too.
     // The hand never gets clouds: they are all behind it (compositing them made the arm look cloud-shadowed
     // and see-through).
-    if (depth >= 0.56) {
+    // Keep opaque entities crisp through the half-resolution cloud upsample. The cloud layer can still fill
+    // the surrounding pixels, but its radiance must not wash across a player or mob silhouette.
+    bool isEntity = depth < 1.0 && int(texture(colortex2, texcoord).r * 255.0 + 0.5) == MAT_ENTITY;
+    if (depth >= 0.56 && !isEntity) {
         float sceneDist = (depth >= 1.0 && !isLod) ? 1e6 : length(playerPos);
         vec4 clouds = upsampleClouds(texcoord, sceneDist);
         col = col * clouds.a + clouds.rgb;
@@ -379,15 +492,21 @@ const int colortex7Format = RGBA16F;
 const int colortex8Format = RG32F;
 const int colortex9Format = RGBA16F;
 const bool colortex9Clear = false;
-const int colortex10Format = RGBA16F;
 const int colortex11Format = RGBA16F;
 const bool colortex11Clear = false;
-const int colortex12Format = R32F;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */
+#if defined DIM_NETHER || defined DIM_END
+// Voxelization only: the shadow map is never sampled here, and the distance just has to cover the light field.
+const int shadowMapResolution = 256;
+const float shadowDistance = 80.0;
+#else
 const int shadowMapResolution = 3072;
 const float shadowDistance = 192.0;
+#endif
 const float shadowDistanceRenderMul = 1.0;
+// Safe-zone radius for the light field voxelization (shadow.culling=reversed in shaders.properties).
+const float voxelDistance = 64.0;
 const float sunPathRotation = -25.0;
 const bool shadowHardwareFiltering = false;

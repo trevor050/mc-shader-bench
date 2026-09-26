@@ -12,7 +12,8 @@ uniform sampler2D milkyway;
 
 const vec3 CELESTIAL_NORTH = vec3(0.0, 0.42262, -0.90631);
 #define STAR_BRIGHTNESS 3.0e-5
-#define MILKYWAY_BRIGHTNESS 0.15
+#define MILKYWAY_BRIGHTNESS 0.5
+#define MILKYWAY_SATURATION 1.1
 
 vec3 starColor(float bv) {
     // B-V colour index -> temperature (Ballesteros 2012) -> approximate blackbody colour.
@@ -39,7 +40,8 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
     // Sun's right ascension: pinned near the June solstice, when the galactic core (RA 266 deg) crosses the
     // meridian around midnight, so the brightest part of the Milky Way arcs overhead on every clear night.
     // A slow drift (one cycle per ten years of game days) keeps the sky from being perfectly static.
-    float raSun = fract(float(worldDay) / 3650.0 + 0.44) * TAU;
+    // (+0.17: the core arcs about 60 degrees from the midnight moon instead of sitting behind it.)
+    float raSun = fract(float(worldDay) / 3650.0 + 0.61) * TAU;
 
     float sinDec = clamp(dot(rd, CELESTIAL_NORTH), -1.0, 1.0);
     float dec = asin(sinDec);
@@ -48,10 +50,32 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
 
     vec3 mw = textureLod(milkyway, uv, 0.0).rgb;
     // Contrast: the faint wide glow stays faint while the bright star clouds and dust lanes stand out.
-    mw = pow(mw, vec3(1.25)) * 1.2;
-    // Starlight is only faintly warm to the eye: pull the dusty core toward cream.
-    mw = mix(vec3(luminance(mw)), mw, 0.45) * vec3(0.95, 0.97, 1.05);
-    vec3 col = mw * MILKYWAY_BRIGHTNESS;
+    mw = pow(mw, vec3(1.15)) * 1.25;
+    // The baked colours (golden core, blue-white arms, brown dust edges, pink nebulae; tools/bake_milkyway.py)
+    // are the look: keep nearly all of their saturation, as a long-exposure photograph shows them.
+    mw = max(mix(vec3(luminance(mw)), mw, MILKYWAY_SATURATION), 0.0);
+    // Fine structure the texture cannot hold at screen resolution (it is ~0.18 degrees per texel, magnified a
+    // few times on screen): star-cloud grain and thin dark wisps from tileable 3D noise fixed on the celestial
+    // sphere, strongest where the band is bright. The broad shapes and colours stay the baked texture's.
+    {
+        vec3 csd = vec3(dot(rd, b1), dot(rd, b2), sinDec);
+        float band = smoothstep(0.015, 0.3, luminance(mw));
+        if (band > 0.0) {
+            float g1 = cloudTex(csd * 7.0).g;
+            float g2 = cloudTex(csd * 23.0 + 0.37).g;
+            float wisp = cloudTex(csd * 11.0 + 0.71).b;
+            float grain = g1 * 0.55 + g2 * 0.45;
+            mw *= mix(1.0, 0.65 + 0.7 * grain, band * 0.8);
+            mw *= mix(1.0, 0.3 + 0.7 * smoothstep(0.2, 0.62, wisp), band * 0.55);
+        }
+    }
+    // Let the band emerge as the last twilight drains away. It stays restrained near the horizon,
+    // where atmospheric glow is strongest, and reaches full contrast in a genuinely dark sky.
+    // The band needs a truly dark sky: bright stars show first while twilight drains away, then the Milky Way
+    // emerges slowly, a faint glow that deepens into the full band well after sunset (sun 7 to 30 degrees below).
+    float darkSky = smoothstep(-0.12, -0.5, sunDir.y);
+    darkSky *= darkSky;
+    vec3 col = mw * MILKYWAY_BRIGHTNESS * darkSky;
 
     // Faint star dust: the unresolved glow is really countless dim stars, so sprinkle tiny pinpoints whose
     // density follows the galaxy's brightness (dense in the band, sparse elsewhere). Cells are fixed on the
@@ -61,7 +85,7 @@ vec3 nightSky(vec3 rd, vec3 sunDir, float pixelAngle, float time, vec2 fragPx, m
         vec3 sp = cs / pixelAngle / 2.2;
         vec3 cell = floor(sp);
         float hsh = hash12(cell.xy * 0.713 + cell.z * 1.37);
-        float density = 0.006 + 0.42 * smoothstep(0.02, 0.4, luminance(mw));
+        float density = (0.006 + 0.42 * smoothstep(0.02, 0.4, luminance(mw))) * mix(0.25, 1.0, darkSky);
         if (hsh < density) {
             vec3 f = fract(sp) - 0.5;
             float core = exp(-dot(f, f) * 9.0);
@@ -157,6 +181,6 @@ vec3 moonSky(vec3 rd, vec3 moonDir) {
     }
     // Halo.
     float a = acos(clamp(dot(rd, moonDir), -1.0, 1.0));
-    col += vec3(0.75, 0.85, 1.0) * (exp(-a * 30.0) * 0.05 + exp(-a * 6.0) * 0.005) * illum;
+    col += vec3(0.75, 0.85, 1.0) * (exp(-a * 45.0) * 0.035 + exp(-a * 9.0) * 0.0025) * illum;
     return col * airTint * horizon * (1.0 - rainStrength);
 }

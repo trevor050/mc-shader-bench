@@ -17,6 +17,7 @@ uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform vec3 sunPosition;
+uniform vec3 upPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
 uniform float viewHeight;
@@ -28,18 +29,20 @@ const bool colortex0MipmapEnabled = true;
 
 in vec2 texcoord;
 
-/* RENDERTARGETS: 3,10 */
+/* RENDERTARGETS: 3,7 */
 layout(location = 0) out vec4 outGlareAndRays;
 layout(location = 1) out vec4 outBloom;
-// colortex10 is written by composite and consumed by composite1. composite2/3 do not read it, so this late
-// composite4 write is safe; default Iris buffer flipping exposes the new value to final.
+// The former cloud/VL scratch buffer is dead by composite4, so its slot holds bloom for final.
 
 // Sum of progressively blurrier copies of the frame. Keeping this in the half-resolution pass removes
 // 81 explicit LOD samples per final pixel; the final pass linearly reconstructs the smooth HDR result.
 // Quality risk: half-resolution evaluation can soften the smallest bloom variations versus per-pixel sampling.
-void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g) {
+void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g, out vec3 e) {
     b = vec3(0.0);
     g = vec3(0.0);
+    e = vec3(0.0);
+    float totalEmit = 0.0;
+    float emitThreshold = max(luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb) * EMITTER_BLOOM_THRESHOLD, 1e-3);
     vec2 px = 1.0 / vec2(viewWidth, viewHeight);
     float totalBloom = 0.0;
     float totalGlare = 0.0;
@@ -54,6 +57,11 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g) {
                 float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
                 vec3 c = textureLod(colortex0, uv + vec2(x, y) * px * scale * 0.75, float(lod)).rgb;
                 bloomSamples += c * w;
+                // Emitter glow: only what is well above the frame's average (lava, glowstone, lanterns), with a soft knee.
+                if (lod >= 2 && lod <= 7) {
+                    float l = luminance(c);
+                    e += c * (max(l - emitThreshold, 0.0) / max(l, 1e-5)) * w * (1.0 / 16.0);
+                }
                 if (lod >= 4) {
                     // Soft knee keeps glare from switching on abruptly.
                     float l = luminance(c);
@@ -63,6 +71,7 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g) {
         // Nearly flat weights: the wide levels carry the big soft glow around very bright sources.
         float bloomWeight = pow(0.86, float(lod - 1));
         b += bloomSamples / 16.0 * bloomWeight;
+        if (lod >= 2 && lod <= 7) totalEmit += 9.0;
         totalBloom += bloomWeight;
         if (lod >= 4) {
             float glareWeight = float(lod - 3);
@@ -72,6 +81,7 @@ void bloomAndGlare(vec2 uv, out vec3 b, out vec3 g) {
     }
     b /= totalBloom;
     g /= totalGlare;
+    e /= max(totalEmit / 9.0, 1.0);
 }
 
 // Only open sky within a small radius of the sun feeds the rays. Testing both depth buffers keeps the
@@ -107,7 +117,7 @@ vec3 sunRays(vec2 uv) {
         // Opaque vanilla geometry already rejects this tap; avoid the DH depth and color lookups.
         if (texture(depthtex0, p).r >= 1.0) {
             if (texture(dhDepthTex0, p).r >= 1.0)
-                acc += textureLod(colortex0, p, 4.0).rgb * nearSun * decay;
+                acc += max(textureLod(colortex0, p, 4.0).rgb, 0.0) * nearSun * decay;
         }
         // The final two taps are symmetric around the sun because the loop samples at 1.5..48.5 steps.
         if (i < N - 2) nearSun *= nearSunStep;
@@ -117,14 +127,18 @@ vec3 sunRays(vec2 uv) {
 }
 
 void main() {
-    vec3 bloomColor, glareColor;
-    bloomAndGlare(texcoord, bloomColor, glareColor);
+    vec3 bloomColor, glareColor, emitColor;
+    bloomAndGlare(texcoord, bloomColor, glareColor, emitColor);
     // The original final result is mix(scene + GLARE_STRENGTH * glare + SUN_RAYS_STRENGTH * rays,
     // bloom, BLOOM_STRENGTH). Weight the additive terms here and preserve that order in final.
-    vec3 glareAndRays = glareColor * GLARE_STRENGTH;
+    // A low sun blinds: its wide glare (the veil that matches the bloom) grows strongly near the horizon.
+    float elev = dot(normalize(sunPosition), normalize(upPosition));
+    float lowSun = (1.0 - smoothstep(0.03, 0.35, elev)) * smoothstep(-0.04, 0.01, elev);
+    vec3 glareAndRays = glareColor * GLARE_STRENGTH * (1.0 + LOW_SUN_GLARE * lowSun);
 #if !defined DIM_NETHER && !defined DIM_END
     glareAndRays += sunRays(texcoord) * SUN_RAYS_STRENGTH;
 #endif
+    glareAndRays += emitColor * EMITTER_BLOOM;
     outGlareAndRays = vec4(glareAndRays, 1.0);
     outBloom = vec4(bloomColor, 1.0);
 }

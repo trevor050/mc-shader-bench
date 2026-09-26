@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "claudebench_ambience",
+	"version": "${version}",
+	"name": "ClaudeBench Ambience",
+	"description": "The scary End for the ClaudeBench shaderpack. Without it the shaderpack's End is serene and mystical; with it the End becomes a violent alien storm: the eye of a vortex, lightning with thunder, a raging gale you can hear and feel, louder than ever during the dragon fight. Layers AmbientSounds' recordings when that mod is installed.",
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["dev.claudebench.ambience.StormAmbience"]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"ambientsounds": "*"
+	}
+}

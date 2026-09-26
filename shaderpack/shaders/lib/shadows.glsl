@@ -34,12 +34,23 @@ vec2 rotateVogel12(int i, float c, float s) {
 }
 
 // Returns colored shadow visibility. playerPos is relative to the camera; normal is world space.
+// Beyond the shadow map nothing is known about occluders. By day treating it as lit is right (most open land
+// is), but with a low sun most distant slopes are shaded by the hills in front of them, and lighting them all
+// made distant land glow orange at sunset ("the sun peeks through the ground"). Blend toward partial shade.
+float beyondShadowVisibility() {
+    float lightElev = abs(shadowModelView[1][2]);
+    return mix(1.0, 0.3, 1.0 - smoothstep(0.08, 0.35, lightElev));
+}
+
 vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     shadowWaterDepth = 0.0;
     float dist2 = dot(playerPos, playerPos);
-    if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(1.0);
+    if (dist2 > SHADOW_DIST * SHADOW_DIST) return vec3(beyondShadowVisibility());
     float dist = sqrt(dist2);
 
+    // Low sun: shadow texels smear across many blocks; a slightly wider filter keeps edges from crawling. (A larger
+    // bias/normal offset here let the low sun leak through thin cave walls; keep those unchanged.)
+    float lowSun = 1.0 - smoothstep(0.1, 0.45, abs(shadowModelView[1][2]));
     // Normal offset scaled by distance keeps acne away on far, low-res texels.
     vec3 offsetPos = playerPos + normal * (0.035 + dist * 0.0018) * (1.0 + 2.0 * (1.0 - NdotL));
     vec3 sp = (shadowProjection * (shadowModelView * vec4(offsetPos, 1.0))).xyz;
@@ -58,9 +69,10 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
         float d = texture(shadowtex0, ds.xy + o).r;
         if (d < ds.z - bias) { blocker += d; count += 1.0; }
     }
-    if (count < 0.5) return vec3(1.0);
+    if (count < 0.5) return vec3(mix(1.0, beyondShadowVisibility(), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist)));
     blocker /= count;
-    float penumbra = clamp((ds.z - blocker) * 320.0, 0.6, 7.0) * SHADOW_SOFTNESS;
+    // Wider contact hardening: crisp at contact, soft and diffuse further out, never a hard binary edge.
+    float penumbra = clamp((ds.z - blocker) * 440.0, mix(0.9, 3.2, lowSun), 11.0) * SHADOW_SOFTNESS;
 
     vec3 vis = vec3(0.0);
     for (int i = 0; i < SHADOW_SAMPLES; i++) {
@@ -89,6 +101,6 @@ vec3 sampleShadow(vec3 playerPos, vec3 normal, float NdotL, float dither) {
     }
     vis /= float(SHADOW_SAMPLES);
     // Fade out near the edge of the shadow distance.
-    return mix(vis, vec3(1.0), smoothstep(SHADOW_DIST * 0.85, SHADOW_DIST, dist));
+    return mix(vis, vec3(beyondShadowVisibility()), smoothstep(SHADOW_DIST * 0.7, SHADOW_DIST, dist));
 }
 #endif

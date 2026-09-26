@@ -1,6 +1,6 @@
 // Forward-shaded translucents: water (refraction, absorption, SSR) and tinted glass/ice.
 // colortex4 holds the lit opaque scene from deferred, used for refraction and reflections.
-// Variants: PROG_WATER (gbuffers_water), PROG_DH (dh_water).
+// Variants: PROG_WATER (gbuffers_water), PROG_HAND (gbuffers_hand_water), PROG_DH (dh_water).
 
 #include "/lib/settings.glsl"
 #include "/lib/common.glsl"
@@ -11,6 +11,8 @@ uniform mat4 gbufferModelViewInverse;
 uniform vec3 cameraPosition;
 uniform float rainStrength;
 uniform float frameTimeCounter;
+uniform ivec2 eyeBrightnessSmooth;
+uniform float rainLocal;
 #include "/lib/atmosphere.glsl"
 #include "/lib/lighting.glsl"
 
@@ -29,6 +31,7 @@ flat out vec3 sunDir;
 flat out vec3 envLightDir;
 flat out vec3 envDirect;
 flat out vec3 envAmbient;
+flat out vec3 sunsetLight;
 
 void main() {
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -36,12 +39,19 @@ void main() {
     lmcoord = saturate((lm - 1.0 / 32.0) * 16.0 / 15.0);
     glcolor = gl_Color;
     worldNormal = mat3(gbufferModelViewInverse) * normalize(gl_NormalMatrix * gl_Normal);
+#if defined PROG_WATER || defined PROG_DH
+    // Chunk geometry: the normal is already world space; the view-matrix round trip wobbled with view bobbing.
+    worldNormal = normalize(gl_Normal);
+#endif
 #if defined PROG_HAND
     mat = MAT_HAND;
+#elif defined PROG_ENTITIES_TRANSLUCENT
+    mat = MAT_ENTITY;
 #elif defined PROG_DH
     mat = dhMaterialId == DH_BLOCK_WATER ? MAT_WATER : MAT_TRANSLUCENT;
 #else
     mat = int(mc_Entity.x + 0.5) - 10000;
+    if (mat == MAT_LAVA_FLOWING) mat = MAT_LAVA;
 #endif
     vec3 viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
     playerPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz;
@@ -53,6 +63,8 @@ void main() {
     envLightDir = e.lightDir;
     envDirect = e.directLight;
     envAmbient = e.skyAmbient;
+    // Sunset palette light for the sun's path on the water and the clouds reflected in it (same as clouds_march).
+    sunsetLight = sunDir.y > -0.16 ? cloudSunsetLight(sunDir) * sunsetWindow(sunDir.y) : vec3(0.0);
 }
 #endif
 
@@ -77,11 +89,42 @@ uniform float viewHeight;
 uniform float far;
 uniform int isEyeInWater;
 uniform sampler2D colortex9;
+uniform sampler2D colortex8;
 #if !defined DIM_NETHER && !defined DIM_END
 #include "/lib/shadows.glsl"
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/water.glsl"
+#include "/lib/rain.glsl"
+#include "/lib/portal.glsl"
+#include "/lib/ice.glsl"
+#if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
+#include "/lib/voxel.glsl"
+uniform usampler3D voxelSampler;
+uniform ivec3 cameraPositionInt;
+#endif
+
+// 1 on the portal sheet where it meets its frame, 0 about a block inside. Uses the voxel grid (the frame is
+// solid there, the sheet is an emitter); without it the rim is simply absent.
+float portalFrameEdge(vec3 wp, bool alongX) {
+#if defined LIGHT_FIELD && !defined PROG_DH && !defined PROG_HAND
+    ivec3 v = worldBlockToVoxel(ivec3(floor(wp)), cameraPositionInt);
+    if (!voxelInside(v - 1) || !voxelInside(v + 1)) return 0.0;
+    vec2 f = alongX ? fract(wp.zy) : fract(wp.xy);
+    ivec3 side = alongX ? ivec3(0, 0, 1) : ivec3(1, 0, 0);
+    float d = 2.0;
+    if (voxelType(texelFetch(voxelSampler, v - side, 0).r) == VOXEL_SOLID) d = min(d, f.x);
+    if (voxelType(texelFetch(voxelSampler, v + side, 0).r) == VOXEL_SOLID) d = min(d, 1.0 - f.x);
+    if (voxelType(texelFetch(voxelSampler, v - ivec3(0, 1, 0), 0).r) == VOXEL_SOLID) d = min(d, f.y);
+    if (voxelType(texelFetch(voxelSampler, v + ivec3(0, 1, 0), 0).r) == VOXEL_SOLID) d = min(d, 1.0 - f.y);
+    return 1.0 - smoothstep(0.0, 0.45, d);
+#else
+    return 0.0;
+#endif
+}
+#if defined PROG_DH && defined DIM_END
+#include "/lib/end_lod.glsl"
+#endif
 
 in vec2 texcoord;
 in vec2 lmcoord;
@@ -92,10 +135,20 @@ flat in int mat;
 flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
+flat in vec3 sunsetLight;
 flat in vec3 envAmbient;
 
+#ifdef PROG_WATER
+// Terrain translucents also tag the nether portal in the material buffer, so TAA can reproject its parallax
+// interior at the depth it appears to be at. colortex2 blends with SRC_ALPHA / ONE_MINUS_SRC_ALPHA on colour and
+// keeps the destination alpha (shaders.properties): alpha 0 leaves the opaque material underneath untouched.
+/* RENDERTARGETS: 0,2 */
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outMat;
+#else
 /* RENDERTARGETS: 0 */
 layout(location = 0) out vec4 outColor;
+#endif
 
 vec3 viewFromDepth(vec2 uv, float depth) {
     return projectAndDivide(gbufferProjectionInverse, vec3(uv, depth) * 2.0 - 1.0);
@@ -145,11 +198,14 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 }
 
 // Clouds between the camera and this surface (half-resolution cloud history, see clouds_temporal.glsl).
-vec3 applyCloudsInFront(vec3 col, vec2 uv) {
+vec3 applyCloudsInFront(vec3 col, vec2 uv, float surfaceDist) {
 #if defined CLOUDS && !defined DIM_NETHER && !defined DIM_END
     if (isEyeInWater == 1) return col;
     vec2 bufferRes = vec2(textureSize(colortex9, 0));
     vec2 cuv = clamp(uv * bufferRes, vec2(0.5), bufferRes - 0.5) / bufferRes;
+    // The cloud history was rendered against the opaque scene before translucent surfaces existed.
+    // A cloud behind a portal or water surface must not be pasted over its foreground pixels.
+    if (texture(colortex8, cuv).r >= surfaceDist - 0.5) return col;
     vec4 c = texture(colortex9, cuv);
     return col * c.a + c.rgb;
 #else
@@ -158,6 +214,9 @@ vec3 applyCloudsInFront(vec3 col, vec2 uv) {
 }
 
 void main() {
+#ifdef PROG_WATER
+    outMat = vec4(0.0);
+#endif
     LightEnv env;
     env.sunDir = sunDir;
     env.lightDir = envLightDir;
@@ -171,6 +230,9 @@ void main() {
 
 #ifdef PROG_DH
     if (dist < far * 0.78) discard;
+#if defined DIM_END
+    if (!endLodVisible(dist, gl_FragCoord.xy, frameCounter)) discard;
+#endif
     // DH depth-tests only against LOD depth, so reject fragments hidden behind real chunks.
     float chunkDepth = texture(depthtex1, uv).r;
     if (chunkDepth < 1.0 && length(viewFromDepth(uv, chunkDepth)) < dist) discard;
@@ -187,6 +249,11 @@ void main() {
             // Flatten waves with distance to avoid shimmering noise.
             float strength = mix(1.0, 0.2, saturate(dist / 96.0));
             n = waterNormal(worldPos, n, frameTimeCounter, strength);
+            // Raindrops ring the surface where rain can reach it.
+            if (rainLocal > 0.01 && lmcoord.y > 0.8 && dist < 64.0 && isEyeInWater != 1) {
+                vec2 rp = rainRipples(worldPos.xz, frameTimeCounter) * RAIN_RIPPLES * rainLocal * (1.0 - dist / 64.0);
+                n = normalize(n + vec3(rp.x, 0.0, rp.y) * 0.16);
+            }
         }
         // Biome water colour (vertex tint): turquoise warm oceans, murky swamps, deep blue cold seas.
         vec3 tint = toLinear(glcolor.rgb);
@@ -243,12 +310,24 @@ void main() {
 #if !defined DIM_NETHER && !defined DIM_END
         shadow = sampleShadow(playerPos, vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
 #endif
-        float skyVis = lmcoord.y * lmcoord.y;
+        // Overhead islands can zero the water block's sky light while the surrounding sea remains open to the
+        // sky. Keep a little ambient water body and reflection in that case, without lighting enclosed cave pools.
+        float openView = underwater ? 0.0 : smoothstep(0.45, 0.85, float(eyeBrightnessSmooth.y) / 240.0);
+        float skyVis = max(lmcoord.y * lmcoord.y, 0.25 * openView);
         // Absorption: red goes first, then green; the biome tint shifts which colour survives in depth.
-        vec3 absorb = mix(vec3(0.40, 0.085, 0.055), (1.0 - tint) * 0.35 + 0.03, 0.35);
-        vec3 transmit = underwater ? vec3(1.0) : exp(-absorb * waterDepth);
+        vec3 absorb = mix(vec3(0.45, 0.11, 0.075), (1.0 - tint) * 0.4 + 0.05, 0.35);
+        // Suspended sediment and plankton: grey extinction on top of absorption, so the floor fades within a few
+        // blocks instead of reading like a swimming pool (Trevor). Rain stirs the water up.
+        float turbidity = WATER_TURBIDITY * (1.0 + 0.6 * rainStrength);
+        // Cave pools are still and sediment settles: clear as glass, with cold teal-blue absorption. The body colour
+        // is already dark there because it is lit by sky light.
+        float caveWater = 1.0 - smoothstep(0.2, 0.6, lmcoord.y);
+        turbidity *= mix(1.0, 0.3, caveWater);
+        absorb = mix(absorb, vec3(0.55, 0.14, 0.08), caveWater);
+        // Light scattered in the top layer veils even a shallow floor: treat every path as if it were a little deeper.
+        vec3 transmit = underwater ? vec3(1.0) : exp(-(absorb + turbidity) * (waterDepth + WATER_SURFACE_VEIL * mix(1.0, 0.3, caveWater)));
         // In-scattering from suspended particles gives water a body colour even over deep or dark floors.
-        vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5);
+        vec3 albedoW = mix(vec3(0.03, 0.13, 0.15), vec3(0.05, 0.12, 0.13) * tint * 1.6, 0.5) * 1.15;
         vec3 scatterCol = albedoW * (envAmbient * skyVis / PI + envDirect * shadow * 0.12);
         vec3 body = refracted * transmit + scatterCol * (1.0 - transmit);
 
@@ -262,7 +341,9 @@ void main() {
         vec3 skyRefl = vec3(0.0);
         if (skyVis != 0.0) {
             skyRefl = skyRadiance(rRough, sunDir, 8) + sunAureole(rRough, sunDir);
-            skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, envLightDir, envDirect,
+            bool sunsetClouds = sunsetLight.r + sunsetLight.g + sunsetLight.b > 0.0;
+            skyRefl = reflectedClouds(skyRefl, rRough, cameraPosition + playerPos, sunsetClouds ? sunDir : envLightDir,
+                                      sunsetClouds ? mix(envDirect, sunsetLight, sunsetWindow(sunDir.y)) : envDirect,
                                       skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * TAU * 0.9) * skyVis;
         }
         vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
@@ -271,6 +352,21 @@ void main() {
 
         float fres = underwater ? 0.15 : fresnelSchlick(dot(-rd, n), 0.02) * mix(1.0, 0.5, saturate(rough * 2.5));
         vec3 col = mix(body, refl, fres);
+#ifndef PROG_DH
+        // Shore foam: where the water thins out against the land, broken lacy foam that pulses as small waves lap in.
+        if (SHORE_FOAM > 0.0 && !underwater && n.y > 0.5 && dist < 96.0) {
+            float edge = 1.0 - smoothstep(0.05, 0.85, waterDepth);
+            if (edge > 0.0) {
+                vec2 fp = worldPos.xz;
+                float t = frameTimeCounter;
+                float lace = valueNoise(fp * 2.2 + vec2(t * 0.25, -t * 0.18)) * 0.6 + valueNoise(fp * 5.3 - vec2(t * 0.3, t * 0.21)) * 0.4;
+                float lap = 0.5 + 0.5 * sin(waterDepth * 10.0 - t * 1.6 + lace * 3.0);
+                float foam = smoothstep(0.5, 0.8, lace * 0.7 + lap * 0.45) * edge * (1.0 - smoothstep(48.0, 96.0, dist));
+                vec3 foamCol = vec3(0.82, 0.88, 0.9) * (envAmbient * skyVis / PI + envDirect * shadow * saturate(envLightDir.y) / PI);
+                col = mix(col, foamCol, foam * 0.85 * SHORE_FOAM);
+            }
+        }
+#endif
 
         // Sun glitter: a microfacet highlight whose width grows with distance, so the sun's reflection
         // stretches into a shimmering path across the water toward the viewer.
@@ -283,32 +379,94 @@ void main() {
         float NdotV = max(dot(n, -rd), 0.15);
         float Fh = fresnelSchlick(dot(h, -rd), 0.02);
         float spec = D * Fh / (4.0 * NdotV) * saturate(dot(n, envLightDir));
-        col += envDirect * shadow * spec * skyVis;
+        // Near the horizon the physical direct light fades out (its shadow-direction swap); the golden sun path on
+        // water is exactly then at its best, so the glitter takes the sunset palette light while the disc is up.
+        vec3 glitterLight = mix(envDirect, sunsetLight * 3.5, saturate(sunsetWindow(sunDir.y) * 1.5) * smoothstep(-0.015, 0.012, sunDir.y));
+        col += glitterLight * shadow * spec * skyVis;
 
-        outColor = vec4(applyCloudsInFront(col, uv), 1.0);
+        outColor = vec4(applyCloudsInFront(col, uv, dist), 1.0);
         return;
     }
 
 #ifndef PROG_DH
+    if (mat == MAT_ICE) {
+        // Clear ice: refracted body with cyan absorption and faint frost, under a smooth, silky reflection.
+        vec3 wp = playerPos + cameraPosition;
+        vec3 n0 = normalize(worldNormal);
+        vec3 n = iceNormal(wp, n0);
+        float behind = texture(depthtex1, uv).r;
+        float behindDist = behind >= 1.0 ? dist + 4.0 : length(viewFromDepth(uv, behind));
+        float thickness = clamp(behindDist - dist, 0.0, 6.0);
+        vec3 viewN = mat3(gbufferModelView) * n;
+        vec2 refrUV = uv + viewN.xy * 0.025 * saturate(thickness);
+        if (texture(depthtex1, refrUV).r < gl_FragCoord.z) refrUV = uv;
+        vec3 refracted = texture(colortex4, refrUV).rgb;
+
+        vec3 shadow = vec3(1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+        shadow = sampleShadow(playerPos, n0, saturate(dot(n0, envLightDir)), dither);
+#endif
+        // Ice is milky, not glass: the block itself (its own texture, lit like any surface, a little desaturated)
+        // makes up most of what you see, with the water or ground below showing through faintly. Vanilla's white
+        // streaks read as denser frost. This keeps sea ice pale and icy from afar instead of a dark mirror.
+        vec4 tex = texture(gtexture, texcoord) * glcolor;
+        vec3 iceAlbedo = toLinear(mix(vec3(luminance(tex.rgb)), tex.rgb, 0.7)) * 1.1;
+        float frost = smoothstep(0.55, 0.9, luminance(tex.rgb));
+        vec3 iceLit = shadeSurface(env, iceAlbedo, n0, -rd, lmcoord, 1.0, mat, shadow, 0.0);
+        bool below = isEyeInWater == 1 || dot(n0, rd) > 0.0;
+        if (below) {
+            // Seen from underneath (typically from under the water of a frozen lake), the underside faces get no sky
+            // light of their own and the shadow lookup sits inside the block, so ice read as a dark grey slab. Real
+            // ice glows from above: light the sheet by what falls on its top face and let it through, milky.
+            vec3 topShadow = vec3(1.0);
+#if !defined DIM_NETHER && !defined DIM_END
+            topShadow = sampleShadow(playerPos + vec3(0.0, 1.05, 0.0), vec3(0.0, 1.0, 0.0), saturate(envLightDir.y), dither);
+#endif
+            float skyAbove = max(lmcoord.y, float(eyeBrightnessSmooth.y) / 240.0);
+            vec3 glow = iceAlbedo * (envAmbient * skyAbove * skyAbove / PI + envDirect * topShadow * saturate(envLightDir.y) / PI);
+            iceLit = glow * vec3(0.8, 0.95, 1.05);
+        }
+        vec3 body = mix(refracted * iceTransmit(thickness), iceLit, below ? 0.6 : 0.55 + 0.35 * frost);
+
+        float skyVis = lmcoord.y * lmcoord.y;
+        vec3 r = reflect(rd, n);
+        vec3 refl = skyVis > 0.0 && r.y > 0.0 ? (skyRadiance(r, sunDir, 6) + sunAureole(r, sunDir)) * skyVis : body * 0.4;
+        vec3 viewPos = (gbufferModelView * vec4(playerPos, 1.0)).xyz;
+        vec4 ssr = traceSSR(viewPos, normalize(mat3(gbufferModelView) * r), dither);
+        refl = mix(refl, ssr.rgb, ssr.a);
+        // Seen from below (or from inside water) ice is nearly index-matched: no mirror, it just lets light in.
+        float F = iceFresnel(abs(dot(-rd, n))) * (below ? 0.15 : 0.75);
+        vec3 col = mix(body, refl, F);
+
+        // A tight sun highlight: polished, not glittery.
+        vec3 h = normalize(envLightDir - rd);
+        float nh = saturate(dot(n, h));
+        const float a2 = 0.0016;
+        float dd = nh * nh * (a2 - 1.0) + 1.0;
+        col += envDirect * shadow * a2 / (PI * dd * dd) * iceFresnel(dot(h, -rd)) * saturate(dot(n, envLightDir)) * 0.25 * skyVis;
+        outColor = vec4(applyCloudsInFront(col, uv, dist), 1.0);
+        return;
+    }
     if (mat == MAT_PORTAL) {
-        // Nether portal: a violet vortex. Two layers of domain-warped noise swirl at different speeds; bright
-        // filaments trace the noise's ridges and slowly crackle; the whole sheet pulses gently. World-space
-        // coordinates on the portal plane keep the pattern continuous across blocks.
+        // Keep the animated sheet continuous across the portal's blocks. A broad
+        // lavender current, modest emitted light, and grazing tint supply motion/depth
+        // without the busy noise field that made the previous version look marbled.
         vec3 wp = playerPos + cameraPosition;
         vec3 pn = abs(normalize(worldNormal));
-        vec2 q = pn.x > pn.z ? wp.zy : wp.xy;
-        float t = frameTimeCounter;
-        vec2 w1 = vec2(cloudTex(vec3(q * 0.18, t * 0.03)).r, cloudTex(vec3(q * 0.18 + 0.5, t * 0.03)).r) - 0.5;
-        vec2 qa = q * 0.16 + w1 * 1.6 + vec2(0.0, t * 0.06);
-        float n1 = cloudTex(vec3(qa, t * 0.05)).r;
-        float n2 = cloudTex(vec3(q * 0.4 - w1 * 1.4 - vec2(t * 0.05, 0.0), 0.5 + t * 0.07)).g;
-        float ridge = pow(saturate(1.0 - abs(n1 - 0.55) * 3.2), 8.0);
-        float fil = pow(saturate(1.0 - abs(n2 - 0.5) * 4.5), 16.0) * smoothstep(0.45, 0.7, n1);
-        float pulse = 0.85 + 0.15 * sin(t * 2.1 + n1 * 6.0);
-        vec3 deep = vec3(0.06, 0.006, 0.16);
-        vec3 glow = vec3(0.5, 0.12, 1.0) * ridge * 1.6 + vec3(1.0, 0.7, 1.0) * fil * 4.0;
-        vec3 portalCol = (deep * (0.4 + 1.2 * n1 * n1) + glow) * pulse * 1.3;
-        outColor = vec4(applyCloudsInFront(portalCol, uv), mix(0.78, 0.95, saturate(ridge + fil)));
+        bool alongX = pn.x > pn.z;
+        vec2 q = alongX ? wp.zy : wp.xy;
+        float grazing = pow(1.0 - saturate(abs(dot(normalize(worldNormal), -rd))), 3.0);
+        // View direction in the portal plane per block of depth, for the parallax layers behind the sheet.
+        vec2 viewPlane = (alongX ? rd.zy : rd.xy) / max(abs(alongX ? rd.x : rd.z), 0.25);
+        float spriteLum = luminance(texture(gtexture, texcoord).rgb);
+        PortalSurface portal = shadePortal(q, viewPlane, spriteLum, portalFrameEdge(wp, alongX), grazing, frameTimeCounter);
+#ifdef PROG_WATER
+        outMat = vec4(float(MAT_PORTAL) / 255.0, 1.0, 1.0, 1.0);
+#endif
+        // The portal stays legible when its upper blocks enter a cloud bank. Let some cloud
+        // pass in front, but never erase the violet sheet into a flat patch of sky colour.
+        vec3 cloudedPortal = applyCloudsInFront(portal.color, uv, dist);
+        outColor = vec4(mix(cloudedPortal, portal.color, 0.7), portal.alpha);
         return;
     }
 #endif
@@ -336,7 +494,10 @@ void main() {
     float fres = fresnelSchlick(dot(-rd, n), 0.04);
     vec3 skyRefl = vec3(0.0);
     if (lmcoord.y != 0.0) skyRefl = skyRadiance(reflect(rd, n), sunDir, 6) * lmcoord.y * lmcoord.y;
+#ifndef PROG_ENTITIES_TRANSLUCENT
+    // Glass-like sheen; entities are not glass.
     col = mix(col, skyRefl, fres * 0.6);
+#endif
 #ifdef PROG_HAND
     // The solid hand pass is cutout, not translucent. Keep transparent texels
     // discarded above, but make visible skin and held-item pixels fully opaque.

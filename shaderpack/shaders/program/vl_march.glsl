@@ -1,5 +1,5 @@
 // Light shafts and ground mist, marched into half-resolution targets.
-// Writes colortex10 = in-scattered light (rgb) + mist transmittance (a), colortex12 = scene distance.
+// Writes colortex7 = in-scattered light (rgb) + mist transmittance (a), colortex8.r = scene distance.
 // A fresh dither every frame; vl_temporal (clouds_temporal.glsl with TEMPORAL_VL) accumulates it, and the
 // fog pass upsamples it with a depth-aware filter. Doing this at full resolution after TAA left the dither
 // visible as grain around the sun.
@@ -35,6 +35,7 @@ uniform float viewWidth;
 uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
+uniform sampler2D colortex1;
 #if !defined DIM_NETHER && !defined DIM_END && defined VOLUMETRIC_LIGHT
 uniform sampler2D shadowtex1;
 #endif
@@ -53,13 +54,29 @@ uniform ivec2 eyeBrightnessSmooth;
 #endif
 #include "/lib/clouds.glsl"
 #include "/lib/mist.glsl"
+#ifdef DIM_END
+#include "/lib/end_atmosphere.glsl"
+#endif
+#if defined DIM_NETHER
+#include "/lib/nether_atmosphere.glsl"
+#endif
+#if !defined DIM_END && defined LIGHT_FIELD
+#define VOXEL_READ
+uniform sampler3D lightFieldSamplerA;
+uniform sampler3D lightFieldSamplerB;
+uniform vec3 cameraPositionFract;
+#include "/lib/voxel.glsl"
+#endif
+#if !defined DIM_NETHER && !defined DIM_END
+#include "/lib/cave.glsl"
+#endif
 
 flat in vec3 sunDir;
 flat in vec3 envLightDir;
 flat in vec3 envDirect;
 flat in vec3 envAmbient;
 
-/* RENDERTARGETS: 10,12 */
+/* RENDERTARGETS: 7,8 */
 layout(location = 0) out vec4 outScatter;
 layout(location = 1) out vec4 outDist;
 
@@ -94,7 +111,86 @@ void main() {
     outDist = vec4(dist, 0.0, 0.0, 0.0);
     vec3 rd = normalize(playerPos);
 
-#if defined DIM_NETHER || defined DIM_END || !defined VOLUMETRIC_LIGHT
+#if defined DIM_NETHER
+    // Smog march. Steps grow with distance (dense sampling where the field and billows have detail), the ray
+    // stops at the scene or at NETHER_SMOG_RANGE; composite.glsl extends the far remainder analytically.
+    if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
+    float rayEnd = min(dist, NETHER_SMOG_RANGE);
+    float ash = netherAshiness();
+    vec3 biomeAir = netherBiomeAir();
+    vec3 ambient = netherSmogAmbient(biomeAir);
+    vec3 scatter = vec3(0.0);
+    float trans = 1.0;
+    const int STEPS = NETHER_SMOG_STEPS;
+    float tPrev = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        // Quadratic spacing: t(x) = rayEnd * x^2, jittered per frame.
+        float x1 = (float(i) + 1.0) / float(STEPS);
+        float xm = (float(i) + dither) / float(STEPS);
+        float t1 = rayEnd * x1 * x1;
+        float stepLen = t1 - tPrev;
+        tPrev = t1;
+        vec3 p = rd * rayEnd * xm * xm;
+        vec3 wp = p + cameraPosition;
+        vec2 smog = netherSmog(wp, frameTimeCounter, ash);
+        float sigma = smog.x;
+        vec3 light = netherSeaGlow(wp, frameTimeCounter) + ambient;
+#ifdef LIGHT_FIELD
+        vec3 uvw = voxelUVW(p, cameraPositionFract);
+        float fw = voxelEdgeFade(uvw);
+        // Local sources light the smoke around them. Near the lava the field replaces most of the analytic
+        // sea glow, which only knows about altitude.
+        // Inside the field the smoke glows only where lava really is: the field's extra-light channel is a lava
+        // (and portal) proximity map, so smoke over a lava lake burns orange and a lava-free valley stays sooty.
+        // Outside the field the altitude-only estimate takes over.
+        if (fw > 0.0) {
+            vec4 raw = lightFieldTapRaw(uvw);
+            float lavaNear = saturate(sqrt(max(raw.a, 0.0)) * 2.5);
+            vec3 local = netherSeaGlow(wp, frameTimeCounter) * lavaNear + sqrt(max(raw.rgb, 0.0)) * LIGHT_FIELD_GAIN * 0.3;
+            light = mix(light, local + ambient, fw);
+        }
+#endif
+        float stepT = exp(-sigma * stepLen);
+        // Thin haze glows (it scatters the lava light well); thick soot is dark: a low albedo, and its cores
+        // shade themselves. That contrast is what makes the smoke read as heavy shapes rather than a tint.
+        float albedo = mix(0.6, 0.12, smog.y);
+        scatter += trans * light * albedo * (1.0 - stepT);
+        trans *= stepT;
+    }
+    outScatter = vec4(scatter, trans);
+    return;
+#elif defined DIM_END
+    // End storm march (lib/end_atmosphere.glsl): exponential spacing out to 384 blocks, clear near the camera.
+    if (isEyeInWater > 1) { outScatter = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
+    float rayEnd = min(dist, 480.0);
+    vec4 bolt = endLightning(frameTimeCounter);
+    float stormI = endStormIntensity();
+    vec3 scatter = vec3(0.0);
+    float trans = 1.0;
+    const int STEPS = 16;
+    const float expFactor = 11.0;
+    float tPrev = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        float x0 = (pow(expFactor, float(i) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float x1 = (pow(expFactor, float(i + 1) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float xm = (pow(expFactor, (float(i) + dither) / float(STEPS)) - 1.0) / (expFactor - 1.0);
+        float stepLen = (x1 - x0) * rayEnd;
+        float tm = xm * rayEnd;
+        vec3 wp = rd * tm + cameraPosition;
+        vec2 storm = endStorm(wp, frameTimeCounter);
+        // Only a small pocket right at the camera stays clear.
+        float sigma = storm.x * mix(0.3, 1.0, smoothstep(1.5, 14.0, tm));
+        vec3 light = endStormLight(wp, frameTimeCounter, storm.y, bolt);
+        float stepT = exp(-sigma * stepLen);
+        // Low albedo: heavy, dark storm; the lightning and the core glow do the lighting.
+        scatter += trans * light * 0.6 * (1.0 - stepT);
+        trans *= stepT;
+    }
+    outScatter = vec4(scatter, trans);
+    return;
+#elif !defined VOLUMETRIC_LIGHT
     outScatter = vec4(0.0, 0.0, 0.0, 1.0);
     return;
 #else
@@ -104,10 +200,13 @@ void main() {
     float skyExposure = float(eyeBrightnessSmooth.y) / 240.0;
     bool directLightEnabled = skyExposure != 0.0 && any(notEqual(envDirect, vec3(0.0)));
     bool cloudShadowEnabled = !(envLightDir.y < 0.05);
+    CloudWeather shadowWeather;
+    if (directLightEnabled && cloudShadowEnabled) shadowWeather = cloudWeather();
     float mu = dot(rd, envLightDir);
     // Air: thin haze whose shafts are strongest along the long, golden light path of a low sun.
     float lowSun = 1.0 - smoothstep(0.05, 0.45, envLightDir.y);
-    float airSigma = 2.6e-4 * (0.35 + 0.6 * lowSun + rainStrength);
+    // (A stronger low-sun boost veiled golden hour in milky haze.)
+    float airSigma = 2.6e-4 * (0.35 + 0.22 * lowSun + rainStrength);
     float airPhase = phaseMie(mu, 0.6) * 0.5 + 0.08;
     // Mist: water droplets, strongly forward scattering but with a broad isotropic share.
     float mistPhase = mix(hgPhase(mu, 0.55), 1.0 / (4.0 * PI), 0.45);
@@ -117,6 +216,21 @@ void main() {
     vec3 scatter = vec3(0.0);
     float trans = 1.0;
 
+    // Dust that catches block light: dense underground, a trace in the open at night (a torch-lit village gets
+    // soft halos), none by day where it could never compete with sunlight.
+    float underground = 1.0 - smoothstep(0.05, 0.55, skyExposure);
+    // Enclosure of what this pixel looks at: cave walls behind a sunbeam have little sky light. This is only
+    // a destination hint; exposed terrain, deep water and floating-island undersides can have the same lightmap.
+    float surfSky = sky ? 1.0 : texture(colortex1, uv).w;
+    float enclosed = 1.0 - smoothstep(0.55, 0.92, surfSky);
+    // A ray through open daylight is not cave air just because its last pixel is dark. The old surface-only
+    // test filled oceans and shadowed terrain with white scatter from the camera to the surface.
+    float caveView = 1.0 - smoothstep(0.45, 0.85, skyExposure);
+    float night = 1.0 - smoothstep(-0.12, 0.08, sunDir.y);
+    float dust = CAVE_AIR_GLOW * caveDustDensity() * max(underground, night * 0.3);
+    // Isotropic phase and the field's amplitude scale.
+    const float DUST_PHASE = 0.6;
+
     // Near segment: inside shadow range, terrain and cloud shadows both carve the air.
     float nearEnd = min(dist, SHADOW_DIST * 1.4);
     const int NEAR = 16;
@@ -124,16 +238,30 @@ void main() {
     for (int i = 0; i < NEAR; i++) {
         vec3 p = rd * (float(i) + dither) * stepLen;
         vec3 wp = p + cameraPosition;
+#ifdef LIGHT_FIELD
+        if (dust > 0.0) {
+            vec3 uvw = voxelUVW(p, cameraPositionFract);
+            float fw = voxelEdgeFade(uvw);
+            if (fw > 0.0) {
+                vec3 amp = sqrt(max(lightFieldTapRaw(uvw).rgb, vec3(0.0)));
+                scatter += trans * amp * (fw * dust * DUST_PHASE * stepLen);
+            }
+        }
+#endif
         float vis = 1.0;
         if (directLightEnabled) {
             vis = shadowVisibility(p);
-            if (cloudShadowEnabled) vis *= cloudShadow(wp, envLightDir);
+            // A fully blocked terrain sample has no direct term for clouds to attenuate.
+            if (vis > 0.0 && cloudShadowEnabled) vis *= cloudShadow(wp, envLightDir, shadowWeather);
         }
         // mistDensity returns zero before sampling cloud noise whenever falloff * amount < 0.01.
         // Since falloff is at most 1, amounts below 0.01 can skip the call exactly.
         float mist = amount < 0.01 ? 0.0 : mistDensity(wp, amount);
         vec3 sun = envDirect * vis * skyExposure;
-        vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase) + mistAmbient * mist * skyExposure;
+        // Underground the same dust that catches torchlight catches daylight falling through an opening: a
+        // visible beam. Only where the shadow map says the air is sunlit, so the rest of the cave stays dark.
+        float beamDust = enclosed * caveView * caveDustDensity() * CAVE_SUNBEAM;
+        vec3 inscatter = sun * (airSigma * airPhase + mist * mistPhase + beamDust * mix(airPhase, 0.08, 0.5)) + mistAmbient * mist * skyExposure;
         float stepT = exp(-mist * stepLen);
         // Energy-conserving integral over the step for the mist part; the thin air term is linear.
         scatter += trans * inscatter * (mist > 1e-6 ? (1.0 - stepT) / mist : stepLen);
@@ -149,7 +277,7 @@ void main() {
             vec3 wp = rd * (nearEnd + (float(i) + dither) * fl) + cameraPosition;
             float mist = mistDensity(wp, amount);
             if (mist <= 1e-6) continue;
-            float cloudVis = directLightEnabled && cloudShadowEnabled ? cloudShadow(wp, envLightDir) : 1.0;
+            float cloudVis = directLightEnabled && cloudShadowEnabled ? cloudShadow(wp, envLightDir, shadowWeather) : 1.0;
             vec3 sun = envDirect * cloudVis * skyExposure;
             vec3 inscatter = (sun * mistPhase + mistAmbient * skyExposure) * mist;
             float stepT = exp(-mist * fl);

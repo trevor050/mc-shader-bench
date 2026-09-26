@@ -23,11 +23,22 @@ void main() {
     LightEnv e = makeLightEnv(sunDir);
     envLightDir = e.lightDir;
     envDirect = e.directLight;
+    // Sunset: clouds take the sunset palette (gold -> coral -> magenta -> crimson) and, being high up, keep
+    // the sun's light for a while after it has set for the ground, lit from below: cotton-candy undersides
+    // instead of dark silhouettes.
+    float sw = sunsetWindow(sunDir.y);
+    if (sw > 0.0 && sunDir.y > -0.16) {
+        envLightDir = sunDir;
+        envDirect = mix(e.directLight, cloudSunsetLight(sunDir), sw);
+    }
     // Light arriving from the sky dome above a cloud (hemisphere integral of the zenith radiance).
     skyLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * TAU * 0.9;
     // At golden hour the direct light is deep orange; shaded cloud sides are lit by the still-blue sky
     // overhead, which is what turns them lilac instead of brown.
-    skyLight *= mix(1.0, 1.9, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
+    skyLight *= mix(1.0, 1.4, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
+    // Moonlit clouds read a little brighter and cooler than the physical moonlight alone gives them.
+    float moonNight = smoothstep(-0.06, -0.2, sunDir.y);
+    envDirect *= mix(vec3(1.0), vec3(1.05, 1.15, 1.3), moonNight);
 }
 #endif
 
@@ -80,6 +91,8 @@ void main() {
     // The hand is not world geometry.
 
     float dither = ignTemporal(gl_FragCoord.xy, frameCounter);
+    // By moonlight the bright rim toward the moon is what makes a night cloud: silver its edges.
+    gCloudRim = mix(1.0, CLOUD_MOON_SILVER * 1.6, smoothstep(-0.06, -0.2, sunDir.y));
     float dist;
     vec4 c = renderClouds(cameraPosition, rd, sceneDist, sunDir, envLightDir, envDirect, skyLight, dither, dist);
     outClouds = c;

@@ -19,7 +19,49 @@ uniform float frameTimeCounter;
 #ifdef VERTEX
 out vec2 texcoord;
 flat out vec3 whiteBalance;
+flat out float sunsetGrade;
+flat out vec3 veilColor;
+flat out vec2 veilUV;
 uniform vec3 sunPosition;
+uniform mat4 gbufferProjection;
+uniform float viewWidth;
+uniform float viewHeight;
+uniform sampler2D colortex0;
+uniform sampler2D depthtex0;
+uniform sampler2D dhDepthTex0;
+
+// Veiling glare of a blinding sun, evaluated once per frame (every vertex computes the same value): how much of
+// the disc is visible past terrain and leaves, and dimmed by clouds using the sun's absolute brightness rather
+// than a ratio to the screen average, so panning the view does not make it pulse.
+void computeVeil(vec3 sd) {
+    veilColor = vec3(0.0);
+    veilUV = vec2(-10.0);
+#if !defined DIM_NETHER && !defined DIM_END
+    vec4 clip = gbufferProjection * vec4(sunPosition, 1.0);
+    if (clip.w <= 0.0) return;
+    vec2 sunUV = clip.xy / clip.w * 0.5 + 0.5;
+    veilUV = sunUV;
+    float onScreen = smoothstep(-0.25, 0.02, min(min(sunUV.x, sunUV.y), min(1.0 - sunUV.x, 1.0 - sunUV.y)));
+    if (onScreen <= 0.0) return;
+    vec2 sc = clamp(sunUV, 0.001, 0.999);
+    vec2 aspect = vec2(viewWidth / viewHeight, 1.0);
+    float open = 0.0;
+    for (int i = 0; i < 17; i++) {
+        float r = sqrt((float(i) + 0.5) / 17.0) * 0.012;
+        float th = float(i) * 2.39996323;
+        vec2 o = vec2(cos(th), sin(th)) * r / aspect;
+        open += step(1.0, textureLod(depthtex0, sc + o, 0.0).r) * step(1.0, textureLod(dhDepthTex0, sc + o, 0.0).r);
+    }
+    open = sqrt(open / 17.0);
+    float srcLum = luminance(textureLod(colortex0, sc, 3.0).rgb);
+    float clearSun = smoothstep(30.0, 300.0, srcLum);
+    float e = sd.y;
+    float strength = smoothstep(-0.012, 0.03, e) * mix(1.0, 0.35, smoothstep(0.2, 0.6, e)) * (1.0 - rainStrength);
+    vec3 tint = mix(sunsetLightTint(e), vec3(1.0, 0.95, 0.88), smoothstep(0.06, 0.3, e));
+    veilColor = tint * SUN_VEIL * strength * open * clearSun * onScreen;
+#endif
+}
+
 void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
@@ -28,7 +70,10 @@ void main() {
     vec3 sd = normalize(mat3(gbufferModelViewInverse) * sunPosition);
     vec3 sunCol = sunTransmittance(sd);
     sunCol /= max(luminance(sunCol), 1e-4);
-    float strength = 0.85 * smoothstep(0.08, 0.45, sd.y);
+    // (Starting at 0.08 neutralized most of golden hour's gold.)
+    float strength = 0.85 * smoothstep(0.25, 0.6, sd.y);
+    sunsetGrade = sunsetWindow(sd.y);
+    computeVeil(sd);
     whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
     whiteBalance /= luminance(whiteBalance);
 }
@@ -37,7 +82,13 @@ void main() {
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
 uniform sampler2D colortex3;
-uniform sampler2D colortex10;
+uniform sampler2D colortex7;
+// Rain and snow from gbuffers_weather: premultiplied colour, coverage in alpha. Cleared to zero every frame.
+uniform sampler2D colortex13;
+/*
+const int colortex13Format = RGBA16F;
+const vec4 colortex13ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
+*/
 uniform sampler2D colortex5;
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
@@ -46,6 +97,8 @@ uniform float viewHeight;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
+uniform ivec2 eyeBrightnessSmooth;
+uniform vec3 upPosition;
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -61,6 +114,14 @@ vec3 sunStreaks(vec2 uv) {
     if (onScreen <= 0.0) return vec3(0.0);
     vec2 sc = clamp(sunUV, 0.0, 1.0);
 
+    // Test the sun radiance before the depth taps. When it is below the streak threshold, visibility cannot
+    // affect the zero result, so skip 34 depth reads for every pixel in that frame.
+    vec3 src = textureLod(colortex0, sc, 2.0).rgb;
+    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
+    // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
+    float blinding = smoothstep(avgLum * 30.0, avgLum * 300.0, luminance(src));
+    if (blinding <= 0.0) return vec3(0.0);
+
     // Visible fraction of the sun: open sky over a small cross around it.
     // A 17-tap Vogel disc resolves leaf-sized gaps, so sun glinting through foliage still flares a little.
     float open = 0.0;
@@ -72,10 +133,6 @@ vec3 sunStreaks(vec2 uv) {
     }
     // Even a sliver of visible sun is blinding: perceived glare rises quickly with the visible fraction.
     open = sqrt(open / 17.0);
-    vec3 src = textureLod(colortex0, sc, 2.0).rgb;
-    float avgLum = luminance(textureLod(colortex0, vec2(0.5), 11.0).rgb);
-    // Clouds in front of the sun lower its measured brightness; streaks need a truly blinding source.
-    float blinding = smoothstep(avgLum * 30.0, avgLum * 300.0, luminance(src));
     float vis = open * blinding * onScreen;
     if (vis <= 0.0) return vec3(0.0);
 
@@ -90,20 +147,26 @@ vec3 sunStreaks(vec2 uv) {
     float streak = pow(fine, 3.0) * 1.6 + pow(coarse, 5.0) * 0.8;
     // Each streak fades with its own reach; they start just outside the blown-out core.
     // A high sun sits in a darker, clearer sky, where long streaks look artificial; keep them shorter.
-    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0)) * mix(1.0, 0.65, smoothstep(0.2, 0.7, normalize(sunPosition).y));
+    // A low sun (sunrise, sunset) blinds hardest: its long, golden streaks are the look of those moments.
+    float elev = dot(normalize(sunPosition), normalize(upPosition));
+    float lowSun = (1.0 - smoothstep(0.03, 0.32, elev)) * smoothstep(-0.03, 0.01, elev);
+    float reach = mix(0.06, 0.22, valueNoise(ca * 23.0 + 7.0)) * mix(1.0, 0.65, smoothstep(0.2, 0.7, elev)) * (1.0 + 0.7 * lowSun);
     float fade = exp(-d / reach) * smoothstep(0.004, 0.03, d);
     vec3 tint = src / max(luminance(src), 1e-4);
-    return tint * avgLum * streak * fade * vis;
+    return tint * avgLum * streak * fade * vis * (1.0 + 1.6 * lowSun);
 }
 
 in vec2 texcoord;
 flat in vec3 whiteBalance;
+flat in float sunsetGrade;
+flat in vec3 veilColor;
+flat in vec2 veilUV;
 layout(location = 0) out vec4 fragColor;
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
 vec3 agxContrast(vec3 x) {
-    vec3 x2 = x * x, x4 = x2 * x2;
-    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+    // Horner form exposes multiply-adds and avoids separately constructing x^2, x^3, x^4, x^5, and x^6.
+    return (((((15.5 * x - 40.14) * x + 31.96) * x - 6.868) * x + 0.4298) * x + 0.1191) * x - 0.00232;
 }
 
 vec3 agx(vec3 c) {
@@ -124,6 +187,49 @@ vec3 agx(vec3 c) {
     c = pow(max(c, 0.0), vec3(1.2));
     c = l + SATURATION * (c - l);
     return c;
+}
+
+// AgX tonemaps each channel on its own, so a very bright saturated colour (lava, fire, a sunset) has its dominant
+// channel crushed first and drifts toward salmon-pink and then white. For bright, saturated colours, tonemap
+// the brightest channel instead and keep the colour's own proportions, with a partial path to white only at the
+// very top, so lava stays a vivid yellow-orange (Trevor's Solas reference) while the rest of the image keeps
+// AgX's look.
+// Filmic tonemap after Jim Hejl (2015), as used by Bliss's "v2.0.4 colour processing" profile (Trevor's pick
+// over AgX: deeper, more saturated colour and firmer contrast). White point 3.0; output linear, then sRGB-encoded.
+vec3 hejl2015(vec3 hdr) {
+    vec4 vh = vec4(hdr * 0.85, 3.0);
+    vec4 va = 1.75 * vh + 0.05;
+    vec4 vf = (vh * va + 0.004) / (vh * (va + 0.55) + 0.0491) - 0.0821 + 0.000633604888;
+    return vf.xyz / vf.www;
+}
+vec3 linearToSrgb(vec3 c) {
+    c = max(c, 0.0);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+vec3 filmic(vec3 c) { return saturate(linearToSrgb(hejl2015(c))); }
+
+// Hejl's curve (like AgX) runs each channel on its own, so a very bright saturated colour (lava, fire, a sunset)
+// has its dominant channel compressed first and drifts toward pink and white. For bright, saturated colours,
+// tonemap the brightest channel instead and keep the colour's proportions, with a partial path to white only
+// at the very top, so lava stays a vivid yellow-orange.
+vec3 agxHuePreserving(vec3 c) {
+    // TAA sharpening can leave a channel slightly negative next to very bright lava; a negative base in pow()
+    // returned NaN and showed up as black pixels on flowing lava.
+    c = max(c, vec3(0.0));
+    vec3 a = filmic(c);
+    float m = max(c.r, max(c.g, c.b));
+    if (m <= 1e-5) return a;
+    float mn = min(c.r, min(c.g, c.b));
+    float chroma = (m - mn) / m;
+    float w = smoothstep(0.35, 0.8, chroma) * smoothstep(0.4, 3.0, m);
+    if (w <= 0.0) return a;
+    float mt = filmic(vec3(m)).g;
+    // AgX's output is display-encoded, so carry the colour's proportions over in display space too.
+    vec3 hp = pow(c / m, vec3(1.0 / 2.2)) * mt;
+    // The hottest pixels still run toward yellow-white, the way molten rock and the sun's disc do.
+    float white = smoothstep(0.82, 1.0, mt);
+    hp = mix(hp, vec3(mt) * vec3(1.0, 0.93, 0.75), white * 0.45);
+    return mix(a, hp, w);
 }
 
 vec3 rgb2hsv(vec3 c) {
@@ -150,16 +256,21 @@ vec3 colorGrade(vec3 c) {
     c = mix(c, s, GRADE_CONTRAST);
 
     vec3 hsv = rgb2hsv(c);
-    float h = hsv.x * 360.0;
+    // Work directly in turns; this avoids scaling the hue for degree-based ranges and scaling it back.
+    float h = hsv.x;
     // Hue shaping: yellow-greens (60-110 deg) nudge toward green and gain saturation; cyans/blues gain depth.
-    float green = smoothstep(55.0, 80.0, h) * (1.0 - smoothstep(130.0, 160.0, h));
-    float blue = smoothstep(180.0, 200.0, h) * (1.0 - smoothstep(245.0, 270.0, h));
-    float warm = 1.0 - smoothstep(25.0, 50.0, h) + smoothstep(330.0, 350.0, h);
-    hsv.x += green * 6.0 / 360.0 * smoothstep(0.1, 0.4, hsv.y);
+    // Only genuine yellow-greens (grass, leaves) shift; starting lower dragged autumn and red-orange modded
+    // foliage toward green.
+    float green = smoothstep(72.0 / 360.0, 92.0 / 360.0, h) * (1.0 - smoothstep(130.0 / 360.0, 160.0 / 360.0, h));
+    float blue = smoothstep(180.0 / 360.0, 200.0 / 360.0, h) * (1.0 - smoothstep(245.0 / 360.0, 270.0 / 360.0, h));
+    float warm = 1.0 - smoothstep(25.0 / 360.0, 50.0 / 360.0, h) + smoothstep(330.0 / 360.0, 350.0 / 360.0, h);
+    hsv.x += green * (1.0 / 60.0) * smoothstep(0.1, 0.4, hsv.y);
     hsv.y *= 1.0 + green * 0.08 + blue * 0.12 + warm * 0.04;
     hsv.z *= 1.0 - blue * 0.04 * hsv.y;
     // Vibrance.
-    hsv.y = saturate(hsv.y * (1.0 + GRADE_VIBRANCE * (1.0 - hsv.y)));
+    // Sunset and sunrise: colours run richer (the warm/pink palette should read vivid, not dusty).
+    float vib = GRADE_VIBRANCE * (1.0 + 1.2 * sunsetGrade);
+    hsv.y = saturate(hsv.y * (1.0 + vib * (1.0 - hsv.y)) * (1.0 + 0.12 * sunsetGrade));
     c = hsv2rgb(hsv);
 
     float l = luminance(c);
@@ -172,17 +283,28 @@ vec3 colorGrade(vec3 c) {
     return saturate(c);
 }
 
+
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
-    // composite4 stores bloom in the retired VL scratch buffer and weighted glare+rays in colortex3.
+    // Precipitation over the fogged scene (see weather.glsl).
+    vec4 weather = texture(colortex13, texcoord);
+    col = col * (1.0 - saturate(weather.a)) + max(weather.rgb, 0.0);
+    // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
     col += texture(colortex3, texcoord).rgb;
     // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
     // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
     // sun, produce a visible glow; everything else just softens very slightly.
-    col = mix(col, texture(colortex10, texcoord).rgb, BLOOM_STRENGTH);
+    col = mix(col, texture(colortex7, texcoord).rgb, BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
+    // A blinding sun veils the view around it: a smooth analytic glare (no mip blockiness), added after the
+    // exposure meter so looking toward the sun does not make the exposure lurch.
+    if (veilColor.r + veilColor.g + veilColor.b > 0.0) {
+        float d = length((texcoord - veilUV) * vec2(viewWidth / viewHeight, 1.0));
+        float veil = 0.55 * exp(-d / 0.035) + 0.3 * exp(-d / 0.14) + 0.12 / (1.0 + sqr(d / 0.06));
+        col += veilColor * veil;
+    }
 
     // Eye adaptation (see taa.glsl): expose so the adapted scene brightness maps to a mid tone.
     float adaptedLog = texelFetch(colortex5, ivec2(0), 0).a;
@@ -191,7 +313,15 @@ void main() {
     const float refLog = -0.75;
     float slope = adaptedLog > refLog ? 0.45 : 0.36;
     float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
-    exposure = clamp(exposure, EXPOSURE_MIN, EXPOSURE_MAX);
+#if !defined DIM_NETHER && !defined DIM_END
+    // Underground the eye may not open all the way: dark caves must stay dark, torch-lit ones stay readable.
+    float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);
+    exposure = clamp(exposure, EXPOSURE_MIN, mix(EXPOSURE_MAX, EXPOSURE_MAX_CAVE, underground));
+#else
+    // A narrow range: glowing lava and lit smoke must not stop the eye down until the rock around them goes black
+    // (Trevor, comparing with Solas, where the Nether's rock stays readable beside blazing lava).
+    exposure = clamp(exposure * EXPOSURE_KEY_OTHERWORLD / EXPOSURE_KEY, EXPOSURE_MIN_OTHERWORLD, EXPOSURE_MAX_OTHERWORLD);
+#endif
     col *= exposure;
 #if !defined DIM_NETHER && !defined DIM_END
     col *= whiteBalance;
@@ -202,9 +332,18 @@ void main() {
     float lum = luminance(col);
     float scotopic = 1.0 - smoothstep(0.004, 0.06, lum);
     vec3 rodColor = vec3(0.55, 0.72, 1.0) * lum * 1.4;
-    col = mix(col, rodColor, scotopic * 0.75);
+    // Kept subtle: a strong shift painted every dark cave wall blue-grey.
+    col = mix(col, rodColor, scotopic * 0.35);
 
-    col = agx(col);
+    vec3 exposed = col;
+    col = agxHuePreserving(col);
+    // Complementary's dark lift and dark desaturation (composite5 DoCompTonemap): below a luminance of 0.1 the
+    // tonemap's toe is mostly undone, so shade, caves and night stay readable instead of crushing to black, and
+    // the darkest tones lose a little saturation (the eye's own behaviour in low light).
+    float initialLum = luminance(exposed);
+    float darkLift = smoothstep(0.1, 0.0, initialLum);
+    col = mix(col, pow(max(exposed, 0.0), vec3(1.0 / 2.2)), darkLift * 0.75);
+    col = mix(col, vec3(luminance(col)), darkLift * 0.25);
     col = colorGrade(col);
 
     vec2 v = texcoord - 0.5;

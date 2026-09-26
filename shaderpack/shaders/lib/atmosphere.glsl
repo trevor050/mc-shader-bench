@@ -1,6 +1,11 @@
 // Single-scattering Rayleigh/Mie atmosphere, procedural clouds, and stars.
 // Requires: common.glsl, settings.glsl, uniforms frameTimeCounter, rainStrength.
 
+#ifndef THUNDER_UNIFORM
+#define THUNDER_UNIFORM
+uniform float thunderStrength;
+#endif
+
 const float ATM_GROUND = 6360e3;
 const float ATM_TOP = 6420e3;
 const vec3 BETA_R = vec3(5.8e-6, 13.5e-6, 33.1e-6);
@@ -90,18 +95,43 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
 #ifdef DIM_NETHER
 uniform vec3 fogColor;
 
-// Nether air: dark ashen smoke, lit from below by the lava seas (lava level is y = 31). The biome's fog
+// Nether air: warm smoke lit from below by the lava seas (lava level is y = 31). The biome's fog
 // colour only tints it (soul sand valley turns cold and ghostly, warped forest a little teal), instead of
 // replacing it, so no biome turns into a glowing blue box.
-vec3 netherHaze(vec3 rd, float y) {
+// A cheap, non-tiled plume field on the world-space view direction. Domain warping breaks up the lattice,
+// while scrolling its vertical coordinate makes the smoke rise without screen-space refraction artifacts.
+float netherPlume(vec3 rd, float y) {
+    rd = normalize(rd);
+    vec2 p = vec2(rd.x * 2.1 + rd.z * 0.72, rd.y * 3.35 + rd.z * 0.28);
+    p.y -= frameTimeCounter * 0.018;
+    vec2 warp = vec2(valueNoise(p * 0.58 + vec2(4.1, 1.7)),
+                     valueNoise(p * 0.58 + vec2(9.2, 6.4))) - 0.5;
+    float broad = valueNoise(p * 0.9 + warp * 1.55);
+    float wisps = valueNoise(p * 1.9 - warp * 0.65 + vec2(3.7, 11.2));
+    // Keep the banks sparse enough to read as separate clouds instead of filling the whole sky.
+    float billow = smoothstep(0.66, 0.86, broad * 0.72 + wisps * 0.28);
+    float height = smoothstep(27.0, 46.0, y) * (1.0 - smoothstep(118.0, 165.0, y));
+    return billow * height;
+}
+
+vec3 netherHaze(vec3 rd, float y, float plume) {
     vec3 tint = toLinear(fogColor);
-    tint = mix(vec3(luminance(tint)), tint, 0.45) / max(luminance(tint), 0.02);
-    vec3 smoke = vec3(0.07, 0.028, 0.02) * mix(vec3(1.0), tint, 0.5);
+    tint = mix(vec3(luminance(tint)), tint, 0.18) / max(luminance(tint), 0.02);
+    vec3 smoke = vec3(0.014, 0.011, 0.010) * mix(vec3(1.0), tint, 0.18);
+    vec3 soot = vec3(0.007, 0.009, 0.010);
     float nearLava = exp(-max(y - 31.0, 0.0) / 34.0);
-    // Looking down toward the lava sea the haze glows; looking up into the smoke it goes dark.
-    float look = min(saturate(0.35 - rd.y * 0.65), 0.55);
-    vec3 ember = vec3(1.0, 0.3, 0.06) * (0.08 + 0.3 * nearLava) * look;
-    return smoke + ember * mix(vec3(1.0), tint, 0.2);
+    // Overhead smoke stays ashen; the lava lift concentrates along the horizon and below it.
+    float look = max(1.0 - smoothstep(-0.65, -0.05, rd.y), exp(-abs(rd.y) * 9.0) * 0.12);
+    vec3 ember = vec3(1.0, 0.30, 0.045) * (0.12 + 0.55 * nearLava) * look;
+    float loft = exp(-max(y - 31.0, 0.0) / 78.0);
+    // Plumes carry soot overhead and catch lava light lower down, with turbulent warm edges.
+    smoke = mix(smoke, soot, plume * (1.0 - loft * 0.60));
+    vec3 litSmoke = vec3(0.62, 0.095, 0.010) * plume * loft * (0.035 + 0.965 * look);
+    return smoke + ember * mix(vec3(1.0), tint, 0.08) + litSmoke;
+}
+
+vec3 netherHaze(vec3 rd, float y) {
+    return netherHaze(rd, y, netherPlume(rd, y));
 }
 #endif
 
@@ -110,33 +140,78 @@ vec3 netherHaze(vec3 rd, float y) {
 //    sun sinks (light scattered twice, through the high stratosphere),
 //  - belt of Venus: a pink band above the opposite horizon, lit by the last reddened sunlight,
 //  - Earth's shadow: the darker blue band under it, rising as the sun sets.
+// ---------------------------------------------------------------------------------------------------------------
+// Sunset palette. Single scattering alone gives a muted, dusty sunset; the one Trevor asked for is the vivid one
+// seen on a clear evening: a golden-orange sun, a deep red band under the sky at the horizon, pinks and magenta
+// streaking across most of the sky, violet overhead, and clouds painted cotton-candy colours that keep glowing
+// after the sun has gone. Shared by the sky, the clouds and the ground light so they all agree.
+// e is the sine of the sun's elevation.
+// ---------------------------------------------------------------------------------------------------------------
+
+// 0 outside the sunset/sunrise window, 1 through its heart (from well before sunset to the end of afterglow).
+float sunsetWindow(float e) {
+    return smoothstep(-0.14, -0.03, e) * (1.0 - smoothstep(0.10, 0.34, e));
+}
+
+// Colour of the sunlight reaching clouds and the land as the sun sinks: gold, then orange, coral pink,
+// magenta, and a last crimson-violet glow on the highest clouds.
+vec3 sunsetLightTint(float e) {
+    const vec3 gold    = vec3(1.00, 0.66, 0.30);
+    const vec3 orange  = vec3(1.00, 0.44, 0.15);
+    const vec3 coral   = vec3(1.00, 0.33, 0.30);
+    const vec3 magenta = vec3(1.00, 0.28, 0.36);
+    const vec3 crimson = vec3(0.80, 0.14, 0.16);
+    vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.07, e));
+    c = mix(c, coral, smoothstep(-0.07, -0.015, e));
+    c = mix(c, orange, smoothstep(-0.015, 0.05, e));
+    c = mix(c, gold, smoothstep(0.05, 0.18, e));
+    return c;
+}
+
+// Sunlight on clouds: they sit hundreds of blocks up and keep catching the sun for a while after it has set
+// for the ground. Intensity follows the transmittance of a just-above-horizon path, fading out as the sun sinks
+// far enough that even the highest clouds are in Earth's shadow.
+vec3 cloudSunsetLight(vec3 sunDir) {
+    float e = sunDir.y;
+    vec3 tPhys = sunTransmittance(normalize(vec3(sunDir.x, max(e, 0.015), sunDir.z)));
+    float lum = max(luminance(tPhys), 0.02);
+    float lit = smoothstep(-0.14, -0.03, e);
+    return sunsetLightTint(e) * lum * 2.2 * lit * SUN_ILLUMINANCE;
+}
+
 vec3 twilightGlow(vec3 rd, vec3 sunDir) {
-    float e = sunDir.y;                               // sine of sun elevation
-    if (e > 0.12 || e < -0.25) return vec3(0.0);
+    float e = sunDir.y;
+    float w = sunsetWindow(e);
+    if (w <= 0.0) return vec3(0.0);
     vec3 flatV = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
     vec3 flatS = normalize(vec3(sunDir.x, 0.0, sunDir.z) + vec3(1e-5));
     float az = dot(flatV, flatS);                     // 1 toward the sun, -1 away
     float up = max(rd.y, 0.0);
+    float toward = saturate(az * 0.5 + 0.5);
+    float away = 1.0 - toward;
+    // How far past sunset: 0 while the sun is up, 1 in late afterglow.
+    float dusk = smoothstep(0.03, -0.12, e);
     vec3 col = vec3(0.0);
 
-    // Afterglow: strongest a few degrees below the horizon, spreading wide along the sunset side.
-    float glowT = smoothstep(0.1, 0.0, e) * smoothstep(-0.22, -0.04, e);
-    float toward = pow(az * 0.5 + 0.5, 3.0);
-    float height = mix(0.22, 0.09, smoothstep(0.05, -0.15, e));       // rises into a dome, then sinks
-    float band = exp(-up / height);
-    // Orange-gold at the horizon, rose above it, violet at the top of the glow.
-    float k = up / height;
-    vec3 warm = mix(vec3(1.0, 0.5, 0.16), vec3(0.95, 0.38, 0.42), smoothstep(0.2, 1.2, k));
-    warm = mix(warm, vec3(0.55, 0.32, 0.75), smoothstep(1.2, 2.5, k));
-    col += warm * band * toward * glowT * 0.55;
-
-    // Belt of Venus over the anti-solar horizon, above Earth's shadow.
-    float beltT = smoothstep(0.08, 0.0, e) * smoothstep(-0.14, -0.02, e);
-    float away = pow(-az * 0.5 + 0.5, 2.0);
-    float shadowTop = mix(0.0, 0.14, smoothstep(0.02, -0.12, e));
-    float belt = exp(-sqr((up - shadowTop - 0.07) / 0.06));
-    col += vec3(1.0, 0.55, 0.62) * belt * away * beltT * 0.012;
-    return col * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0;
+    // Deep red band hugging the horizon under the sunset point, widening as the sun sets.
+    float band = exp(-up / mix(0.035, 0.06, dusk)) * pow(toward, 1.3);
+    col += vec3(1.0, 0.20, 0.06) * band * mix(0.75, 0.55, dusk);
+    // Golden-orange glow around the sun while it is up and just after.
+    float nearSun = exp(-acos(clamp(dot(rd, sunDir), -1.0, 1.0)) / 0.32) * (1.0 - dusk * 0.6);
+    col += vec3(1.0, 0.52, 0.16) * nearSun * 0.7;
+    // Pink streaks: a broad rose layer across most of the sky (strongest toward the sun, still present
+    // opposite it), broken into long bands by a slow noise so it reads as light through high haze.
+    float streak = 0.65 + 0.35 * valueNoise(vec2(flatV.x * 2.4 + up * 5.0, flatV.z * 2.4 + up * 11.0 + 3.1));
+    float rose = exp(-sqr((up - mix(0.10, 0.16, dusk)) / 0.16)) * (0.35 + 0.65 * pow(toward, 0.8));
+    col += vec3(1.0, 0.40, 0.46) * rose * streak * mix(0.42, 0.46, dusk);
+    // Magenta and violet higher up as the sun sinks.
+    float mag = exp(-sqr((up - 0.33) / 0.24)) * (0.3 + 0.7 * toward);
+    col += vec3(0.62, 0.26, 0.62) * mag * mix(0.03, 0.07, dusk);
+    // Belt of Venus: pink over the opposite horizon, above the rising blue of Earth's shadow.
+    float shadowTop = mix(0.0, 0.14, dusk);
+    float belt = exp(-sqr((up - shadowTop - 0.07) / 0.07)) * pow(away, 1.5);
+    col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * smoothstep(0.1, 0.0, e);
+    return col * w * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0 * SUNSET_VIVIDNESS;
 }
 
 float endFbm(vec2 p) {
@@ -145,27 +220,65 @@ float endFbm(vec2 p) {
     return n;
 }
 
-// The End sky: a black-violet void with a slow nebula storm wheeling around a dim glow overhead. Magenta
-// dust and faint teal currents, a pale void haze along the horizon. Everything drifts very slowly.
-vec3 endSky(vec3 rd) {
-    float t = frameTimeCounter * 0.004;
-    // Project the upper sky onto a plane so the storm has a centre overhead; swirl angle grows toward it.
-    vec2 p = rd.xz / (max(rd.y, 0.0) + 0.45);
-    float r = length(p);
-    float ang = t * 2.0 + 1.6 / (r + 0.6);
-    p = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p;
-    vec2 warp = vec2(endFbm(p * 0.9 + 1.7), endFbm(p * 0.9 + 9.2)) - 0.5;
-    float n = endFbm(p * 1.4 + warp * 2.2 + t);
-    float m = endFbm(p * 2.6 - warp * 1.3 - t * 1.4 + 4.0);
-    float dust = smoothstep(0.42, 0.85, n);
-    float threads = pow(smoothstep(0.5, 0.9, m), 3.0);
-    float up = saturate(rd.y * 1.2 + 0.2);
+float endSkyFbm(vec2 p) {
+    float n = 0.0, amp = 0.5;
+    for (int i = 0; i < 3; i++) { n += valueNoise(p) * amp; p = p * 2.07 + vec2(11.3, 7.7); amp *= 0.5; }
+    return n * 1.142857;
+}
 
-    vec3 col = vec3(0.010, 0.004, 0.022);
-    col += vec3(0.34, 0.07, 0.46) * dust * dust * 0.28 * up;
-    col += vec3(0.05, 0.30, 0.34) * threads * 0.22 * up;
-    col += vec3(0.30, 0.12, 0.50) * exp(-r * 2.2) * 0.10 * up;              // heart of the storm
-    col += vec3(0.10, 0.04, 0.16) * exp(-abs(rd.y) * 7.0) * 0.55;           // void haze at the horizon
+// The End is a dark island sea under an off-axis storm: broken violet veils and a few bright, wind-drawn
+// filaments drift through wide areas of ink. The warp bends the cloud field into a loose spiral, without
+// putting a bright centre or a hard circular silhouette in the sky.
+vec3 endSky(vec3 rd) {
+    float t = frameTimeCounter * 0.018;
+    // The storm wraps the whole sphere: below the horizon (the void) it continues on its own mirrored dome with a
+    // different seed, darker and more magenta, so the islands float inside it instead of over a black floor.
+    bool below = rd.y < 0.0;
+    // Dome projection gives the sky a broad canvas. An offset, decaying twist puts movement through the
+    // cloud shapes but leaves the middle of the view free of a bullseye.
+    vec2 p = rd.xz / (abs(rd.y) + 0.52) + (below ? vec2(7.3, -4.1) : vec2(0.0));
+    p = mat2(0.9063, -0.4226, 0.4226, 0.9063) * p;
+    p *= vec2(0.86, 1.08);
+    vec2 anchor = vec2(-0.72, 0.16);
+    vec2 v = p - anchor;
+    float radius = length(v);
+    float twist = 0.78 * exp(-radius * 0.55) / (radius + 0.85) + t * 0.42;
+    vec2 q = anchor + mat2(cos(twist), -sin(twist), sin(twist), cos(twist)) * v;
+    q += vec2(t * 0.13, -t * 0.08);
+
+    vec2 warp = vec2(endSkyFbm(q * 0.48 + vec2(2.7, 8.1) + t * 0.06),
+                     endSkyFbm(q * 0.48 + vec2(9.4, 1.3) - t * 0.05)) - 0.5;
+    float broad = endSkyFbm(q * 0.72 + warp * 1.5 + vec2(t * 0.10, -t * 0.07));
+    float detail = endSkyFbm(q * 1.65 - warp * 1.2 + vec2(4.6, 6.2) - t * 0.16);
+
+    // A wide, bending current gives the storm a direction. Noise breaks it into separate cloud banks,
+    // and the narrow inner strands catch the eye without filling the whole dome with light.
+    float bend = q.y - q.x * 0.23 - 0.62 * sin(q.x * 0.57 + 0.25) - 0.18 * sin(q.x * 1.3 + 1.1);
+    float lane = exp(-sqr(bend / 0.72));
+    float field = broad * 0.73 + detail * 0.27 + lane * 0.10;
+    float cloud = smoothstep(0.43, 0.72, field);
+    float edge = (1.0 - smoothstep(0.055, 0.19, abs(field - 0.57))) * smoothstep(0.34, 0.56, detail);
+    float strands = smoothstep(0.68, 0.86, detail) * smoothstep(0.44, 0.64, broad);
+    float filament = exp(-sqr(bend / 0.16)) * smoothstep(0.47, 0.72, detail) * smoothstep(0.38, 0.62, broad);
+    // A thin darker belt at the horizon separates sky from void; both hemispheres carry the storm.
+    // Kept restrained: the volumetric storm in front carries the scene, and a busy painted sky behind it made the
+    // real clouds read as part of a backdrop.
+    float highSky = smoothstep(0.02, 0.38, abs(rd.y)) * (below ? 0.35 : 0.5);
+
+    vec3 col = vec3(0.0045, 0.0022, 0.012);
+    col += vec3(0.095, 0.022, 0.20) * cloud * (0.42 + 0.58 * detail) * highSky;
+    col += vec3(0.27, 0.085, 0.48) * edge * 0.38 * highSky;
+    col += vec3(0.20, 0.11, 0.44) * strands * 0.22 * highSky;
+    col += vec3(0.43, 0.20, 0.72) * filament * 0.28 * highSky;
+    // A very restrained cold fringe separates some cloud banks from the purple body.
+    col += vec3(0.026, 0.050, 0.14) * strands * 0.18 * highSky;
+    // Keep the far terrain legible as silhouettes against a low, dim violet haze.
+    col += vec3(0.045, 0.010, 0.085) * exp(-abs(rd.y) * 8.0) * 0.20;
+    if (below) {
+        // The void: the storm's underside shifts toward magenta, over a faint glowing abyss straight down.
+        col *= vec3(1.25, 0.7, 0.95);
+        col += vec3(0.09, 0.012, 0.075) * pow(saturate(-rd.y), 2.5) * (0.6 + 0.4 * broad);
+    }
     return col;
 }
 
@@ -178,12 +291,14 @@ vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #endif
     vec3 day = scatter(rd, sunDir, SUN_ILLUMINANCE, steps);
     // Moonlit sky kept dim: a dark sky is what lets the Milky Way and faint stars show.
-    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.4;
+    vec3 night = scatter(rd, -sunDir, SUN_ILLUMINANCE * MOON_ILLUMINANCE, max(steps / 2, 4)) * vec3(0.6, 0.8, 1.3) * 0.26;
     vec3 col = day + night + vec3(0.0003, 0.00045, 0.0008) + twilightGlow(rd, sunDir);
     // Overcast: collapse toward a grey dome during rain.
     float overcast = rainStrength * 0.85;
     if (overcast == 0.0) return col;
     vec3 grey = vec3(luminance(scatter(vec3(0.0, 1.0, 0.0), sunDir, SUN_ILLUMINANCE, 4))) * 0.55 + vec3(0.0008);
+    // Thunderstorms: a heavy, bruised slate dome, darkest overhead where the cloud is thickest.
+    grey *= mix(vec3(1.0), vec3(0.78, 0.82, 0.92) * mix(1.0 - STORM_DARKNESS, 1.0, exp(-max(rd.y, 0.0) * 1.5)), thunderStrength);
     return mix(col, grey, overcast);
 }
 
@@ -206,8 +321,9 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
     float low = 1.0 - smoothstep(0.0, 0.5, sunDir.y);
     // Three scales, tuned by eye against reference screenshots: a blinding glow a few degrees across that
     // swallows the sun's outline, a broad halo, and a very wide skirt that warms a big part of the sky.
-    float core = exp(-a * 38.0) * mix(1.2, 2.2, low);
-    float halo = exp(-a * 9.0) * mix(0.22, 0.45, low);
+    // Near the horizon the core glow is held back so the sun's disc itself stays visible (sunDisc).
+    float core = exp(-a * 38.0) * mix(1.2, 0.3, low);
+    float halo = exp(-a * 9.0) * mix(0.22, 0.16, low);
     float skirt = exp(-a * 2.4) * mix(0.03, 0.10, low);
     // At sunset the haze layer is thickest along the horizon, so the glow spreads sideways along it.
     vec3 viewFlat = normalize(vec3(rd.x, 0.0, rd.z) + vec3(1e-5));
@@ -222,6 +338,10 @@ vec3 sunAureole(vec3 rd, vec3 sunDir) {
 }
 
 vec3 hazeColor(vec3 rd, vec3 sunDir) {
+#ifdef DIM_END
+    // The End has no ground haze: below the horizon is the void, which carries the storm too.
+    return endSky(rd);
+#endif
     vec3 dir = normalize(vec3(rd.x, max(rd.y, 0.0), rd.z));
     vec3 h = skyRadiance(dir, sunDir, 8) + sunAureole(dir, sunDir);
     return h * mix(1.0, 0.5, smoothstep(-0.1, -0.4, rd.y));
@@ -247,7 +367,35 @@ vec3 sunDisc(vec3 rd, vec3 sunDir) {
     // The cap sets how much light bloom spreads around the sun. Uncapped (tens of thousands) a sliver of sun
     // peeking past a leaf flooded the screen with glow; this keeps the core blown out but the glow steady.
     vec3 disc = core * t * SUN_ILLUMINANCE * norm * (1.0 - rainStrength);
-    return disc / (1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0);
+    disc /= 1.0 + max(max(disc.r, disc.g), disc.b) / 1800.0;
+    // Near the horizon the air dims the sun enough to look at: it becomes a distinct, slightly enlarged orange
+    // ball with a clean edge and a darker limb. Transmittance alone left only a dim red smear inside the glow.
+    //
+    // From a Minecraft mountain the terrain horizon lies a few degrees below eye level, so the sun keeps shining
+    // while it is geometrically "below the horizon": the ball keeps a deep red colour down to about -6 degrees
+    // and is drawn into the below-horizon haze too (deferred), where the land occludes it naturally.
+    float low = 1.0 - smoothstep(0.03, 0.32, sunDir.y);
+    float set = smoothstep(-0.065, -0.012, sunDir.y);
+    if (low > 0.0 && set > 0.0) {
+        vec3 tl = sunTransmittance(normalize(vec3(sunDir.x, max(sunDir.y, 0.004), sunDir.z)));
+        // Past the geometric horizon the path gets longer still: redden further.
+        tl *= exp(-vec3(0.0, 3.0, 9.0) * saturate(-sunDir.y / 0.1));
+        float tMax = max(tl.r, max(tl.g, tl.b));
+        if (tMax > 1e-6) {
+            float sd = length(rd - sunDir);
+            float r = SUN_DISC_RADIUS * (1.0 + 0.35 * low);
+            float edge = 1.0 - smoothstep(r * 0.92, r, sd);
+            float limb = sqrt(max(1.0 - sqr(sd / r), 0.0));
+            // Once it clears the horizon the low sun is blinding: a white-hot core with a warm rim. Only the last
+            // moments right at the horizon leave a dimmer red ball.
+            float hot = smoothstep(-0.015, 0.06, sunDir.y);
+            vec3 hue = mix(tl / tMax, vec3(1.0, 0.92, 0.78), hot * 0.75 * smoothstep(0.2, 0.9, limb));
+            disc += hue * edge * mix(0.45, 1.0, limb) * mix(1500.0, SUN_LOW_RADIANCE, hot) * low * set * (1.0 - rainStrength);
+            // Its own close glow, which the aureole no longer provides once the sun is below the true horizon.
+            disc += hue * exp(-max(sd - r, 0.0) / (r * 1.6)) * (1.0 - edge) * 18.0 * low * set * (1.0 - rainStrength);
+        }
+    }
+    return disc;
 }
 #endif
 
