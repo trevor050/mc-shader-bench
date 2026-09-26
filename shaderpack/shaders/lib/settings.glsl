@@ -110,3 +110,5 @@
 #define CLOUD_IRIDESCENCE 1.0     // pastel diffraction colours on thin altocumulus near the sun
 #define CLOUD_DUSK_SKYLIGHT 1.7   // skylight on clouds around sunset (lavender fill in shade, pink away from the sun)
 #define DUSK_VIBRANCE 2.2         // extra vibrance through the sunset window
+#define CLOUD_DOME_ALBEDO 0.05     // share of the cloud-level sunlight a lit deck sends down as sky light
+#define CLOUD_DOME_STRENGTH 1.0

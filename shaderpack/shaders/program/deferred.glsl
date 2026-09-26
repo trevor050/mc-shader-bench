@@ -32,6 +32,39 @@ uniform int frameCounter;
 #endif
 #include "/lib/lighting.glsl"
 #include "/lib/ice.glsl"
+// Clouds are needed in the vertex stage too: it measures once per frame how much of the sky dome is cloud, which
+// decides how much of the ambient light comes from lit cloud rather than clear sky.
+uniform vec3 cameraPosition;
+#include "/lib/clouds.glsl"
+
+#if !defined DIM_NETHER && !defined DIM_END
+// Sky light as the world receives it. Under a deck of lit cloud the dome overhead is cloud, not sky, and the ground is
+// lit by it: after a sunset under a glowing deck the whole world turns pink or orange (Columbia and Washington Square
+// on 2026-09-25), while the clear-sky model alone kept it blue and dark. Coverage is measured once per frame from the
+// real cloud field in 13 directions, weighted by the cosine of each direction's zenith angle.
+vec3 cloudDomeAmbient(LightEnv e, vec3 sunDir, CloudWeather w) {
+    float cover = 0.0, wsum = 0.0;
+    for (int i = 0; i < 13; i++) {
+        float zen = i == 0 ? 0.0 : (i < 7 ? 0.55 : 1.05);
+        float az = float(i) * 1.0472 + (i >= 7 ? 0.52 : 0.0);
+        vec3 d = vec3(sin(zen) * cos(az), cos(zen), sin(zen) * sin(az));
+        float c = 0.0;
+        float t1 = (L1_ALT + 35.0 - cameraPosition.y) / d.y;
+        if (t1 > 0.0) c = saturate(altocumulusDensity(cameraPosition + d * t1, w, t1, 1) * 2.5);
+        float t0 = (320.0 - cameraPosition.y) / d.y;
+        if (t0 > 0.0) c = max(c, saturate(l0Density(cameraPosition + d * t0, w, 2) * 2.0));
+        cover += c * d.y;
+        wsum += d.y;
+    }
+    cover /= wsum;
+    // Radiance of the lit undersides: the altocumulus-level sunlight (which outlasts ground sunset) scattered down,
+    // plus the skylight the cloud passes on.
+    float sw1 = sunsetWindow(sunDir.y + 0.035);
+    vec3 lightAlto = sw1 > 0.0 && sunDir.y > -0.23 ? mix(e.directLight, cloudSunsetLight(sunDir, 0.035), sw1) : e.directLight;
+    vec3 cloudL = lightAlto * CLOUD_DOME_ALBEDO + skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 4) * 0.6;
+    return mix(e.skyAmbient, cloudL * PI, saturate(cover * CLOUD_DOME_STRENGTH));
+}
+#endif
 
 #ifdef VERTEX
 out vec2 texcoord;
@@ -54,6 +87,7 @@ void main() {
     envAmbient = e.skyAmbient;
 #if !defined DIM_NETHER && !defined DIM_END
     CloudWeather w = cloudWeather();
+    envAmbient = cloudDomeAmbient(e, sunDir, w);
     cloudWeather0 = vec4(w.cov0, w.tower, w.cov1, w.cirrus);
     cloudWeather1 = vec3(w.low, w.lowCov, w.cb);
 #endif
@@ -78,7 +112,6 @@ uniform mat4 dhProjectionInverse;
 uniform mat4 shadowModelView;
 uniform mat4 shadowProjection;
 #endif
-uniform vec3 cameraPosition;
 // Wetness and rain level where the player is: zero in biomes without precipitation (deserts, savannas), where
 // vanilla draws no rain either (custom uniforms, shaders.properties). The sky and clouds keep the global rain level.
 uniform float wetLocal;
@@ -92,7 +125,6 @@ uniform float viewHeight;
 #if !defined DIM_NETHER && !defined DIM_END
 #include "/lib/shadows.glsl"
 #endif
-#include "/lib/clouds.glsl"
 #ifdef DIM_END
 #include "/lib/end_atmosphere.glsl"
 #endif

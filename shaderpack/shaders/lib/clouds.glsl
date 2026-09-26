@@ -22,7 +22,7 @@ uniform vec4 lightningBoltPosition;   // player-relative; w = 1 while a bolt exi
 #define L0_BASE 250.0         // lowest cloud base (blocks)
 #define L0_THICK 300.0        // tallest towers reach L0_BASE + L0_THICK plus base variation
 #define L1_ALT 1150.0         // broken mid-level altocumulus, visibly separate from the cumulus towers
-#define L1_THICK 110.0        // a thin sheet of cloudlets (mackerel sky)
+#define L1_THICK 260.0        // deep enough for lumpy, pendulous undersides with real relief
 #define L2_ALT 2600.0         // high, fibrous cirrus volume
 #define L2_THICK 180.0
 #define CLOUD_MAX_DIST 18000.0
@@ -382,14 +382,16 @@ float altocumulusDensity(vec3 p, CloudWeather w, float dist, int lod) {
     float fdist = 1.0 - smoothstep(5000.0, 18000.0, dist);
     // Finer octaves only where they are larger than a pixel.
     n += mix(0.5, cloudTex(vec3(q / 120.0, 0.47 + h * 0.1)).g, fdist) * 0.09;
-    if (lod == 0) n += mix(0.5, cloudTex(vec3(xz / 42.0, 0.17 + h * 0.2)).b, fdist) * 0.05;
+    if (lod == 0) n += mix(0.5, cloudTex(vec3(xz / 70.0, 0.17 + h * 0.2)).b, fdist) * 0.03;
     // Faint billows across the wind.
     n += sin(dot(xz, dir) / 38.0 + wn.r * 9.0) * 0.025 * fdist;
     float thr = 0.84 - cov * 0.52;
     float d = saturate((n - thr) / 0.2);
-    // Flat base, top rising with the density so thick lumps are also taller.
-    float top = mix(0.4, 1.0, d);
-    return d * smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(top * 0.55, top, h));
+    // Thick parts reach both higher and lower: lumpy, hanging undersides and domed tops, so a low sun rakes across
+    // real relief (bright lit faces, violet shaded ones) instead of lighting a flat sheet evenly.
+    float base = mix(0.5, 0.05, d);
+    float top = mix(0.55, 1.0, d);
+    return d * smoothstep(base, base + 0.12, h) * (1.0 - smoothstep(top - 0.15, top, h));
 }
 
 vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec3 directLight,
