@@ -178,7 +178,10 @@ vec3 cloudSunsetLight(vec3 sunDir, float lift) {
     vec3 tPhys = sunTransmittance(normalize(vec3(sunDir.x, max(e, 0.015), sunDir.z)));
     float lum = max(luminance(tPhys), 0.02);
     float lit = smoothstep(-0.14, -0.03, e);
-    return sunsetLightTint(e) * lum * 2.2 * lit * SUN_ILLUMINANCE;
+    // Around and just after sunset the clouds are still brightly lit (pink, not maroon): the grazing-path
+    // transmittance alone made them too dim, and dim pink tone-maps to brownish red.
+    float afterglow = mix(1.8, 1.0, smoothstep(-0.02, 0.08, e));
+    return sunsetLightTint(e) * lum * 2.2 * afterglow * lit * SUN_ILLUMINANCE;
 }
 vec3 cloudSunsetLight(vec3 sunDir) { return cloudSunsetLight(sunDir, 0.0); }
 

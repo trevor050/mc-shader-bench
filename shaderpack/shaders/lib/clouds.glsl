@@ -462,13 +462,17 @@ float cirrusDensity(vec2 p, float h, CloudWeather w, float dist) {
     vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
     // Fibres: very stretched noise, three octaves; the fine ones fade out with distance to avoid shimmer.
     float fineFade = 1.0 - smoothstep(5000.0, 22000.0, dist);
+    // Crosswise warp: without it the stretched noise formed evenly spaced contour lines (wood grain).
+    q.y += (valueNoise(q / 1600.0 + 2.9) - 0.5) * 420.0 + (valueNoise(q / 520.0 + 8.3) - 0.5) * 90.0;
     float fib = valueNoise(vec2(q.x / 5200.0, q.y / 110.0 + h * 0.6)) * 0.55
               + mix(0.5, valueNoise(vec2(q.x / 2300.0, q.y / 42.0) + 7.7), fineFade) * 0.3
               + mix(0.5, valueNoise(vec2(q.x / 900.0, q.y / 17.0) + 19.1), fineFade) * 0.15;
     // Strokes: long bands that start and end, brightest at their tufted heads.
-    float stroke = valueNoise(vec2(q.x / 7000.0, q.y / 900.0) + 5.3);
+    float stroke = smoothstep(0.38, 0.72, valueNoise(vec2(q.x / 7000.0, q.y / 900.0) + 5.3));
+    // Strands start and stop along their length, so the sky shows separate wisps rather than continuous lines.
+    stroke *= smoothstep(0.3, 0.7, valueNoise(vec2(q.x / 1900.0, q.y / 260.0) + 1.7));
     float tuft = smoothstep(0.55, 0.85, valueNoise(p / 2400.0 + 11.0));
-    float d = saturate((fib - 0.46) / 0.26) * smoothstep(0.3, 0.65, stroke) * (0.55 + 0.9 * tuft);
+    float d = sqrt(saturate((fib - 0.48) / 0.3)) * stroke * (0.45 + 0.9 * tuft);
     return d * patch;
 }
 

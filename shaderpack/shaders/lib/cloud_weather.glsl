@@ -51,6 +51,9 @@ CloudWeather cloudWeather() {
     w.cirrus *= 1.0 - rainStrength;
     w.low = mix(w.low, 0.9, rainStrength);
     w.cb = max(w.cb, thunderStrength);
+#ifdef CLOUD_DEBUG_CIRRUS
+    w.cirrus = 0.9; w.cov1 = 0.0; w.cov0 = 0.2;
+#endif
 #ifdef CLOUD_DEBUG_WEATHER
     w.cov0 = 0.0; w.tower = 0.8; w.cov1 = 0.0; w.cirrus = 0.0; w.low = 0.45; w.lowCov = 0.0; w.cb = 0.0;
 #endif
