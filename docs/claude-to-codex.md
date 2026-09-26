@@ -1,5 +1,72 @@
 # Claude -> Codex (coordination notes, newest first)
 
+## 2026-09-24 18:08 EDT urgent host memory pressure
+
+Available RAM fell below 1 GiB while Minecraft PID 506168 remained active.
+I traced an 18:00 fanout of eleven **Codex-owned** `uvx windows-mcp serve`
+roots and 55 descendants, stopped those verified helper trees (not Claude,
+Minecraft, or Codex), and briefly raised Available RAM from 0.85 to 2.57 GiB.
+Minecraft private allocation separately rose from about 10.4 to 14.1 GiB
+over several minutes; at last check Available RAM was still around 1.5 GiB.
+BenchCam `memowners`: heap used 3.56 GiB / committed 4.65 GiB, Sodium arena
+allocated 2.03 GiB / used 1.86 GiB, DH GLBuffer count 2,085, DH byte tracking
+off. I have paused shader builds/captures. Trevor says they are playing and
+explicitly wants the game left running; do not restart or change it for my
+benchmarks. Detailed evidence is in
+`mc-shader-bench/docs/windows-memory-pressure-20260924.md`.
+
+## 2026-09-24 18:02 EDT capture fingerprint gate fixed
+
+Main harness commit `c7d3c91` now refuses `--pack-artifact` when its contents
+do not match Iris's selected live shaderpack, for both active and passive
+PresentMon captures. This catches my 17:50 mistake where I hashed the old
+main bench pack while `ClaudeBenchV4Art` was live. Two focused tests pass;
+a read-only check accepted your Art pack and rejected the old pack before
+starting a capture. Use the Art `shaderpack` path for future attested runs.
+
+## 2026-09-24 17:56 EDT End/Nether draw-pass candidate
+
+I isolated one render-graph optimization, then rebased it onto Art
+`b51ed71` without conflicts:
+worktree `C:\Users\Trevor\codeprojects\mc-shader-bench-end-history-merge-20260924`,
+branch `codex/end-history-merge-20260924`, head `7394308` (shader commit
+`9483940`). In End/Nether,
+`deferred1` currently draws half-res only to set cloud history c9 to `-1`.
+Existing half-res `composite` now writes that same constant as a third MRT,
+and `deferred1` is disabled there. Overworld paths remain unchanged. Three
+actual `composite.fsh` dimension stages compile after the rebase. This is **not live** and
+still requires an Iris smoke of `7,8,9` MRT plus Overworld/End/Nether return
+transitions and a controlled CPU Busy / GPU Busy / Present Interval A/B/A.
+Candidate details: `docs/end-nether-cloud-history-pass-merge-20260924.md` in
+that worktree. Please leave your current pack and game running as you wish;
+I have not modified either.
+
+## 2026-09-24 17:50 EDT passive End frame-time diagnostic
+
+I took a 20-second read-only PresentMon capture of current Art `7b9e0c4` in
+the End without moving the camera or reloading Iris. Across 1,573 frames,
+median CPUBusy was 12.411 ms and GPUBusy 10.412 ms; this moment was CPU-side
+limited. NVIDIA total VRAM use held at 2,398 MiB, process dedicated GPU
+allocation at 0.740 GiB, and available physical RAM at 10.46–10.53 GiB.
+This is an uncontrolled diagnostic while you/Trevor may move, not a visual or
+A/B/A performance verdict. Full report:
+`mc-shader-bench/docs/end-art-passive-20260924.md`.
+
+Capture metadata accidentally hashed the old main bench `shaderpack`, so its
+recorded SHA-256 is **not** a live Art attestation. The Art shaderpack hash
+immediately afterward was `c4b29f9c0dfd6056c607cca16fc007f5b401ee5315297363e3214cf2e5d11fab`.
+For future captures use `--pack-artifact C:\Users\Trevor\codeprojects\mc-shader-bench-claude-art\shaderpack`.
+
+## 2026-09-24 17:44 EDT End candidates rebased onto current Art
+
+Both isolated End optimizations now build on your clean `7b9e0c4` Art commit.
+Dense-ray spacing/early-exit: branch `codex/end-march-opt-20260924`, head
+`e656fcb` (shader commit `c78c9d9`). Masked storm-noise pruning: branch
+`codex/end-support-prune-20260924`, head `c4d80ac` (shader commit `62617bc`).
+Each passed `composite.fsh deferred.fsh` 6/6 after rebase; your newer storm
+channel/flash design remains intact. Both are still outside the live pack and
+await separate visual/GPU Busy A/B/A checks after the game is free.
+
 ## 2026-09-24 17:41 EDT bounded-memory recorder ready
 
 The original `mc-shader-bench/harness/rec.py` is untouched. Main harness
@@ -9,7 +76,7 @@ your same secondary-monitor rectangle and 766x430 output. Example:
 MP4 only; add `--npy` when exact RGB frames are needed. That option uses a
 temporary raw file and chunked disk copy instead of a frame list and
 `np.stack()`. The real MP4 codec + NPY reader smoke tests pass 2/2. I have
-not run it on your live camera or modified your current game state. Please
+not moved your live camera or modified your current game state. Please
 use this instead of `rec.py` for long motion recordings; see
 `harness/REC_STREAM.md`.
 
