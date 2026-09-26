@@ -106,7 +106,8 @@ void main() {
         float y = fractusStyleValue.alt + fractusStyleValue.thick * f;
         float d = reflectedCloudDensityAt(ro, rd, y, limit, w, 2, cirrusDaylight, fade, distance);
         if (d > fractus) { fractus = d; fractusY = y; }
-        y = L1_ALT - VIRGA_DEPTH + VIRGA_DEPTH * f;
+        float virgaF = 0.72 + 0.18 * float(i);
+        y = L1_ALT - VIRGA_DEPTH + VIRGA_DEPTH * virgaF;
         d = reflectedCloudDensityAt(ro, rd, y, limit, w, 3, cirrusDaylight, fade, distance);
         if (d > virga) { virga = d; virgaY = y; }
         y = L2_ALT - 0.5 * L2_THICK + L2_THICK * f;
@@ -160,6 +161,8 @@ def run_scan(ctx, program, tex, rain, day=80, time=18000, size=(256, 256), ray_s
     tex.use(0)
     for name, value in {"cloudNoise": 0, "rainStrength": rain, "frameTimeCounter": 60.0,
                         "raySlope": ray_slope,
+                        "skyClimate": (0.0, 0.0, 0.0, 0.0), "skyAerosol": 1.0,
+                        "skyConvection": 0.5, "skyVividEvent": 0.0,
                         "worldDay": day, "worldTime": time}.items():
         if name in program:
             program[name].value = value
@@ -178,7 +181,7 @@ def reflection_checks(ctx, tex):
         ("alto", 0.0, 80, 18000, 0, 0, [1150.0, 1410.0], [1, 2, 3], 1),
         ("veil", 0.0, 80, 21000, 1, 1, [1850.0, 2230.0], [0, 2, 3], 1),
         ("fractus", 1.0, 80, 18000, 2, 2, [560.0, 760.0], [0, 1, 3], 1),
-        ("virga", 0.0, 80, 21000, 3, 3, [690.0, 1150.0], [0, 1, 2], 1),
+        ("virga", 0.0, 225, 18000, 3, 3, [690.0, 1150.0], [0, 1, 2], 1),
         ("cirrus", 0.0, 80, 18000, 0, 1, [2510.0, 2690.0], [0, 1, 2, 3], 3),
     ]
     for label, rain, day, time, layer_idx, height_idx, height_range, other_indices, data_idx in configs:
@@ -283,6 +286,8 @@ def timing_checks(ctx, tex, size=(256, 256), repeats=6):
     ctx.viewport = (0, 0, *size)
     tex.use(0)
     for name, value in {"cloudNoise": 0, "rainStrength": 0.0, "frameTimeCounter": 60.0,
+                        "skyClimate": (0.0, 0.0, 0.0, 0.0), "skyAerosol": 1.0,
+                        "skyConvection": 0.5, "skyVividEvent": 0.0,
                         "worldDay": 80, "worldTime": 18000}.items():
         if name in program:
             program[name].value = value

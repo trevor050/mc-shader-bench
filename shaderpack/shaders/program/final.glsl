@@ -73,7 +73,7 @@ void main() {
     sunCol /= max(luminance(sunCol), 1e-4);
     // (Starting at 0.08 neutralized most of golden hour's gold.)
     float strength = 0.85 * smoothstep(0.25, 0.6, sd.y);
-    sunsetGrade = sunsetWindow(sd.y);
+    sunsetGrade = sunsetWindow(sd.y) * mix(0.18, 1.0, skySunsetEvent());
     // Around sunset and into dusk the eye (and a phone camera) opens up for the dimming world: the glowing sky should
     // read luminous, not murky.
     duskOpen = sunsetWindow(sd.y) * (1.0 - smoothstep(0.0, 0.12, sd.y));

@@ -126,7 +126,8 @@ vec3 reflectedClouds(vec3 sky, vec3 rd, vec3 ro, vec3 lightDir, vec3 directLight
         d = reflectedCloudDensityAt(ro, rd, fractusStyleValue.alt + fractusStyleValue.thick * f,
                                     rayLimit, w, 2, cirrusDaylight, fade, sampleDistance);
         if (d > fractus) { fractus = d; fractusFade = fade; fractusDistance = sampleDistance; }
-        d = reflectedCloudDensityAt(ro, rd, L1_ALT - VIRGA_DEPTH + VIRGA_DEPTH * f,
+        float virgaF = 0.72 + 0.18 * float(i);
+        d = reflectedCloudDensityAt(ro, rd, L1_ALT - VIRGA_DEPTH + VIRGA_DEPTH * virgaF,
                                     rayLimit, w, 3, cirrusDaylight, fade, sampleDistance);
         if (d > virga) { virga = d; virgaFade = fade; virgaDistance = sampleDistance; }
         d = reflectedCloudDensityAt(ro, rd, veilStyleValue.alt + veilStyleValue.thick * f,

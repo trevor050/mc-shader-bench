@@ -11,3 +11,7 @@ option.MILKYWAY_BRIGHTNESS=Milky Way Brightness
 option.MILKYWAY_BRIGHTNESS.comment=The Milky Way emerges gradually through deep twilight. Moonlight reduces its contrast.
 option.CLOUD_RENDER_DISTANCE=Cloud Render Distance
 option.CLOUD_RENDER_DISTANCE.comment=Horizontal cloud range in blocks, limited to the terrain LOD range. Distant clouds fade smoothly; high clouds directly overhead remain visible.
+option.SKY_CLIMATE=Biome Sky Variation
+option.SKY_CLIMATE.comment=Cold, dry, humid and coastal climates gently change atmospheric haze and volumetric cloud balance. Biome crossings ease over time.
+option.SKY_VARIATION=Vivid Sunset Events
+option.SKY_VARIATION.comment=Occasional clear evenings develop rose and violet afterglow. Lower values keep sunsets closer to their ordinary gold and peach palette.

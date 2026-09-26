@@ -3,6 +3,8 @@
 #ifndef CLOUD_WEATHER_GLSL
 #define CLOUD_WEATHER_GLSL
 
+#include "/lib/sky_climate.glsl"
+
 uniform int worldDay;
 uniform int worldTime;
 #ifndef THUNDER_UNIFORM
@@ -45,6 +47,22 @@ CloudWeather cloudWeather() {
     w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
     float afternoon = smoothstep(0.1, 0.35, float(worldTime) / 24000.0) * (1.0 - smoothstep(0.45, 0.55, float(worldTime) / 24000.0));
     w.cb = smoothstep(0.45, 0.85, noise1(t * 0.6 + 97.0)) * mix(0.55, 1.0, afternoon);
+    // Climate chooses the balance of existing volumes, without additional weather noise in a ray sample.
+    // Cold/arid mornings favour open sky; humid afternoons build cumulus; coastal air favours lower broken decks.
+    vec4 climate = skyClimateWeights();
+    float convective = skyConvection * (1.0 - 0.55 * climate.x) * (1.0 - 0.5 * climate.y);
+    float climateShare = max(max(climate.x, climate.y), max(climate.z, climate.w));
+    w.cov0 *= clamp(1.0 - 0.62 * climate.y - 0.15 * climate.x + 0.20 * climate.z + 0.05 * climate.w, 0.3, 1.25);
+    w.cov0 *= mix(1.0, mix(0.75, 1.1, convective), climateShare);
+    w.tower *= clamp(1.0 - 0.35 * climate.x - 0.25 * climate.y + 0.20 * climate.z, 0.4, 1.2);
+    w.tower *= mix(1.0, mix(0.65, 1.15, convective), climateShare);
+    w.cov1 = clamp(w.cov1 + (0.07 * climate.z + 0.13 * climate.w - 0.02 * climate.x - 0.12 * climate.y) * (0.3 + 0.7 * b), 0.0, 0.75);
+    w.cirrus *= mix(1.0, clamp(0.9 + 0.20 * climate.y + 0.15 * climate.x - 0.25 * climate.z + 0.05 * climate.w, 0.65, 1.2), climateShare);
+    w.low = clamp(w.low + 0.16 * climate.w + 0.10 * climate.x + 0.10 * climate.z - 0.35 * climate.y, 0.0, 0.85);
+    w.lowCov = clamp(w.lowCov + 0.04 * climate.w + 0.05 * climate.z - 0.12 * climate.y, 0.0, 0.32);
+    w.cb *= mix(1.0, mix(0.18, 0.75, convective) * clamp(0.45 + 0.55 * climate.z + 0.10 * climate.w - 0.30 * climate.y - 0.20 * climate.x, 0.1, 1.0), climateShare);
+    w.cov0 = clamp(w.cov0, 0.02, 0.8);
+    w.tower = clamp(w.tower, 0.15, 1.0);
     // Rain: thick, low, flat-bottomed overcast.
     w.cov0 = mix(w.cov0, 0.9, rainStrength);
     w.tower = mix(w.tower, 0.8, rainStrength);

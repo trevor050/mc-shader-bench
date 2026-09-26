@@ -1,6 +1,8 @@
 // Single-scattering Rayleigh/Mie atmosphere, procedural clouds, and stars.
 // Requires: common.glsl, settings.glsl, uniforms frameTimeCounter, rainStrength.
 
+#include "/lib/sky_climate.glsl"
+
 #ifndef THUNDER_UNIFORM
 #define THUNDER_UNIFORM
 uniform float thunderStrength;
@@ -32,7 +34,7 @@ float phaseMie(float mu, float g) {
 }
 
 vec3 extinction(vec2 od) {
-    return exp(-(BETA_R * od.x + BETA_M * 1.11 * od.y + BETA_OZONE * od.x * 1.6));
+    return exp(-(BETA_R * od.x + BETA_M * skyAerosolScale() * 1.11 * od.y + BETA_OZONE * od.x * 1.6));
 }
 
 // Optical depth (rayleigh, mie) from a point toward the light, 4 samples.
@@ -82,9 +84,10 @@ vec3 scatter(vec3 rd, vec3 lightDir, float intensity, int steps) {
         sumR += d.x * t;
         sumM += d.y * t;
     }
-    vec3 single = sumR * BETA_R * phaseRayleigh(mu) + sumM * BETA_M * phaseMie(mu, MIE_G);
+    vec3 betaM = BETA_M * skyAerosolScale();
+    vec3 single = sumR * BETA_R * phaseRayleigh(mu) + sumM * betaM * phaseMie(mu, MIE_G);
     // Crude isotropic multiple-scattering term keeps the horizon luminous instead of dim.
-    vec3 multi = (sumR * BETA_R + sumM * BETA_M) * (0.05 / (4.0 * PI));
+    vec3 multi = (sumR * BETA_R + sumM * betaM) * (0.05 / (4.0 * PI));
     // Sky lit by the sky: higher-order Rayleigh scattering of already-blue skylight. Without it, a low sun
     // leaves the zenith grey (only reddened direct light reaches it); with it twilight stays blue overhead.
     float skyLit = smoothstep(-0.15, 0.1, lightDir.y);
@@ -141,10 +144,8 @@ vec3 netherHaze(vec3 rd, float y) {
 //  - belt of Venus: a pink band above the opposite horizon, lit by the last reddened sunlight,
 //  - Earth's shadow: the darker blue band under it, rising as the sun sets.
 // ---------------------------------------------------------------------------------------------------------------
-// Sunset palette. Single scattering alone gives a muted, dusty sunset; the one Trevor asked for is the vivid one
-// seen on a clear evening: a golden-orange sun, a deep red band under the sky at the horizon, pinks and magenta
-// streaking across most of the sky, violet overhead, and clouds painted cotton-candy colours that keep glowing
-// after the sun has gone. Shared by the sky, the clouds and the ground light so they all agree.
+// Shared sunset palette: ordinary clear evenings are warm gold/peach. A rare continuous daily event allows
+// broader rose/violet afterglow. Sky, clouds, reflected sunlight and ground light use the same event.
 // e is the sine of the sun's elevation.
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -153,8 +154,7 @@ float sunsetWindow(float e) {
     return smoothstep(-0.14, -0.03, e) * (1.0 - smoothstep(0.10, 0.34, e));
 }
 
-// Colour of the sunlight reaching clouds and the land as the sun sinks: gold, then orange, coral pink,
-// magenta, and a last crimson-violet glow on the highest clouds.
+// Colour of sunlight reaching clouds and land as the sun sinks. Higher clouds keep catching it longer.
 vec3 sunsetLightTint(float e) {
     // After real dusk skies: the last light on high cloud is a soft rose-lilac, not a dark crimson.
     const vec3 gold    = vec3(1.00, 0.68, 0.34);
@@ -168,7 +168,10 @@ vec3 sunsetLightTint(float e) {
     c = mix(c, coral, smoothstep(-0.1, -0.055, e));
     c = mix(c, orange, smoothstep(-0.055, 0.0, e));
     c = mix(c, gold, smoothstep(0.05, 0.18, e));
-    return c;
+    vec3 ordinary = mix(vec3(0.82, 0.44, 0.32), vec3(1.0, 0.48, 0.27), smoothstep(-0.15, -0.055, e));
+    ordinary = mix(ordinary, orange, smoothstep(-0.055, 0.0, e));
+    ordinary = mix(ordinary, gold, smoothstep(0.05, 0.18, e));
+    return mix(ordinary, c, skySunsetEvent());
 }
 
 // Sunlight on clouds: they sit hundreds of blocks up and keep catching the sun for a while after it has set
@@ -182,7 +185,7 @@ vec3 cloudSunsetLight(vec3 sunDir, float lift) {
     float lit = smoothstep(-0.14, -0.03, e);
     // Around and just after sunset the clouds are still brightly lit (pink, not maroon): the grazing-path
     // transmittance alone made them too dim, and dim pink tone-maps to brownish red.
-    float afterglow = mix(1.45, 1.0, smoothstep(-0.02, 0.08, e));
+    float afterglow = mix(1.0 + 0.45 * skySunsetEvent(), 1.0, smoothstep(-0.02, 0.08, e));
     return sunsetLightTint(e) * lum * 2.2 * afterglow * lit * SUN_ILLUMINANCE;
 }
 vec3 cloudSunsetLight(vec3 sunDir) { return cloudSunsetLight(sunDir, 0.0); }
@@ -198,12 +201,13 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     float toward = saturate(az * 0.5 + 0.5);
     float away = 1.0 - toward;
     // How far past sunset: 0 while the sun is up, 1 in late afterglow.
-    float dusk = smoothstep(0.03, -0.12, e);
+    float dusk = 1.0 - smoothstep(-0.12, 0.03, e);
+    float vivid = skySunsetEvent();
     vec3 col = vec3(0.0);
 
     // Deep red band hugging the horizon under the sunset point, widening as the sun sets.
     float band = exp(-up / mix(0.035, 0.06, dusk)) * pow(toward, 1.3);
-    col += vec3(1.0, 0.20, 0.06) * band * mix(0.75, 0.55, dusk);
+    col += vec3(1.0, 0.20, 0.06) * band * mix(0.75, 0.55, dusk) * mix(0.7, 1.0, vivid);
     // Golden-orange glow around the sun while it is up and just after.
     float nearSun = exp(-acos(clamp(dot(rd, sunDir), -1.0, 1.0)) / 0.32) * (1.0 - dusk * 0.6);
     col += vec3(1.0, 0.52, 0.16) * nearSun * 0.7;
@@ -211,22 +215,22 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     // opposite it), broken into long bands by a slow noise so it reads as light through high haze.
     float streak = 0.65 + 0.35 * valueNoise(vec2(flatV.x * 2.4 + up * 5.0, flatV.z * 2.4 + up * 11.0 + 3.1));
     float rose = exp(-sqr((up - mix(0.10, 0.16, dusk)) / 0.16)) * (0.35 + 0.65 * pow(toward, 0.8));
-    col += vec3(1.0, 0.40, 0.46) * rose * streak * mix(0.42, 0.46, dusk);
+    col += vec3(1.0, 0.40, 0.46) * rose * streak * mix(0.42, 0.46, dusk) * mix(0.10, 1.0, vivid);
     // Magenta and violet higher up as the sun sinks.
     float mag = exp(-sqr((up - 0.33) / 0.24)) * (0.3 + 0.7 * toward);
-    col += vec3(0.62, 0.26, 0.62) * mag * mix(0.03, 0.07, dusk);
+    col += vec3(0.62, 0.26, 0.62) * mag * mix(0.03, 0.07, dusk) * vivid;
     // Belt of Venus: pink over the opposite horizon, above the rising blue of Earth's shadow.
     float shadowTop = mix(0.0, 0.14, dusk);
     float belt = exp(-sqr((up - shadowTop - 0.07) / 0.07)) * pow(away, 1.5);
-    col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * smoothstep(0.1, 0.0, e);
+    col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * (1.0 - smoothstep(0.0, 0.1, e)) * mix(0.6, 1.0, vivid);
     // Periwinkle zenith: through golden hour and dusk the sky overhead goes blue-violet (ozone absorbs the orange out
     // of the long, sunlit path), which is the backdrop that makes peach and pink clouds glow.
-    col += vec3(0.55, 0.5, 1.0) * pow(up, 1.1) * mix(0.06, 0.11, dusk) * (0.6 + 0.4 * away);
+    col += vec3(0.55, 0.5, 1.0) * pow(up, 1.1) * mix(0.06, 0.11, dusk) * (0.6 + 0.4 * away) * mix(0.25, 1.0, vivid);
     // Purple light: a soft violet glow some 25 degrees above the set sun, from about 2 degrees after sunset until
     // the sun is 6-7 degrees down. (Earlier, at 1 degree below, the western sky is still blazing orange.)
     float fromSun = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
-    float purple = exp(-sqr((fromSun - 0.5) / 0.3)) * smoothstep(-0.025, -0.06, e) * smoothstep(-0.17, -0.1, e);
-    col += vec3(0.8, 0.5, 1.0) * purple * sqrt(up) * 0.26;
+    float purple = exp(-sqr((fromSun - 0.5) / 0.3)) * (1.0 - smoothstep(-0.06, -0.025, e)) * smoothstep(-0.17, -0.1, e);
+    col += vec3(0.8, 0.5, 1.0) * purple * sqrt(up) * 0.26 * mix(0.3, 1.0, vivid);
     return col * w * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0 * SUNSET_VIVIDNESS;
 }
 
@@ -298,6 +302,10 @@ vec3 endSky(vec3 rd) {
     return col;
 }
 
+// The visible sky and its fog continuation must use identical quadrature at the horizon.
+// Eight haze steps versus twelve sky steps made a 4–7% radiance jump at eye level.
+const int SKY_VIEW_STEPS = 12;
+
 // Clear-sky radiance for a view direction, sun plus moon. Other dimensions have no atmosphere.
 vec3 skyRadiance(vec3 rd, vec3 sunDir, int steps) {
 #if defined DIM_NETHER
@@ -359,7 +367,7 @@ vec3 hazeColor(vec3 rd, vec3 sunDir) {
     return endSky(rd);
 #endif
     vec3 dir = normalize(vec3(rd.x, max(rd.y, 0.0), rd.z));
-    vec3 h = skyRadiance(dir, sunDir, 8) + sunAureole(dir, sunDir);
+    vec3 h = skyRadiance(dir, sunDir, SKY_VIEW_STEPS) + sunAureole(dir, sunDir);
     return h * mix(1.0, 0.5, smoothstep(-0.1, -0.4, rd.y));
 }
 

@@ -77,25 +77,21 @@ vec3 auroraGaussianCDF(vec3 x) {
     return 0.5 + 0.5 * sign(x) * (1.0 - polynomial * exp(-a * a));
 }
 
-// Radiance is evaluated at an actual sheet footpoint (or its stationary closest
-// approach). No emission coordinate depends on a root-search bracket boundary.
+// Radiance is evaluated at each sheet's actual continuous footpoint.
 vec3 auroraEmission(vec3 column, vec3 h, vec3 x, float phase, float seed) {
     vec3 offset = vec3(0.0, 2.17, 4.61) + seed;
     float drift = 2.1 * sin(phase * 23.0 + seed) + 0.8 * sin(phase * 61.0);
-    vec3 coarse, fine, detail, activity;
+    vec3 coarse, activity;
     for (int j = 0; j < 3; ++j) {
-        coarse[j] = valueNoise(vec2(x[j] * 0.016 + drift * 0.07, offset[j] + sin(phase * 7.0)));
-        float flow = valueNoise(vec2(x[j] * 0.017 + drift * 0.09, offset[j] * 4.1));
-        // Slowly varying domain compression clusters strands into unequal fans.
-        // This keeps coherent rays while avoiding equally spaced noise-cell bars.
-        float strand = x[j] * 0.34 + 4.0 * flow + drift;
-        fine[j] = valueNoise(vec2(strand, offset[j] * 3.0 + sin(phase * 13.0)));
-        detail[j] = valueNoise(vec2(strand * 2.47 + coarse[j] * 2.0, offset[j] * 5.0 + sin(phase * 19.0)));
+        // A slow, irregular warp gives each billow a different width. There is
+        // no fine-frequency comb underneath the luminous cloth-like sheet.
+        float flow = valueNoise(vec2(x[j] * 0.0037 + drift * 0.025, offset[j] * 4.1));
+        coarse[j] = valueNoise(vec2(x[j] * 0.010 + 1.6 * flow + drift * 0.07,
+                                    offset[j] + sin(phase * 7.0)));
         activity[j] = valueNoise(vec2(x[j] * 0.006 + sin(phase * 3.0), offset[j] + 0.2));
     }
-    // The luminous sheet carries the image. Unequal broad fans shape its body;
-    // fine field-aligned strands only modulate it instead of painting dark gaps.
-    vec3 rays = 0.36 + 0.45 * coarse + 0.23 * fine * fine + 0.07 * detail * detail;
+    // Continuous emission with broad uneven billows, no narrow parallel pickets.
+    vec3 rays = 0.42 + 0.50 * coarse;
     vec3 activityPatch = 0.10 + 0.90 * smoothstep(vec3(0.18), vec3(0.82), activity);
     vec3 surge = 0.78 + 0.22 * sin(phase * 31.0 + x * 0.008 + offset);
     vec3 edge = 1.0 - smoothstep(vec3(380.0), vec3(780.0), abs(x));

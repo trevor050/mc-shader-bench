@@ -1,4 +1,4 @@
-// Tunable settings. Values here are the pack defaults; option screens are intentionally omitted.
+// Tunable defaults. Selected user-facing controls are exposed in shaders.properties.
 
 #define SHADOW_MAP_RES 3072       // [1024 2048 3072 4096]
 #define SHADOW_DIST 192.0         // blocks
@@ -9,7 +9,9 @@
 #define WAVE_STRENGTH 1.0
 
 #define SUN_ILLUMINANCE 16.0
-#define SUNSET_VIVIDNESS 1.25    // strength of the sunset sky palette (red band, gold, pinks, magenta)
+#define SUNSET_VIVIDNESS 1.25    // peak sunset palette; rose/violet afterglow is a rare weather event
+#define SKY_CLIMATE 1.0         // [0.0 0.5 1.0] biome influence on cloud balance and atmospheric haze
+#define SKY_VARIATION 1.0       // [0.0 0.5 1.0] rare vivid sunset enhancement (ordinary dusk remains warm)
 #define SUN_LOW_RADIANCE 3000.0   // low sun's disc radiance once above the horizon (blinding)
 #define SUN_DISC_RADIUS 0.0125    // angular radius (radians) of the low sun's visible disc
 #define MOON_ILLUMINANCE 0.02

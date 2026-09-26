@@ -23,7 +23,15 @@ The previous mist also attenuated the first60 blocks on top of a cloud march tha
 
 ## Offline verification
 
-`work/cloud-interior/verify_cloud_interior.py` renders the actual GLSL with the pack's RGBA16 baked cloud-noise volume in a standalone NVIDIA OpenGL context. It retains the pre-change sources under `work/cloud-interior/baseline/` and writes paired linear arrays, fixed-exposure review PNGs, and `metrics.json`. Synthetic cameras select dense cloud positions in four decks. This exercises the real density/scattering code, but does not reproduce the user's camera, world/time, Iris temporal accumulation, deferred upsampling, or Minecraft geometry.
+The tracked `shaderpack/tools/verify_clouds.py` is the reusable regression gate. It resolves all shader/noise/report paths from the repository root and can be run from another working directory. It uses the pack's actual GLSL and RGBA16 baked noise in a small standalone OpenGL 4.3 context, plus a float32 stride replay parsed from the production deck march. Requirements are `numpy`, `moderngl`, `glcontext`, and the glslang installation or `GLSLANG` environment override used by `check_compile.py`.
+
+```powershell
+py shaderpack/tools/verify_clouds.py
+```
+
+The report is `work/cloud-verification.json`, with source/noise hashes and explicit climate uniforms. The gate checks 8400 march intervals, 30000 actual-GLSL fog algebra cases including zero/unit transmittance, foreground cloud depth/entity guards using RGBA16F distances, 23130 horizon samples, 672 near-slab/depth samples, climate weather bounds/orderings, six neutral-climate controls, and eye-level sky/haze continuity. It also links the real Overworld deferred and composite2 vertex/fragment pairs. `--cpu-only` runs only the parsed march-bound check; it does not certify any GLSL checks. These probes do not reproduce Iris temporal accumulation, Minecraft geometry, exposure, or full-frame performance.
+
+The earlier exploratory `work/cloud-interior/verify_cloud_interior.py` produced the historical paired images and timing numbers below. Its saved pre-change sources and arrays are local scratch evidence, not required inputs to the tracked verifier. Synthetic cameras selected dense cloud positions in four decks.
 
 At a synthetic dense alto interior, y1280, with night sun direction normalized from(0.6,-0.65,0.45), day80/time18000, clear weather, and shader time60 seconds:
 
@@ -43,10 +51,10 @@ Compile/link checks:
 
 ```powershell
 py shaderpack/tools/check_compile.py
-py work/cloud-interior/check_link.py
+py shaderpack/tools/verify_clouds.py
 ```
 
-The linker check expands the real Overworld `deferred` and `composite2` vertex/fragment pairs and links them with glslang. This validates the new flat light-environment varyings in addition to per-stage syntax checks. The coordinator also successfully reloaded and captured this candidate in Iris.
+The tracked verifier expands the real Overworld `deferred` and `composite2` vertex/fragment pairs and links them with glslang. This validates the new flat light-environment varyings in addition to per-stage syntax checks. The coordinator also successfully reloaded and captured this candidate in Iris.
 
 After the cloud and forward-water sources were frozen, the full compile gate checked 189 stages with zero failures. Both Overworld pass links returned zero, the 30000-case fog algebra check passed again, and `git diff --check` was clean. The candidate shader source contains no active player or DH magenta diagnostic hooks.
 
@@ -64,6 +72,12 @@ The player's white leg bands are a separate forward-stage issue. Temporary compo
 
 The separate `live-density-positions-time18000.json` uses day 0/time 18000 and frame time 5. Its upper-cumulus camera/eye point (3246.375, 650, 3239.625) has exact-GLSL density 1.5 and sits above the terrain used in the earlier inconclusive captures. The coordinator's `work/dense-night-final.png` at this point shows smooth dark blue mist with visible cloud/terrain shapes and no black slab or straight-edged artifact. The daytime upper-cumulus and alto captures (`work/dense-upper-day.png`, `work/dense-alto-day.png`) show the corresponding illuminated mist. These captures establish the tested interiors; cloud weather and moving noise mean a density coordinate must always be paired with its day/time and reload delay.
 
-`work/cloud-interior/check_fog_algebra.py` verifies the new formula against independently fogging the background then compositing the cloud, including zero/unit cloud transmittance:30000 cases passed. The exact expression is `color*(1-fogAmount) + (fogColor*cloudT + cloudRGB)*fogAmount`, with no division by cloudT. Live confirmation of the repaired rectangle belongs to the coordinator's captures.
+The tracked verifier extracts and compiles `fogBehindClouds()` from production composite GLSL, then compares its GPU output against independently fogging the background before compositing the cloud. All 30000 cases passed, including zero/unit transmittance. The exact expression is `color*(1-fogAmount) + (fogColor*cloudT + cloudRGB)*fogAmount`, with no division by cloudT. Live confirmation of the repaired rectangle belongs to the coordinator's captures.
 
-`work/cloud-interior/check_horizon.py` exercised the actual horizon GLSL at45 rays across256 distances each: day/dusk/night, camera y240/1280/2040, and horizontal/near-horizontal/up/down directions. All radiance remained finite and nonnegative and all transmittance stayed in[0,1]. A surface before the transition receives no distant haze. An initially opaque resolved layer keeps its original premultiplied color nearby and reaches the transparent identity beyond the horizontal radius. The small offscreen draws provide numerical/depth evidence, not a performance measurement or replacement for the coordinator's horizon review.
+The tracked horizon probe exercises actual GLSL at 90 rays across 257 distances each: neutral/humid climate, day/dusk/night, camera y240/1280/2040, and horizontal/near-horizontal/up/down directions. All radiance remained finite and nonnegative and all transmittance stayed in [0,1]. A surface before the transition receives no distant haze. An initially opaque resolved layer keeps its original premultiplied color nearby and reaches the transparent identity beyond the horizontal radius. Near-boundary samples include exact slab edges, empty gaps, and cirrus, and confirm that mist intervals never extend behind their scene surface. The small offscreen draws provide numerical/depth evidence, not a performance measurement or replacement for the coordinator's horizon review.
+
+## Eye-level sky continuation
+
+Independent review found a second full-width tonal line in the final high-altitude day/night captures, separate from the repaired DH rectangle. Deferred switched at `rd.y=0` between twelve-step clear-sky scattering and `hazeColor()` using eight steps. Exact GLSL probes across 257 azimuths measured the below-horizon haze 3.94–4.72% darker by day and 6.05–6.56% darker at night, even at precisely the same direction. This was a quadrature mismatch rather than a cloud-density boundary.
+
+Visible sky and haze now share `SKY_VIEW_STEPS=12`. The portable verifier checks their radiance at the boundary across neutral/humid climate, day/dusk/night, clear/rain conditions: all 3084 samples remain below a 0.005% relative RGB mismatch. Below-horizon darkening still begins smoothly below y=-0.1 as before. Haze evaluation now adds four sun and two moon scattering samples relative to the eight-step path; the runtime cost and the coordinator's matching live captures still need review.

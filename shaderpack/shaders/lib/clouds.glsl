@@ -74,7 +74,7 @@ CloudLightEnv makeCloudLightEnv(vec3 sunDir) {
     }
     c.skyLight = skyRadiance(vec3(0.0, 1.0, 0.0), sunDir, 6) * TAU * 0.9;
     c.skyLight *= mix(1.0, 1.4, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
-    c.skyLight = mix(c.skyLight, vec3(luminance(c.skyLight)) * vec3(0.86, 0.8, 1.25), sw * 0.6);
+    c.skyLight = mix(c.skyLight, vec3(luminance(c.skyLight)) * vec3(0.86, 0.8, 1.25), sw * mix(0.10, 0.6, skySunsetEvent()));
     c.skyLight *= mix(1.0, CLOUD_DUSK_SKYLIGHT, sw);
     // Apply the same moonlight calibration to every deck and the droplets around the eye.
     vec3 moonTint = mix(vec3(1.0), vec3(1.05, 1.15, 1.3), smoothstep(-0.06, -0.2, sunDir.y));
@@ -552,7 +552,10 @@ float veilAmount(CloudWeather w) {
 #elif SKY_PRESET >= 2
     return 0.0;
 #else
-    return smoothstep(0.7, 0.95, noise1(weatherClock() * 0.9 + 301.0)) * 0.6 + rainStrength * 0.3;
+    vec4 climate = skyClimateWeights();
+    float share = max(max(climate.x, climate.y), max(climate.z, climate.w));
+    float balance = mix(1.0, clamp(0.8 + 0.35 * climate.w + 0.20 * climate.z - 0.45 * climate.y, 0.35, 1.35), share);
+    return smoothstep(0.7, 0.95, noise1(weatherClock() * 0.9 + 301.0)) * 0.6 * balance + rainStrength * 0.3;
 #endif
 }
 DeckStyle veilStyle(CloudWeather w) {
@@ -566,7 +569,10 @@ float fractusAmount(CloudWeather w) {
 #elif SKY_PRESET >= 2
     return 0.0;
 #else
-    return smoothstep(0.75, 0.95, noise1(weatherClock() * 1.3 + 331.0)) * 0.4 + rainStrength * 0.3;
+    vec4 climate = skyClimateWeights();
+    float share = max(max(climate.x, climate.y), max(climate.z, climate.w));
+    float balance = mix(1.0, clamp(0.75 + 0.30 * climate.w + 0.25 * climate.z - 0.40 * climate.y, 0.35, 1.3), share);
+    return smoothstep(0.75, 0.95, noise1(weatherClock() * 1.3 + 331.0)) * 0.4 * balance + rainStrength * 0.3;
 #endif
 }
 DeckStyle fractusStyle(CloudWeather w) {
