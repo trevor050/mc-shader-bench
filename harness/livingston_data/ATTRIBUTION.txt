@@ -1,0 +1,2 @@
+Map data © OpenStreetMap contributors, available under the Open Database License (ODbL): https://www.openstreetmap.org/copyright
+osm.json: Overpass export of Rutgers Livingston campus, 2026-09-26.
