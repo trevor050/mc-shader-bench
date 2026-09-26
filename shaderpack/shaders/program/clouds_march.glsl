@@ -54,6 +54,9 @@ void main() {
     skyLight *= mix(1.0, 1.4, 1.0 - smoothstep(0.02, 0.3, sunDir.y));
     // The dusk sky overhead is periwinkle-lavender, and that is the colour of every cloud flank the sun misses.
     skyLight = mix(skyLight, vec3(luminance(skyLight)) * vec3(0.86, 0.8, 1.25), sw * 0.6);
+    // At dusk the lavender dome is a large share of what lights a cloud: it is what turns orange-lit clouds pink
+    // away from the sun and fills their shaded bodies with lilac.
+    skyLight *= mix(1.0, CLOUD_DUSK_SKYLIGHT, sw);
     // Moonlit clouds read a little brighter and cooler than the physical moonlight alone gives them.
     float moonNight = smoothstep(-0.06, -0.2, sunDir.y);
     envDirect *= mix(vec3(1.0), vec3(1.05, 1.15, 1.3), moonNight);

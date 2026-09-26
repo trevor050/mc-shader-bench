@@ -20,6 +20,7 @@ uniform float frameTimeCounter;
 out vec2 texcoord;
 flat out vec3 whiteBalance;
 flat out float sunsetGrade;
+flat out float duskOpen;
 flat out vec3 veilColor;
 flat out vec2 veilUV;
 uniform vec3 sunPosition;
@@ -73,6 +74,9 @@ void main() {
     // (Starting at 0.08 neutralized most of golden hour's gold.)
     float strength = 0.85 * smoothstep(0.25, 0.6, sd.y);
     sunsetGrade = sunsetWindow(sd.y);
+    // Around sunset and into dusk the eye (and a phone camera) opens up for the dimming world: the glowing sky should
+    // read luminous, not murky.
+    duskOpen = sunsetWindow(sd.y) * (1.0 - smoothstep(0.0, 0.12, sd.y));
     computeVeil(sd);
     whiteBalance = mix(vec3(1.0), 1.0 / max(sunCol, vec3(0.05)), strength);
     whiteBalance /= luminance(whiteBalance);
@@ -159,6 +163,7 @@ vec3 sunStreaks(vec2 uv) {
 in vec2 texcoord;
 flat in vec3 whiteBalance;
 flat in float sunsetGrade;
+flat in float duskOpen;
 flat in vec3 veilColor;
 flat in vec2 veilUV;
 layout(location = 0) out vec4 fragColor;
@@ -269,8 +274,9 @@ vec3 colorGrade(vec3 c) {
     hsv.z *= 1.0 - blue * 0.04 * hsv.y;
     // Vibrance.
     // Sunset and sunrise: colours run richer (the warm/pink palette should read vivid, not dusty).
-    float vib = GRADE_VIBRANCE * (1.0 + 1.2 * sunsetGrade);
-    hsv.y = saturate(hsv.y * (1.0 + vib * (1.0 - hsv.y)) * (1.0 + 0.12 * sunsetGrade));
+    // Sunsets are graded the way eyes and phone cameras render them: noticeably richer colour.
+    float vib = GRADE_VIBRANCE * (1.0 + DUSK_VIBRANCE * sunsetGrade);
+    hsv.y = saturate(hsv.y * (1.0 + vib * (1.0 - hsv.y)) * (1.0 + 0.25 * sunsetGrade));
     c = hsv2rgb(hsv);
 
     float l = luminance(c);
@@ -311,8 +317,8 @@ void main() {
     // Partial adaptation around a daylight reference: bright views (the sun) darken steeply, dark views
     // (night, caves) open up gently so night still reads as night.
     const float refLog = -0.75;
-    float slope = adaptedLog > refLog ? 0.45 : 0.36;
-    float exposure = exp2(log2(EXPOSURE_KEY) - slope * (adaptedLog - refLog));
+    float slope = adaptedLog > refLog ? 0.45 : mix(0.36, 0.6, duskOpen);
+    float exposure = exp2(log2(EXPOSURE_KEY * mix(1.0, DUSK_EXPOSURE, duskOpen)) - slope * (adaptedLog - refLog));
 #if !defined DIM_NETHER && !defined DIM_END
     // Underground the eye may not open all the way: dark caves must stay dark, torch-lit ones stay readable.
     float underground = 1.0 - smoothstep(0.05, 0.6, float(eyeBrightnessSmooth.y) / 240.0);

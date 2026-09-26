@@ -162,9 +162,11 @@ vec3 sunsetLightTint(float e) {
     const vec3 coral   = vec3(1.00, 0.44, 0.36);
     const vec3 magenta = vec3(1.00, 0.40, 0.52);
     const vec3 crimson = vec3(0.78, 0.40, 0.80);
-    vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.07, e));
-    c = mix(c, coral, smoothstep(-0.07, -0.015, e));
-    c = mix(c, orange, smoothstep(-0.015, 0.05, e));
+    // Orange lasts until the sun is well down (Livingston photos: blazing orange toward the sun a degree after
+    // sunset). The pinks of clouds away from the sun come from that orange light mixing with the lavender skylight.
+    vec3 c = mix(crimson, magenta, smoothstep(-0.15, -0.1, e));
+    c = mix(c, coral, smoothstep(-0.1, -0.055, e));
+    c = mix(c, orange, smoothstep(-0.055, 0.0, e));
     c = mix(c, gold, smoothstep(0.05, 0.18, e));
     return c;
 }
@@ -219,11 +221,12 @@ vec3 twilightGlow(vec3 rd, vec3 sunDir) {
     col += vec3(1.0, 0.45, 0.62) * belt * 0.12 * smoothstep(0.1, 0.0, e);
     // Periwinkle zenith: through golden hour and dusk the sky overhead goes blue-violet (ozone absorbs the orange out
     // of the long, sunlit path), which is the backdrop that makes peach and pink clouds glow.
-    col += vec3(0.42, 0.46, 1.0) * pow(up, 1.3) * mix(0.035, 0.06, dusk) * (0.6 + 0.4 * away);
-    // Purple light: a soft violet glow some 25 degrees above the set sun, brightest soon after sunset.
+    col += vec3(0.55, 0.5, 1.0) * pow(up, 1.1) * mix(0.06, 0.11, dusk) * (0.6 + 0.4 * away);
+    // Purple light: a soft violet glow some 25 degrees above the set sun, from about 2 degrees after sunset until
+    // the sun is 6-7 degrees down. (Earlier, at 1 degree below, the western sky is still blazing orange.)
     float fromSun = acos(clamp(dot(rd, sunDir), -1.0, 1.0));
-    float purple = exp(-sqr((fromSun - 0.5) / 0.3)) * smoothstep(0.02, -0.02, e) * smoothstep(-0.13, -0.05, e);
-    col += vec3(0.78, 0.48, 1.0) * purple * up * 0.14;
+    float purple = exp(-sqr((fromSun - 0.5) / 0.3)) * smoothstep(-0.025, -0.06, e) * smoothstep(-0.17, -0.1, e);
+    col += vec3(0.8, 0.5, 1.0) * purple * sqrt(up) * 0.26;
     return col * w * (1.0 - rainStrength) * SUN_ILLUMINANCE / 16.0 * SUNSET_VIVIDNESS;
 }
 

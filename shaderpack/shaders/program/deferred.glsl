@@ -160,13 +160,16 @@ vec3 hsv2rgbBow(float x) {
 // Rainbow around the antisolar point: primary bow at about 42 degrees (red outside, violet inside), a faint
 // secondary at 51 degrees with reversed colours and the darker Alexander's band between them. Two sources:
 //  - after rain, while the air is still wet: a whole, clean bow;
-//  - passing showers while the sun shines: fragments standing in the rain shafts below the clouds, strongest at a
-//    low sun, when the bow is tall and lit orange-red (the sunset rainbows of real evenings).
+//  - passing showers while the sun shines: fragments standing in the rain shafts below the clouds;
+//  - virga: rain falling from the mid-level deck and evaporating before it reaches the ground. The bow stands only
+//    where the fallstreaks hang, measured along the view ray, so it appears on a dry evening exactly like the one on
+//    Livingston campus (2026-09-25), orange-red and tall with the sun on the horizon.
 // It sits in front of the clouds, like the rain that makes it. Returns the bow (x) and band darkening (w in .a).
 vec4 rainbow(vec3 dir) {
     float wetAir = saturate(wetLocal * 1.4 - rainLocal * 2.0);
     float showers = smoothstep(0.03, 0.25, rainStrength) * (1.0 - smoothstep(0.55, 0.95, rainStrength));
-    if ((wetAir <= 0.0 && showers <= 0.0) || sunDir.y < -0.01 || sunDir.y > 0.7) return vec4(0.0);
+    CloudWeather cw = cloudWeather();
+    if ((wetAir <= 0.0 && showers <= 0.0 && virgaAmount(cw) < 0.02) || sunDir.y < -0.01 || sunDir.y > 0.7) return vec4(0.0);
     float a = degrees(acos(clamp(dot(dir, -sunDir), -1.0, 1.0)));
     if (a < 38.0 || a > 56.0) return vec4(0.0);
     float x1 = (a - 40.6) / 2.0;              // 0 = violet edge, 1 = red edge
@@ -178,7 +181,8 @@ vec4 rainbow(vec3 dir) {
     // Showers: the bow only exists where a rain shaft hangs, in pieces along its arc, and fades up into the cloud base.
     float az = atan(dir.z, dir.x);
     float shafts = smoothstep(0.4, 0.72, valueNoise(vec2(az * 3.2 + float(worldDay) * 1.7, frameTimeCounter * 0.004)));
-    float amount = max(wetAir, showers * shafts * (1.0 - smoothstep(0.12, 0.42, dir.y)));
+    float virgaBow = 1.0 - exp(-virgaColumn(cameraPosition, dir, cw) * 2.5);
+    float amount = max(max(wetAir, showers * shafts * (1.0 - smoothstep(0.12, 0.42, dir.y))), virgaBow);
     amount *= smoothstep(0.0, 0.08, dir.y + 0.02) * smoothstep(0.7, 0.3, sunDir.y);
     // Lit by the sun as it is: white by day, orange-red at sunset.
     vec3 light = envDirect + cloudSunsetLight(sunDir) * sunsetWindow(sunDir.y) * 0.35;

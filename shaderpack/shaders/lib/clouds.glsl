@@ -41,6 +41,16 @@ vec3 cloudWind() { return vec3(frameTimeCounter * 3.2, 0.0, frameTimeCounter * 1
 // The cloud march raises it by moonlight, when the silver lining is most of what makes a night cloud readable.
 float gCloudRim = 1.0;
 
+// Sunlight by altitude. Near sunset a cloud's colour depends on its height: the sun sets later the higher you are, so
+// the Earth's shadow climbs a tall cloud from its base, leaving grey-lavender bases under still-pink tops. renderClouds
+// sets the light of the altocumulus level here; cumulus samples blend toward it with height.
+vec3 gLightAlto = vec3(0.0);
+bool gAltitudeLight = false;
+vec3 cloudSunAt(float y, vec3 base) {
+    if (!gAltitudeLight) return base;
+    return mix(base, gLightAlto, smoothstep(180.0, L1_ALT, y));
+}
+
 // The cumulus volume spans a tall slab; inside it every region picks its own cloud base and depth, so one
 // march covers low decks that hug mountain tops, ordinary fair-weather cumulus higher up, and the occasional
 // thunderstorm tower whose flat anvil spreads out near the top of the slab.
@@ -300,7 +310,7 @@ vec4 marchL0(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
             float powder = PI * d / (d + 0.15);
             powder = mix(powder, 1.0, 0.8 * sqr(mu * 0.5 + 0.5));
             vec3 s = cloudScatter(lightOD * sigma, skyOD * sigma, groundOD * sigma, mu, powder,
-                                  directLight, skyLight, groundLight);
+                                  cloudSunAt(p.y, directLight), skyLight, groundLight);
             float stepT = exp(-d * sigma * stepLen);
             rad += trans * s * (1.0 - stepT);
             dSum += t * trans * (1.0 - stepT);
@@ -346,49 +356,40 @@ vec2 cloudletCells(vec2 p) {
     return sqrt(vec2(f1, f2));
 }
 
-// Density of the altocumulus sheet at p. lod 0 includes the fine texture, lod 1 only the large forms.
-// The sheet is one continuous layer of fbm cloud; the cell pattern only carves thin lanes into it. Where the sheet
-// is thick the lanes close and cells merge into rippled banks; where it thins, the lanes widen into gaps and
-// cells break into separate cloudlets. So the field reads as texture with structure, never as a grid of dots.
+// Density of the altocumulus deck at p. lod 0 includes the finest octave, lod 1 stops one octave earlier.
+// Real mid-level decks (the Livingston photos, 2026-09-25) are texture at every scale at once: broad banks, streaks
+// combed out along the wind and swirled by it, lumps inside the streaks and small tufts on the lumps, with lanes of
+// blue sky between. A domain-warped, wind-stretched fractal sum gives exactly that; a faint billow term lines the
+// texture up into rows in places. (Explicit cells or rows as the main structure read as dots or ripples.)
 float altocumulusDensity(vec3 p, CloudWeather w, float dist, int lod) {
     float h = (p.y - L1_ALT) / L1_THICK;
     if (h <= 0.0 || h >= 1.0) return 0.0;
     vec3 wind = cloudWind() * 1.6;
     vec2 xz = p.xz + wind.xz;
-    // Where the sheet exists: broad patches; on high-coverage days it spreads edge to edge.
+    // Where the deck exists: broad patches; on high-coverage days it spreads edge to edge.
     float patchN = cloudTex(vec3(xz / 22000.0, 0.13)).r;
     float cov = w.cov1 * smoothstep(0.2, 0.6, patchN);
     if (cov <= 0.01) return 0.0;
-    // Align with the upper wind: billow rows run across it, streaks along it.
     const vec2 dir = vec2(0.82, 0.57);
-    vec2 q = vec2(dot(xz, dir), dot(xz, vec2(-dir.y, dir.x)));
-    // The sheet itself: fbm stretched along the wind, so it forms streaks and ripples at the scale of many cells.
-    vec4 s0 = cloudTex(vec3(q.x / 3800.0, q.y / 1700.0, 0.29));
-    vec4 s1 = cloudTex(vec3(q.x / 900.0, q.y / 520.0, 0.61));
-    float sheet = s0.r * 0.55 + s0.g * 0.2 + s1.r * 0.25;
-    // Cells, gently warped so rows wander and no two share a shape.
-    float wave = sin(q.x / 210.0 + s0.b * 6.0) * 12.0;
-    vec2 cp = vec2(q.x / 44.0, (q.y + wave) / 62.0) + (vec2(s1.g, s1.b) - 0.5) * 1.2;
-    vec2 c = cloudletCells(cp);
-    float lane = c.y - c.x;
-    // Soft cell body: dense near its centre, thinning toward the lanes.
-    float body = smoothstep(0.0, 0.45, lane) * (1.0 - 0.45 * smoothstep(0.2, 0.75, c.x));
-    // Coverage sets how much of the sheet survives; the lanes are carved harder where the sheet is thin.
-    float field = sheet * 0.9 + body * 0.55;
-    float d = saturate(remap(field, 1.15 - cov * 0.85, 1.45 - cov * 0.5, 0.0, 1.0));
-    // Flat base, softly domed top that follows the cell body.
-    float top = mix(0.4, 1.0, body * saturate(d * 1.5));
-    d *= smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(top * 0.55, top, h));
-    if (lod == 0 && d > 0.0) {
-        // Fuzz: fine fibres and puffs eat into the edges, so the cells have soft, torn rims.
-        vec4 f = cloudTex(vec3(xz / 160.0, 0.83 + h * 0.2));
-        d = saturate(remap(d, (f.g * 0.6 + f.b * 0.4) * 0.45, 1.0, 0.0, 1.0));
-    }
-    // Far away the cells are smaller than a pixel; blend toward the sheet's average so they do not shimmer.
-    float far = smoothstep(7000.0, 22000.0, dist);
-    float mean = saturate(remap(sheet * 0.9 + 0.3, 1.15 - cov * 0.85, 1.45 - cov * 0.5, 0.0, 1.0)) * 0.6
-               * smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(0.45, 0.85, h));
-    return mix(d, mean, far);
+    // Domain warp: swirls and bends at the scale of the banks.
+    vec4 wn = cloudTex(vec3(xz / 2600.0, 0.37));
+    vec2 wxz = xz + (wn.gb - 0.5) * 520.0;
+    // Stretch along the wind so the texture streaks.
+    vec2 q = vec2(dot(wxz, dir), dot(wxz, vec2(-dir.y, dir.x)) * 1.7);
+    float n = cloudTex(vec3(q / 3400.0, 0.29)).r * 0.46
+            + cloudTex(vec3(q / 1100.0, 0.61)).g * 0.25
+            + cloudTex(vec3(q / 360.0, 0.83)).b * 0.15;
+    float fdist = 1.0 - smoothstep(5000.0, 18000.0, dist);
+    // Finer octaves only where they are larger than a pixel.
+    n += mix(0.5, cloudTex(vec3(q / 120.0, 0.47 + h * 0.1)).g, fdist) * 0.09;
+    if (lod == 0) n += mix(0.5, cloudTex(vec3(xz / 42.0, 0.17 + h * 0.2)).b, fdist) * 0.05;
+    // Faint billows across the wind.
+    n += sin(dot(xz, dir) / 38.0 + wn.r * 9.0) * 0.025 * fdist;
+    float thr = 0.84 - cov * 0.52;
+    float d = saturate((n - thr) / 0.2);
+    // Flat base, top rising with the density so thick lumps are also taller.
+    float top = mix(0.4, 1.0, d);
+    return d * smoothstep(0.0, 0.2, h) * (1.0 - smoothstep(top * 0.55, top, h));
 }
 
 vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec3 directLight,
@@ -426,10 +427,22 @@ vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
         float lightOD = altocumulusDensity(p + lightDir * 9.0, w, t, 1) * 12.0
                       + altocumulusDensity(p + lightDir * 26.0, w, t, 1) * 26.0
                       + altocumulusDensity(p + lightDir * 65.0, w, t, 1) * 40.0;
-        lightOD *= 2.2;
+        lightOD *= 3.5;
         float skyOD = d * (L1_ALT + L1_THICK - p.y) * 0.8;
         float powder = mix(PI * d / (d + 0.2), 1.0, 0.75 * sqr(mu * 0.5 + 0.5));
-        vec3 s = cloudScatter(lightOD * sigma, skyOD * sigma, 0.0, mu, powder, directLight, skyLight, vec3(0.0));
+        // Thin decks keep much of their single-scattering directionality: toward the low sun they blaze orange, off to
+        // the side the lavender skylight takes over and the same cloud reads pink or lilac.
+        float lowSun = 1.0 - smoothstep(0.0, 0.25, lightDir.y);
+        vec3 dl = directLight * mix(1.0, mix(0.45, 2.1, sqr(mu * 0.5 + 0.5)), lowSun);
+        vec3 s = cloudScatter(lightOD * sigma, skyOD * sigma, 0.0, mu, powder, dl, skyLight, vec3(0.0));
+        // Iridescence: near the sun, the thin rims of the cloudlets (small, uniform droplets) diffract light into faint
+        // pastel bands that shift with the droplet size, i.e. with how thick the cloud is there.
+        float fromSun = acos(clamp(mu, -1.0, 1.0));
+        if (fromSun < 0.38) {
+            float rim = 1.0 - smoothstep(0.05, 0.4, d);
+            vec3 bands = 0.5 + 0.5 * cos(TAU * (d * 2.5 + fromSun * 7.0) + vec3(0.0, 2.1, 4.2));
+            s *= mix(vec3(1.0), bands * 1.7, rim * (1.0 - fromSun / 0.38) * 0.45 * CLOUD_IRIDESCENCE);
+        }
         float stepT = exp(-d * sigma * stepLen);
         float weight = trans * (1.0 - stepT);
         rad += s * weight;
@@ -440,6 +453,90 @@ vec4 marchL1(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec
     if (wSum > 0.0) dist = dSum / wSum;
     float fade = 1.0 - smoothstep(25000.0, 45000.0, t0);
     return vec4(rad * fade, mix(1.0, trans, fade));
+}
+
+// ---- Virga: fallstreaks under the altocumulus ----
+// On some evenings the mid-level deck drops rain or ice that evaporates in dry air before reaching the ground: grey
+// curtains hanging a few hundred blocks under the cloud, bent into hooks by the wind shear (the falling streak lags
+// behind the cloud that dropped it, more the further it has fallen), thinning out as it evaporates. At a low sun they
+// glow like the cloud above them, and they are what a rainbow can stand in on a day when no rain reaches the ground.
+
+#define VIRGA_DEPTH 460.0
+
+// How much of the altocumulus is precipitating today, 0..1 (drifts with the weather clock).
+float virgaAmount(CloudWeather w) {
+#ifdef CLOUD_DEBUG_ALTO
+    return w.cov1;
+#endif
+    float t = float(worldDay) + float(worldTime) / 24000.0;
+    return w.cov1 * smoothstep(0.45, 0.8, noise1(t * 1.4 + 211.0)) * (1.0 - rainStrength * 0.5);
+}
+
+float virgaDensity(vec3 p, CloudWeather w, float amount) {
+    float below = L1_ALT - p.y;
+    if (below <= 0.0 || below >= VIRGA_DEPTH) return 0.0;
+    float fall = below / VIRGA_DEPTH;
+    // Shear: the streak trails downwind of its source, increasingly with depth, so it curves.
+    const vec2 shearDir = vec2(-0.82, -0.57);
+    vec2 src = p.xz + shearDir * (below * 0.55 + below * below * 0.0012);
+    // Only thick parts of the deck precipitate, in patches.
+    float parent = altocumulusDensity(vec3(src.x, L1_ALT + 18.0, src.y), w, 1e5, 1);
+    float patchN = cloudTex(vec3((src + cloudWind().xz * 1.6) / 5200.0, 0.73)).g;
+    float source = parent * smoothstep(0.5, 0.75, patchN) * amount;
+    if (source <= 0.0) return 0.0;
+    // Vertical streaks, finer than the parent cells.
+    vec2 q = src + cloudWind().xz * 1.6;
+    float streak = valueNoise(vec2(q.x / 9.0 + q.y / 23.0, fall * 1.5)) * 0.6 + valueNoise(q / 31.0 + 4.4) * 0.4;
+    return source * smoothstep(0.35, 0.75, streak) * (1.0 - smoothstep(0.35, 1.0, fall)) * smoothstep(0.0, 0.06, fall);
+}
+
+vec4 marchVirga(vec3 ro, vec3 rd, float maxDist, CloudWeather w, vec3 lightDir, vec3 directLight,
+                vec3 skyLight, float dither, out float dist) {
+    dist = 1e6;
+    float amount = virgaAmount(w);
+    if (amount < 0.02 || abs(rd.y) < 1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
+    float bottom = L1_ALT - VIRGA_DEPTH;
+    float ta = (bottom - ro.y) / rd.y, tb = (L1_ALT - ro.y) / rd.y;
+    float t0 = max(min(ta, tb), 0.0), t1 = min(max(ta, tb), min(maxDist, t0 + 1500.0));
+    if (t1 <= t0 || t0 > 30000.0) return vec4(0.0, 0.0, 0.0, 1.0);
+    const int N = 8;
+    float stepLen = (t1 - t0) / float(N);
+    float mu = dot(rd, lightDir);
+    // Drops and ice scatter mostly forward.
+    float phase = 0.6 * hgPhase(mu, 0.6) + 0.4 / (4.0 * PI);
+    vec3 rad = vec3(0.0);
+    float trans = 1.0, dSum = 0.0, wSum = 0.0;
+    for (int i = 0; i < N; i++) {
+        float t = t0 + (float(i) + dither) * stepLen;
+        vec3 p = ro + rd * t;
+        float d = virgaDensity(p, w, amount);
+        if (d <= 0.0) continue;
+        float T = exp(-d * 0.006 * stepLen);
+        vec3 s = (cloudSunAt(p.y, directLight) * phase * 1.3 + skyLight * (0.5 / (4.0 * PI))) * (1.0 - T);
+        float weight = trans * (1.0 - T);
+        rad += trans * s;
+        dSum += t * weight;
+        wSum += weight;
+        trans *= T;
+    }
+    if (wSum > 0.0) dist = dSum / wSum;
+    float fade = 1.0 - smoothstep(15000.0, 30000.0, t0);
+    return vec4(rad * fade, mix(1.0, trans, fade));
+}
+
+// Virga along a view ray (optical depth, a few taps), for the rainbow.
+float virgaColumn(vec3 ro, vec3 rd, CloudWeather w) {
+    float amount = virgaAmount(w);
+    if (amount < 0.02 || rd.y < 0.01) return 0.0;
+    float bottom = L1_ALT - VIRGA_DEPTH;
+    float t0 = max((bottom - ro.y) / rd.y, 0.0), t1 = (L1_ALT - ro.y) / rd.y;
+    if (t1 <= t0) return 0.0;
+    float od = 0.0;
+    for (int i = 0; i < 4; i++) {
+        float t = mix(t0, t1, (float(i) + 0.5) / 4.0);
+        od += virgaDensity(ro + rd * t, w, amount);
+    }
+    return od * (t1 - t0) / 4.0 * 0.006;
 }
 
 // ---- Cirrus: feathers, mares' tails and fans ----
@@ -534,19 +631,26 @@ vec4 mergeClouds(vec4 a, float da, vec4 b, float db, out float d) {
 vec4 renderClouds(vec3 ro, vec3 rd, float maxDist, vec3 sunDir, vec3 lightDir, vec3 directLight,
                   vec3 lightDirHi, vec3 directLight1, vec3 directLight2, vec3 skyLight, float dither, out float dist) {
     CloudWeather w = cloudWeather();
+    // Altitude-dependent sunlight only when every layer is lit from the same direction (the sun, near sunset).
+    gAltitudeLight = dot(lightDir, lightDirHi) > 0.9999;
+    gLightAlto = directLight1;
     // Ground bounce: land reflects a warm, slightly green share of the direct light back up at cloud bases.
     vec3 groundLight = directLight * max(lightDir.y, 0.0) * vec3(0.14, 0.14, 0.12) + skyLight * 0.05;
     float d0, d1 = 1e6, d2 = 1e6;
     vec4 c0 = marchL0(ro, rd, maxDist, w, lightDir, directLight, skyLight, groundLight, dither, d0);
     vec4 c1 = marchL1(ro, rd, maxDist, w, lightDirHi, directLight1, skyLight, dither, d1);
     vec4 c2 = cirrus(ro, rd, maxDist, w, lightDirHi, directLight2, skyLight, dither, d2);
+    float dv = 1e6;
+    vec4 cv = marchVirga(ro, rd, maxDist, w, lightDirHi, directLight, skyLight, dither, dv);
     // Thin ice cloud all but disappears by moonlight; keep it from smearing grey over the stars.
     float cirrusDaylight = smoothstep(-0.1, 0.05, sunDir.y);
     c2 = mix(vec4(0.0, 0.0, 0.0, 1.0), c2, cirrusDaylight);
     if (cirrusDaylight < 0.001) d2 = 1e6;
     float d01;
     vec4 c = mergeClouds(c0, d0, c1, d1, d01);
-    c = mergeClouds(c, d01, c2, d2, dist);
+    float d012;
+    c = mergeClouds(c, d01, c2, d2, d012);
+    c = mergeClouds(c, d012, cv, dv, dist);
     // Aerial perspective: distant clouds sink into the haze instead of staying crisp and bright.
     if (dist < 1e5) {
         float air = 1.0 - exp(-dist * mix(0.000055, 0.0003, rainStrength));

@@ -106,3 +106,7 @@
 #define EMITTER_BLOOM 0.35        // thresholded glow around lava, glowstone and other bright emitters
 #define EMITTER_BLOOM_THRESHOLD 3.0 // relative to the average scene brightness
 #define LAVA_HEAT 1.0             // close to a lava sea: rising embers and a burning red vignette
+#define DUSK_EXPOSURE 1.15       // extra exposure around sunset and dusk (eye/phone adaptation to the fading light)
+#define CLOUD_IRIDESCENCE 1.0     // pastel diffraction colours on thin altocumulus near the sun
+#define CLOUD_DUSK_SKYLIGHT 1.7   // skylight on clouds around sunset (lavender fill in shade, pink away from the sun)
+#define DUSK_VIBRANCE 2.2         // extra vibrance through the sunset window
