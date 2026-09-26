@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import org.slf4j.Logger;
@@ -42,7 +44,9 @@ public final class BenchCam implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		DynamicRoutes.initialize();
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			DhNetherRadiusTrial.update(mc);
 			if (tick == 0) {
 				// The default AFK limiter drops to 30 fps whenever nobody touches the input, which is always, here.
 				mc.options.inactivityFpsLimit().set(net.minecraft.client.InactivityFpsLimit.MINIMIZED);
@@ -50,7 +54,7 @@ public final class BenchCam implements ClientModInitializer {
 			tick++;
 			// Click-to-play: a real click inside the focused game window (no menu open) means someone wants to
 			// play, so hand them the mouse. Esc releases it as usual; the harness frees it again for captures.
-			if (!allowMouseGrab && mc.level != null && mc.gui.screen() == null && mc.isWindowActive()
+			if (!allowMouseGrab && !DynamicRoutes.controlsActive() && mc.level != null && mc.gui.screen() == null && mc.isWindowActive()
 					&& org.lwjgl.glfw.GLFW.glfwGetMouseButton(mc.getWindow().handle(), org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
 				allowMouseGrab = true;
 				mc.mouseHandler.grabMouse();
@@ -66,6 +70,15 @@ public final class BenchCam implements ClientModInitializer {
 					it.remove();
 				}
 			}
+		});
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
+			DhNetherRadiusTrial.disconnect();
+			VanillaRenderDistanceTrial.disconnect(mc);
+		});
+		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> DhNetherRadiusTrial.join());
+		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
+			DhNetherRadiusTrial.clear();
+			VanillaRenderDistanceTrial.clientStopping(mc);
 		});
 
 		int port = Integer.getInteger("benchcam.port", DEFAULT_PORT);
@@ -115,10 +128,20 @@ public final class BenchCam implements ClientModInitializer {
 		String verb = space < 0 ? line : line.substring(0, space);
 		String arg = space < 0 ? "" : line.substring(space + 1).strip();
 		Minecraft mc = Minecraft.getInstance();
+		if (DynamicRoutes.controlsActive() && !java.util.Set.of("route", "ping", "status", "framestats", "shot", "gpuprof", "memowners", "dhstatus").contains(verb))
+			return CompletableFuture.completedFuture("err route owns game state; cancel it before another state-changing command");
 
 		return switch (verb) {
 			case "ping" -> CompletableFuture.completedFuture("ok pong");
+			case "route" -> arg.equals("clock") ? CompletableFuture.completedFuture(DynamicRoutes.clockReply())
+				: onRenderThread(() -> DynamicRoutes.command(arg, mc));
+			case "rdtrial" -> onRouteIdleRenderThread(() -> VanillaRenderDistanceTrial.command(arg, mc));
+			case "dhstatus" -> onRenderThread(() -> DhNetherRadiusTrial.status(mc));
+			case "dhtrial" -> onRouteIdleRenderThread(() -> DhNetherRadiusTrial.command(arg, mc));
+			case "dhend" -> onRouteIdleRenderThread(() -> DhNetherRadiusTrial.endCommand(arg, mc));
 			case "framestats" -> CompletableFuture.completedFuture(FrameTimeStats.summarizeRecent(arg));
+			case "memowners" -> onRenderThread(() -> MemoryOwnerSnapshot.command(arg, mc));
+			case "gpuprof" -> gpuProfileCommand(arg);
 			case "status" -> onRenderThread(() -> {
 				var p = mc.player;
 				String pos = p == null ? "none" : String.format("%.2f %.2f %.2f %.1f %.1f", p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot());
@@ -127,17 +150,32 @@ public final class BenchCam implements ClientModInitializer {
 					+ " screen=" + (mc.gui.screen() == null ? "none" : mc.gui.screen().getClass().getSimpleName())
 					+ " chunks=" + (mc.level != null && mc.levelRenderer.hasRenderedAllSections());
 			});
-			case "cmd" -> onRenderThread(() -> {
+			case "cmd" -> onRouteIdleRenderThread(() -> {
 				if (mc.player == null) return "err not in world";
 				mc.player.connection.sendCommand(arg.startsWith("/") ? arg.substring(1) : arg);
 				return "ok";
 			});
-			case "hud" -> onRenderThread(() -> {
+			case "look" -> onRouteIdleRenderThread(() -> {
+				if (mc.player == null) return "err not in world";
+				String[] angles = arg.split("\\s+");
+				if (angles.length != 2) return "err usage: look <yaw> <pitch>";
+				float yaw = Float.parseFloat(angles[0]);
+				float pitch = Float.parseFloat(angles[1]);
+				if (!Float.isFinite(yaw) || !Float.isFinite(pitch) || pitch < -90.0f || pitch > 90.0f)
+					return "err invalid camera angles";
+				// Rotate the client camera without a server /tp or chunk reload.
+				mc.player.setYRot(yaw);
+				mc.player.setXRot(pitch);
+				mc.player.yRotO = yaw;
+				mc.player.xRotO = pitch;
+				return "ok";
+			});
+			case "hud" -> onRouteIdleRenderThread(() -> {
 				boolean wantHidden = arg.equals("off");
 				if (mc.gui.hud.isHidden() != wantHidden) mc.gui.hud.toggle();
 				return "ok";
 			});
-			case "closescreen" -> onRenderThread(() -> {
+			case "closescreen" -> onRouteIdleRenderThread(() -> {
 				mc.gui.setScreen(null);
 				return "ok";
 			});
@@ -147,21 +185,35 @@ public final class BenchCam implements ClientModInitializer {
 				yield waitUntil(() -> mc.level != null && mc.levelRenderer.hasRenderedAllSections(), timeout, "ok timeout");
 			}
 			case "shot" -> screenshot(mc, Path.of(arg));
-			case "reload" -> onRenderThread(BenchCam::reloadIris);
-			case "mouse" -> onRenderThread(() -> {
+			case "reload" -> onRouteIdleRenderThread(BenchCam::reloadIris);
+			case "mouse" -> onRouteIdleRenderThread(() -> {
 				allowMouseGrab = arg.equals("grab");
 				if (!allowMouseGrab) mc.mouseHandler.releaseMouse();
 				return "ok";
 			});
-			case "window" -> onRenderThread(() -> {
+			case "window" -> onRouteIdleRenderThread(() -> {
 				String[] xy = arg.split("\\s+");
 				org.lwjgl.glfw.GLFW.glfwSetWindowPos(mc.getWindow().handle(), Integer.parseInt(xy[0]), Integer.parseInt(xy[1]));
 				return "ok";
 			});
-			case "pack" -> onRenderThread(() -> setPack(arg));
-			case "shaders" -> onRenderThread(() -> setShaders(arg.equals("on")));
+			case "pack" -> onRouteIdleRenderThread(() -> setPack(arg));
+			case "shaders" -> onRouteIdleRenderThread(() -> setShaders(arg.equals("on")));
 			default -> CompletableFuture.completedFuture("err unknown command: " + verb);
 		};
+	}
+
+	private static CompletableFuture<String> gpuProfileCommand(String arg) {
+		if (arg.equals("stop")) return onRenderThread(GpuPassProfiler::stop);
+		if (arg.equals("status")) return onRenderThread(GpuPassProfiler::status);
+		if (DynamicRoutes.controlsActive()) return CompletableFuture.completedFuture("err GPU profiler start is disabled during route acceptance");
+		if (!arg.startsWith("start ") || arg.substring(6).isBlank())
+			return CompletableFuture.completedFuture("err usage: gpuprof start <new-name.csv>|stop|status");
+		try {
+			GpuPassProfiler.Session candidate = GpuPassProfiler.prepare(arg.substring(6).strip());
+			return onRenderThread(() -> GpuPassProfiler.start(candidate));
+		} catch (IOException | RuntimeException e) {
+			return CompletableFuture.completedFuture("err " + e);
+		}
 	}
 
 	private static CompletableFuture<String> onRenderThread(java.util.function.Supplier<String> task) {
@@ -174,6 +226,12 @@ public final class BenchCam implements ClientModInitializer {
 			}
 		});
 		return f;
+	}
+
+	private static CompletableFuture<String> onRouteIdleRenderThread(java.util.function.Supplier<String> task) {
+		// Socket preflight alone races another client's queued route start.
+		return onRenderThread(() -> DynamicRoutes.controlsActive()
+			? "err state-changing commands are disabled during route ownership" : task.get());
 	}
 
 	private CompletableFuture<String> waitTicks(int ticks) {

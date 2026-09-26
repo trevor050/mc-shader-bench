@@ -3,7 +3,7 @@
 	"id": "benchcam",
 	"version": "${version}",
 	"name": "BenchCam",
-	"description": "Localhost command socket for scripted shader screenshots.",
+	"description": "Deterministic shader benchmark routes, screenshots and opt-in GPU diagnostics.",
 	"license": "MIT",
 	"environment": "client",
 	"entrypoints": {

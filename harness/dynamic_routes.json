@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "description": "Project-specific dynamic shader routes through existing ShaderBench landmarks; not a universal benchmark standard. Coordinates are player feet positions. Verify pregeneration before the first traversal.",
+  "routes": [
+    {
+      "version": 1,
+      "id": "night_orbit",
+      "dimension": "minecraft:overworld",
+      "duration_s": 40,
+      "points": [
+        {"x": -738.03, "y": 110, "z": -276.22, "yaw": 175, "pitch": -15},
+        {"x": -702.03, "y": 112, "z": -312.22, "yaw": 265, "pitch": -10},
+        {"x": -738.03, "y": 114, "z": -348.22, "yaw": 355, "pitch": -20},
+        {"x": -774.03, "y": 112, "z": -312.22, "yaw": 445, "pitch": -10},
+        {"x": -738.03, "y": 110, "z": -276.22, "yaw": 535, "pitch": -15}
+      ],
+      "environment": [
+        {"t_s": 0, "time_ticks": 162000, "rain": 0, "thunder": 0},
+        {"t_s": 40, "time_ticks": 162000, "rain": 0, "thunder": 0}
+      ]
+    },
+    {
+      "version": 1,
+      "id": "landscape_cycle",
+      "dimension": "minecraft:overworld",
+      "duration_s": 48,
+      "points": [
+        {"x": -778, "y": 140, "z": -283, "yaw": 0, "pitch": 10},
+        {"x": -714, "y": 148, "z": -347, "yaw": 90, "pitch": 8},
+        {"x": -778, "y": 140, "z": -411, "yaw": 180, "pitch": 12},
+        {"x": -842, "y": 132, "z": -347, "yaw": 270, "pitch": 8},
+        {"x": -778, "y": 140, "z": -283, "yaw": 360, "pitch": 10}
+      ],
+      "environment": [
+        {"t_s": 0, "time_ticks": 150000, "rain": 0, "thunder": 0},
+        {"t_s": 12, "time_ticks": 156000, "rain": 0.35, "thunder": 0},
+        {"t_s": 24, "time_ticks": 162000, "rain": 0.65, "thunder": 0.3},
+        {"t_s": 36, "time_ticks": 168000, "rain": 0.35, "thunder": 0},
+        {"t_s": 48, "time_ticks": 174000, "rain": 0, "thunder": 0}
+      ]
+    },
+    {
+      "version": 1,
+      "id": "cave_torch_loop",
+      "dimension": "minecraft:overworld",
+      "duration_s": 30,
+      "points": [
+        {"x": 2615, "y": -36, "z": 615, "yaw": 180, "pitch": 0},
+        {"x": 2624, "y": -35, "z": 615, "yaw": 240, "pitch": 5},
+        {"x": 2624, "y": -36, "z": 624, "yaw": 300, "pitch": 0},
+        {"x": 2606, "y": -35, "z": 624, "yaw": 360, "pitch": -5},
+        {"x": 2606, "y": -36, "z": 606, "yaw": 450, "pitch": 0},
+        {"x": 2615, "y": -36, "z": 615, "yaw": 540, "pitch": 0}
+      ],
+      "environment": [
+        {"t_s": 0, "time_ticks": 150000, "rain": 0, "thunder": 0},
+        {"t_s": 30, "time_ticks": 150000, "rain": 0, "thunder": 0}
+      ]
+    }
+  ]
+}

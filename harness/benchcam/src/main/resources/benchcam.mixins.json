@@ -1,7 +1,28 @@
 {
-	"required": true,
-	"package": "dev.claudebench.benchcam.mixin",
-	"compatibilityLevel": "JAVA_25",
-	"client": ["MouseHandlerMixin", "MinecraftRenderFrameMixin"],
-	"injectors": { "defaultRequire": 1 }
+  "required": true,
+  "package": "dev.claudebench.benchcam.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "MouseHandlerMixin",
+    "MinecraftRenderFrameMixin",
+    "GameRendererWorldSpanMixin",
+    "MainTerrainDhScopeMixin",
+    "DhCallbackProfilerMixin",
+    "IrisCompositeProfilerMixin",
+    "IrisFinalProfilerMixin",
+    "IrisShadowProfilerMixin",
+    "ShadowFeatureDispatcherProfilerMixin",
+    "ShadowFeatureGroupCountMixin",
+    "OptionsServerRenderDistanceAccessor",
+    "SodiumWorldRendererAccessor",
+    "DhBufferMemoryMixin",
+    "LevelWeatherAccessor",
+    "CameraRouteAccessor",
+    "DynamicCameraMixin",
+    "DynamicLocalPlayerMixin",
+    "DynamicInputMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

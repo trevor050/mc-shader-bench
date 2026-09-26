@@ -6,6 +6,15 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	def irisJar = System.getenv('BENCHCAM_IRIS_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/iris-fabric-1.11.4+mc26.2.jar"
+	if (!file(irisJar).isFile()) throw new GradleException("Set BENCHCAM_IRIS_JAR to the installed Iris 1.11.4+mc26.2 jar")
+	compileOnly files(irisJar)
+	def dhJar = System.getenv('BENCHCAM_DH_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/DistantHorizons-3.3.2-26.2-fabric-neoforge.jar"
+	if (!file(dhJar).isFile()) throw new GradleException("Set BENCHCAM_DH_JAR to the DH 3.3.2 jar")
+	compileOnly files(dhJar)
+	def sodiumJar = System.getenv('BENCHCAM_SODIUM_JAR') ?: "${System.getenv('APPDATA')}/PrismLauncher/instances/ShaderBench/minecraft/mods/sodium-fabric-0.9.2+mc26.2.jar"
+	if (!file(sodiumJar).isFile()) throw new GradleException("Set BENCHCAM_SODIUM_JAR to the Sodium 0.9.2+mc26.2 jar")
+	compileOnly files(sodiumJar)
 }
 
 processResources {
@@ -20,3 +29,23 @@ java {
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
 }
+
+// The route invariants are dependency-free executable fixtures, rather than a JUnit suite.
+tasks.named('test') { failOnNoDiscoveredTests = false }
+tasks.register('routeSamplerTest', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.claudebench.benchcam.RouteMathTest'
+}
+tasks.register('routeCatalogTest', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.claudebench.benchcam.DynamicRouteTest'
+	args file('../dynamic_routes.json').absolutePath
+}
+tasks.register('routeRestoreTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.claudebench.benchcam.BestEffortRestoreTest'
+}
+tasks.named('check') { dependsOn 'routeSamplerTest', 'routeCatalogTest', 'routeRestoreTest' }
