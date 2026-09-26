@@ -36,9 +36,10 @@ CloudWeather cloudWeather() {
     w.cov0 = mix(0.31, 0.58, a) * CLOUD_COVERAGE / 0.34;
     w.tower = mix(0.35, 1.0, noise1(t * 1.3 + 71.0));
     // Altocumulus ranges from absent to a mackerel sky that fills the whole dome.
-    w.cov1 = mix(0.0, 0.95, smoothstep(0.15, 0.9, b));
+    // Most days have little or none; a deck over half the sky is an occasional event, a full one rare.
+    w.cov1 = mix(0.0, 0.62, smoothstep(0.35, 0.95, b));
     // Cirrus is fibrous (curving strokes and tufts), so it can reach near full strength without reading as a flat sheet.
-    w.cirrus = mix(0.0, 0.95, smoothstep(0.1, 0.85, c));
+    w.cirrus = mix(0.0, 0.8, smoothstep(0.3, 0.9, c));
     // Regimes: some days bring a low grey deck over the valleys, some build afternoon thunderstorms.
     w.low = mix(0.05, 0.75, smoothstep(0.3, 0.8, noise1(t * 0.8 + 131.0)));
     w.lowCov = mix(0.0, 0.25, noise1(t * 1.2 + 157.0));
@@ -54,10 +55,10 @@ CloudWeather cloudWeather() {
 #if SKY_PRESET == 1
     // Storm shield (the 2026-09-25 pre-nor'easter sky): altocumulus under a high veil, ragged fractus below, a little
     // cirrus, no fair-weather cumulus; the deck ends west of the observer (clouds.glsl).
-    w.cov0 = 0.06; w.tower = 0.3; w.cov1 = 0.72; w.cirrus = 0.3; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
+    w.cov0 = 0.06; w.tower = 0.3; w.cov1 = 0.48; w.cirrus = 0.25; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
 #elif SKY_PRESET == 2
     // Mackerel sky: a full altocumulus deck.
-    w.cov0 = 0.05; w.tower = 0.3; w.cov1 = 0.85; w.cirrus = 0.1; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
+    w.cov0 = 0.05; w.tower = 0.3; w.cov1 = 0.6; w.cirrus = 0.1; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;
 #elif SKY_PRESET == 3
     // Cirrus: fans and mares' tails over a few small cumulus.
     w.cov0 = 0.15; w.tower = 0.4; w.cov1 = 0.0; w.cirrus = 0.95; w.low = 0.2; w.lowCov = 0.0; w.cb = 0.0;

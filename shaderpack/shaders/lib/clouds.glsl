@@ -476,11 +476,11 @@ DeckStyle altoStyle(CloudWeather w) {
 // Altostratus veil: a high, smooth, thick sheet, the dim ceiling that lower lit clouds stand against.
 float veilAmount(CloudWeather w) {
 #if SKY_PRESET == 1
-    return 0.85;
+    return 0.45;
 #elif SKY_PRESET >= 2
     return 0.0;
 #else
-    return smoothstep(0.55, 0.85, noise1(weatherClock() * 0.9 + 301.0)) * mix(0.8, 1.0, rainStrength);
+    return smoothstep(0.7, 0.95, noise1(weatherClock() * 0.9 + 301.0)) * 0.6 + rainStrength * 0.3;
 #endif
 }
 DeckStyle veilStyle(CloudWeather w) {
@@ -490,11 +490,11 @@ DeckStyle veilStyle(CloudWeather w) {
 // Fractus: ragged, torn low cloud with hard lit edges (under a storm shield, and on grey days).
 float fractusAmount(CloudWeather w) {
 #if SKY_PRESET == 1
-    return 0.6;
+    return 0.3;
 #elif SKY_PRESET >= 2
     return 0.0;
 #else
-    return smoothstep(0.6, 0.9, noise1(weatherClock() * 1.3 + 331.0)) * 0.6 + rainStrength * 0.3;
+    return smoothstep(0.75, 0.95, noise1(weatherClock() * 1.3 + 331.0)) * 0.4 + rainStrength * 0.3;
 #endif
 }
 DeckStyle fractusStyle(CloudWeather w) {
