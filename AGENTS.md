@@ -84,6 +84,10 @@ MC 26.2, Fabric loader 0.19.5, Iris 1.11.4, Sodium 0.9.2, DH 3.3.2, fabric-api 0
 - Others commit to this repo too (commits under Trevor050). Check git log before editing sun/final code.
 - Editing the same file via PowerShell and Edit tool causes stale-read failures; re-Read before Edit.
 
+## Optional client companions (26.2 preview)
+- `ambience/` adds End storm audio/weather coupling and player gusts; Fabric API + Java25. `client-fixes/` is an independent GUI queue mitigation, not a confirmed fix for the friend's RTX2060Super typing stalls. Build each with its Gradle wrapper; exact pack allowlist tests in `client-fixes/tools/verify_policy.ps1`.
+- GUI guard waits on just-submitted existing fence only for supported active packs + open in-world screen. Preserve off/no-screen/no-shaders/unlisted-pack bypass; release ZIP names require explicit allowlist update. Added finite timeout does not bound vanilla's later wait. See `docs/gui-stall-diagnosis.md` and `docs/gui-runtime-validation.md`; input tests and static-chat measurements are different evidence. Do not publish raw JFR/logs with machine/world details.
+
 ## Overworld V6 pass (2026-09-24)
 - New libs: night.glsl (aurora in deferred sky, fireflies in composite; custom uniform fireflyBiome from temperature/rainfall), rain.glsl (rainRipples for puddles + water).
 - In-cloud mist: composite2 cloudNearFog owns the first 60 blocks; the far cloud march excludes that interval. Real density and illumination cover all cloud decks; stop at the nearest scene surface.

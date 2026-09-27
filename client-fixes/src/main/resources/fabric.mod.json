@@ -1,0 +1,18 @@
+{
+    "schemaVersion": 1,
+    "id": "afterglow_client_fixes",
+    "version": "${version}",
+    "name": "Afterglow Client Fixes (Preview)",
+    "description": "Optional Minecraft 26.2 GUI latency mitigation for Afterglow shaders. Limits queued GPU work while an in-world screen is open, with a bounded fence wait and a runtime opt-out.",
+    "license": "MIT",
+    "environment": "client",
+    "entrypoints": { "client": ["dev.afterglow.clientfixes.GuiQueueGuard"] },
+    "mixins": ["afterglow-client-fixes.mixins.json"],
+    "depends": {
+        "fabricloader": ">=0.19.5",
+        "minecraft": "26.2",
+        "java": ">=25",
+        "fabric-api": "*"
+    },
+    "suggests": { "iris": "*" }
+}

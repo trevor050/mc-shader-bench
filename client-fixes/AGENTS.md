@@ -1,0 +1,4 @@
+MC26.2-only optional Fabric GUI queue mitigation; Java25, Fabric API0.161.0. Reuse local wrapper: `gradlew.bat --no-daemon build`.
+`GlCommandEncoder.submit` TAIL sees nextSubmitIndex; current fence is index-1. Success deletes that fence; timeout preserves it for vanilla next-submit wait. Never claim this bounds vanilla GPU stalls.
+Gate requires open in-world screen + exact case-insensitive pack identity in QueuePolicy. New release names require deliberate allowlist/test updates; generic Afterglow/ClaudeBench prefixes must not match. Run `tools/verify_policy.ps1`. Disabled/no-screen paths must call no extra GPU wait. World-only rendering and shader quality remain unchanged.
+Commands `/afterglowfix on|off|status`; status reports/reset counters, on/off persists opt-out. Only root controls Minecraft/reloads/GPU captures. Source build does not validate mixin/runtime behavior or friend's RTX2060Super fix.
