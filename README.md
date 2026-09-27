@@ -2,9 +2,9 @@
 
 # Afterglow
 
-**[Download the preview](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26/Afterglow-preview-2026-09-26.zip) · [Gallery](docs/afterglow/gallery/GALLERY.md) · [Installation](docs/afterglow/INSTALL.md) · [Report an issue](https://github.com/trevor050/mc-shader-bench/issues)**
+**[Download the preview bundle](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26.2/Afterglow-preview-2026-09-26.2-bundle.zip) · [Shader only](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26.2/Afterglow-preview-2026-09-26.2.zip) · [Gallery](docs/afterglow/gallery/GALLERY.md) · [Installation](docs/afterglow/INSTALL.md)**
 
-> **Development preview.** This is a first look at the branding and current shader build, not version 1.0. Screenshots below are real captures from earlier build `55a002e`; the downloadable snapshot is `7965748`. Final visual polish, performance targets and broader compatibility testing are still in progress. Potato clouds remain a known rough edge.
+> **Development preview.** This is a first look, not version 1.0. Preview `2026-09-26.2` adds the End ambience companion and an optional GUI compatibility experiment; its shader payload is unchanged from `7965748`. Screenshots below are real captures from earlier build `55a002e`. Final visual polish, performance targets and broader compatibility testing remain unfinished. Potato clouds remain a known rough edge.
 
 A sky-first shader pack for Iris. Volumetric clouds you can fly through, sunsets that change from day to day, aurora on cold nights, a Milky Way that emerges as twilight deepens, and block light that takes the color of its source.
 
@@ -25,16 +25,20 @@ Screenshots are real in-game captures, cropped and resized only. They were taken
 
 **Light and weather.** Colored block light from torches, soul torches, lava and other sources, including held items. Rain with ripples and puddles, storm darkening and landscape lightning. Water with reflections, caustics and shore foam.
 
-**Other dimensions.** Smoke and heat haze around Nether lava, and a storm in the End.
+**Other dimensions.** Smoke and heat haze around Nether lava. The optional End companion adds an alien storm with wind, rumble, choir, synchronized thunder and gusts that push the player.
 
 ## Install
 
 1. Install Iris and Sodium for Minecraft 26.2.
-2. [Download the preview ZIP](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26/Afterglow-preview-2026-09-26.zip).
-3. Put `Afterglow-preview-2026-09-26.zip` in your `shaderpacks` folder without unzipping it.
+2. [Download the shader ZIP](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26.2/Afterglow-preview-2026-09-26.2.zip).
+3. Put `Afterglow-preview-2026-09-26.2.zip` in your `shaderpacks` folder without unzipping it.
 4. Select it in **Options → Video Settings → Shader Packs**.
 
 See [the installation guide](docs/afterglow/INSTALL.md) for launcher-specific steps, Distant Horizons and troubleshooting.
+
+The [bundle](https://github.com/trevor050/mc-shader-bench/releases/tag/preview-2026-09-26.2) includes two independent, optional Fabric client mods in `optional-mods/`. Move either JAR into the instance's `mods` folder and install Fabric API for 26.2. Both require Java 25 and a restart. The shader works without them.
+
+**Chat and GUI compatibility experiment.** The optional GUI add-on reduces queued GPU frames while a screen is open. It can cost some GUI FPS, leaves shader quality unchanged, and supports `/afterglowfix off` for immediate comparison. The severe typing-related frame drop reported on an RTX 2060 Super has **not** been reproduced or confirmed fixed. Local input tests, limits and the source investigation are [documented here](docs/gui-stall-diagnosis.md). Keep the shader ZIP's exact filename for the add-on's activation check.
 
 ## Requirements and testing
 

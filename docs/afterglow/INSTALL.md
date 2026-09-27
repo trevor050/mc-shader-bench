@@ -18,7 +18,7 @@ macOS is not supported: Afterglow uses compute shaders, and macOS OpenGL stops a
 
 1. Create an instance for **Minecraft 26.2** with **Fabric**.
 2. Add **Iris** from the mod browser. Sodium is added as a dependency.
-3. [Download the development preview](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26/Afterglow-preview-2026-09-26.zip) and drop the ZIP into the instance's shader packs page. This preview is hosted on GitHub, not listed on Modrinth yet.
+3. [Download the development preview](https://github.com/trevor050/mc-shader-bench/releases/download/preview-2026-09-26.2/Afterglow-preview-2026-09-26.2.zip) and drop the ZIP into the instance's shader packs page. This preview is hosted on GitHub, not listed on Modrinth yet.
 4. Launch, then choose Afterglow in **Options → Video Settings → Shader Packs**.
 
 ## Option B: official launcher
@@ -26,8 +26,16 @@ macOS is not supported: Afterglow uses compute shaders, and macOS OpenGL stops a
 1. Run the **Iris installer** from [irisshaders.dev](https://www.irisshaders.dev/download), pick Minecraft 26.2 and install. It sets up Fabric and a profile for you.
 2. Start Minecraft with the new Iris profile.
 3. Go to **Options → Video Settings → Shader Packs** and click **Open Shader Pack Folder**.
-4. Put `Afterglow-preview-2026-09-26.zip` in that folder. **Don't unzip it.**
+4. Put `Afterglow-preview-2026-09-26.2.zip` in that folder. **Don't unzip it.**
 5. Back in the game, select **Afterglow** and click **Apply**. The first load takes a few seconds while the shaders compile.
+
+## Optional companion mods
+
+The [combined preview bundle](https://github.com/trevor050/mc-shader-bench/releases/tag/preview-2026-09-26.2) includes the End ambience mod and an experimental GUI queue mitigation. Both require Fabric API for 26.2 and Java 25. They are independent, optional client mods; copy the desired JAR from `optional-mods/` to your instance's `mods` folder, then restart. Leave the inner shader ZIP intact in `shaderpacks`.
+
+The End companion adds storm audio, lightning coordination and gusts that push the player. The GUI companion changes GPU queue behavior only with an in-world screen open. It may reduce GUI FPS and has not been confirmed to fix the reported RTX 2060 Super typing stall. Use `/afterglowfix off` to disable it immediately. Keep the shader archive's filename unchanged.
+
+See [the bundle guide](PREVIEW-2026-09-26.2.md) for exact filenames, versions and the compatibility experiment's limits.
 
 ## Choosing a profile
 
