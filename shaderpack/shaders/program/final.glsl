@@ -14,7 +14,10 @@
 uniform mat4 gbufferModelViewInverse;
 uniform float rainStrength;
 uniform float frameTimeCounter;
-#if POSTFX_ENABLED
+#if VANILLA_LIGHTING && !defined DIM_NETHER
+uniform vec3 fogColor;
+#endif
+#if POSTFX_ENABLED || VANILLA_LIGHTING
 #include "/lib/atmosphere.glsl"
 #endif
 
@@ -27,6 +30,9 @@ flat out vec3 veilColor;
 flat out vec2 veilUV;
 flat out float frameExposure;
 flat out float frameAdaptedLog;
+#if VANILLA_LIGHTING
+flat out vec3 potatoFogSunDir;
+#endif
 uniform vec3 sunPosition;
 uniform mat4 gbufferProjection;
 uniform float viewWidth;
@@ -75,6 +81,9 @@ void main() {
     gl_Position = ftransform();
     texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
 #if !POSTFX_ENABLED
+#if VANILLA_LIGHTING
+    potatoFogSunDir = normalize(mat3(gbufferModelViewInverse) * sunPosition);
+#endif
     whiteBalance = vec3(1.0);
     sunsetGrade = 0.0;
     duskOpen = 0.0;
@@ -138,6 +147,21 @@ uniform sampler2D dhDepthTex0;
 uniform int frameCounter;
 uniform ivec2 eyeBrightnessSmooth;
 uniform vec3 upPosition;
+#if VANILLA_LIGHTING
+uniform mat4 gbufferProjectionInverse;
+uniform mat4 dhProjectionInverse;
+uniform int isEyeInWater;
+uniform float dhFarPlane;
+uniform float far;
+uniform int dhRenderDistance;
+uniform vec3 cameraPosition;
+uniform float inSnowy;
+uniform float rainLocal;
+uniform float fogStart;
+uniform float fogEnd;
+flat in vec3 potatoFogSunDir;
+#include "/lib/potato_fog.glsl"
+#endif
 
 // Glare streaks: the fine radial rays the eye itself adds around a blinding source (the ciliary corona, from
 // scattering in the eye's lens). They sit on top of the blown-out core, never replace it. Many thin streaks
@@ -331,6 +355,10 @@ vec3 colorGrade(vec3 c) {
 
 void main() {
     vec3 col = texture(colortex0, texcoord).rgb;
+#if VANILLA_LIGHTING
+    // Preserve fog -> precipitation -> display grade; omit one intermediate RGBA16F rounding.
+    col = fogPotatoScene(col, texcoord, potatoFogSunDir);
+#endif
     // Precipitation over the fogged scene (see weather.glsl).
     vec4 weather = texture(colortex13, texcoord);
     col = col * (1.0 - saturate(weather.a)) + max(weather.rgb, 0.0);
@@ -344,11 +372,11 @@ void main() {
 #else
     // composite4 stores bloom in the retired cloud/VL scratch buffer and weighted glare+rays in colortex3.
     // This keeps the original additive order: (scene + glare + rays) is mixed toward bloom afterward.
-    col += sampleBloomCubic(colortex3, texcoord, 0);
+    col += sampleBloomPhysical(colortex3, texcoord, 0, vec2(viewWidth, viewHeight));
     // Energy-conserving bloom (Photon, COD: AW): a fraction of every pixel's light is redistributed into its
     // wide blur instead of being added on top. Only sources far brighter than their surroundings, like the
     // sun, produce a visible glow; everything else just softens very slightly.
-    col = mix(col, sampleBloomCubic(colortex7, texcoord, 0), BLOOM_STRENGTH);
+    col = mix(col, sampleBloomPhysical(colortex7, texcoord, 0, vec2(viewWidth, viewHeight)), BLOOM_STRENGTH);
     // Streaks go on after bloom so they stay crisp instead of being blurred away.
     if (SUN_STREAK_STRENGTH > 0.0) col += sunStreaks(texcoord) * SUN_STREAK_STRENGTH;
     // A blinding sun veils the view around it: a smooth analytic glare (no mip blockiness), added after the

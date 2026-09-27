@@ -72,3 +72,30 @@ void bloomBlurCoordinates(sampler2D source, vec2 uv, int lod, vec2 offset,
     wx /= max(wx.x + wx.y + wx.z, 1e-6);
     wy /= max(wy.x + wy.y + wy.z, 1e-6);
 }
+
+// Keep the accepted half-grid reconstruction support in full-screen pixels when the effect grid shrinks.
+// Positive normalized B-spline weights preserve constant radiance and cannot ring below zero.
+vec3 sampleBloomPhysical(sampler2D source, vec2 uv, int lod, vec2 fullSize) {
+    // All active selected tiers use less than A's half-grid; preserve its physical footprint.
+    vec2 size = vec2(max(textureSize(source, lod), ivec2(1)));
+    vec2 reference = max(floor(fullSize * 0.5), vec2(1.0));
+    vec2 width = max(size / reference, vec2(1e-6));
+    vec2 p = uv * size - 0.5;
+    vec2 base = floor(p);
+    vec2 f = p - base;
+    vec2 w0 = bloomSplineBasis((vec2(-1.0) - f) / width);
+    vec2 w1 = bloomSplineBasis((vec2( 0.0) - f) / width);
+    vec2 w2 = bloomSplineBasis((vec2( 1.0) - f) / width);
+    vec2 w3 = bloomSplineBasis((vec2( 2.0) - f) / width);
+    vec2 g0 = w0 + w1;
+    vec2 g1 = w2 + w3;
+    vec2 total = max(g0 + g1, vec2(1e-6));
+    vec2 a = (base - 1.0 + w1 / max(g0, vec2(1e-6)) + 0.5) / size;
+    vec2 b = (base + 1.0 + w3 / max(g1, vec2(1e-6)) + 0.5) / size;
+    vec2 blend = g1 / total;
+    return mix(mix(textureLod(source, a, float(lod)).rgb,
+                   textureLod(source, vec2(b.x, a.y), float(lod)).rgb, blend.x),
+               mix(textureLod(source, vec2(a.x, b.y), float(lod)).rgb,
+                   textureLod(source, b, float(lod)).rgb, blend.x), blend.y);
+
+}

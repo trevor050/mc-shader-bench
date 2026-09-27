@@ -81,7 +81,12 @@ void main() {
 uniform int frameCounter;
 uniform sampler2D gtexture;
 #if VANILLA_LIGHTING
+#ifdef PROG_DH
+// Explicit Iris lightmap marker avoids DH's legacy external texture-unit binding.
+uniform sampler2D potatoNativeLightmap;
+#else
 uniform sampler2D lightmap;
+#endif
 #include "/lib/held_light.glsl"
 #endif
 uniform sampler2D colortex4;
@@ -155,7 +160,7 @@ flat in vec3 envDirect;
 flat in vec3 sunsetLight;
 flat in vec3 envAmbient;
 
-#if defined PROG_WATER || defined PROG_ENTITIES_TRANSLUCENT
+#if !VANILLA_LIGHTING && (defined PROG_WATER || defined PROG_ENTITIES_TRANSLUCENT)
 // Terrain translucents also tag the nether portal in the material buffer, so TAA can reproject its parallax
 // interior at the depth it appears to be at. colortex2 blends with SRC_ALPHA / ONE_MINUS_SRC_ALPHA on colour and
 // keeps the destination alpha (shaders.properties): alpha 0 leaves the opaque material underneath untouched.
@@ -236,7 +241,7 @@ vec4 traceSSR(vec3 viewPos, vec3 viewDir, float dither) {
 }
 
 void main() {
-#ifdef PROG_WATER
+#if defined PROG_WATER && !VANILLA_LIGHTING
     outMat = vec4(0.0);
 #endif
 #if !VANILLA_LIGHTING
@@ -270,7 +275,11 @@ void main() {
     vec4 native = texture(gtexture, texcoord) * glcolor;
 #endif
     if (native.a < 0.02) discard;
+#ifdef PROG_DH
+    vec3 nativeLight = texture(potatoNativeLightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb;
+#else
     vec3 nativeLight = texture(lightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb;
+#endif
     nativeLight += cheapHeldLightSrgb(playerPos, normalize(worldNormal), 1.0);
     vec3 cheapColor = native.rgb * nativeLight;
     if (mat == MAT_WATER) {
@@ -310,9 +319,6 @@ void main() {
 #ifdef PROG_HAND
     // Preserve the hand's opaque output contract even when a held sprite has a fractional texture alpha.
     outColor.a = 1.0;
-#endif
-#if defined PROG_WATER || defined PROG_ENTITIES_TRANSLUCENT
-    if (mat == MAT_ENTITY) outMat = vec4(float(MAT_ENTITY) / 255.0, 0.0, 1.0, 0.0);
 #endif
     return;
 #else

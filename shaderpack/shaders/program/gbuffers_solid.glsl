@@ -99,7 +99,12 @@ void main() {
 #ifdef FRAGMENT
 uniform sampler2D gtexture;
 #if VANILLA_LIGHTING
+#ifdef PROG_DH
+// Explicit Iris lightmap marker avoids DH's legacy external texture-unit binding.
+uniform sampler2D potatoNativeLightmap;
+#else
 uniform sampler2D lightmap;
+#endif
 #include "/lib/held_light.glsl"
 #endif
 #ifdef PROG_ENTITIES
@@ -175,10 +180,14 @@ float lavaShore(vec3 wp, vec3 n) {
 }
 #endif
 
+#if VANILLA_LIGHTING
+/* RENDERTARGETS: 0 */
+#else
 /* RENDERTARGETS: 0,1,2 */
-layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormalLight;
 layout(location = 2) out vec4 outMaterial;
+#endif
+layout(location = 0) out vec4 outAlbedo;
 
 #ifdef PROG_TERRAIN
 #endif
@@ -258,11 +267,13 @@ void main() {
 #if VANILLA_LIGHTING
     // Native sprites and Minecraft's current lightmap retain its night, cave, weather and emitter levels.
     // Iris separateAo carries terrain AO in alpha rather than coverage, so apply it to this direct colour.
+#ifdef PROG_DH
+    vec3 nativeLight = texture(potatoNativeLightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb * ao;
+#else
     vec3 nativeLight = texture(lightmap, lmcoord * (15.0 / 16.0) + 1.0 / 32.0).rgb * ao;
+#endif
     nativeLight += cheapHeldLightSrgb(relPos, normalize(worldNormal), ao);
     outAlbedo = vec4(albedo.rgb * nativeLight, 1.0);
-    outNormalLight = vec4(encodeNormal(normalize(worldNormal)), lmcoord);
-    outMaterial = vec4(float(mat) / 255.0, 0.0, ao, 0.0);
     return;
 #else
     float emissive = 0.0;

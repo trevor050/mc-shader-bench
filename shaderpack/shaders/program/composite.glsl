@@ -55,8 +55,10 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
+#if !VANILLA_LIGHTING
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
+#endif
 #if !VANILLA_LIGHTING
 uniform sampler2D colortex3;
 uniform sampler2D colortex9;
@@ -73,6 +75,9 @@ uniform int isEyeInWater;
 uniform ivec2 eyeBrightnessSmooth;
 uniform float far;
 uniform float dhFarPlane;
+#if VANILLA_LIGHTING
+uniform int dhRenderDistance;
+#endif
 uniform float rainLocal;
 uniform float fogStart;
 uniform float fogEnd;
@@ -105,6 +110,9 @@ flat in vec3 cloudDeckWeather;
 #endif
 #include "/lib/night.glsl"
 uniform float fireflyBiome;
+#if VANILLA_LIGHTING
+#include "/lib/potato_fog.glsl"
+#endif
 
 // Eye adaptation input. The Overworld keeps its calibrated arithmetic mean (capped so the sun counts as bright
 // but not overwhelming). The Nether and End meter a log average instead: there a lava sea is both the brightest
@@ -117,10 +125,14 @@ vec4 adaptMeter(vec3 c) { return vec4(log2(clamp(luminance(c), 1e-6, 0.8)) + 24.
 vec4 adaptMeter(vec3 c) { return vec4(min(luminance(c), 4.0)); }
 #endif
 
+#if VANILLA_LIGHTING
+/* RENDERTARGETS: 0 */
+#else
 /* RENDERTARGETS: 0,6 */
-layout(location = 0) out vec4 outColor;
 // Brightness for eye adaptation, capped so the sun's own pixels count as bright but not overwhelming.
 layout(location = 1) out vec4 outAdaptLum;
+#endif
+layout(location = 0) out vec4 outColor;
 
 // Restore the same premultiplied foreground cloud layer after fogging its background. Cloud distances survive
 // in c3 until this pass; c8 now belongs to VL and cannot identify the clouds seen by deferred/forward surfaces.
@@ -234,27 +246,8 @@ void main() {
     // Vanilla-lit sRGB travels directly to final. A single analytic fog evaluation retains depth,
     // underwater visibility and the DH horizon without reading any disabled cloud/VL history.
     vec3 col = texture(colortex0, texcoord).rgb;
-    float depth = texture(depthtex0, texcoord).r;
-    float dhDepth = depth >= 1.0 ? texture(dhDepthTex0, texcoord).r : 1.0;
-    if (depth >= 0.56 && (depth < 1.0 || dhDepth < 1.0)) {
-        vec3 viewPos = projectAndDivide(depth < 1.0 ? gbufferProjectionInverse : dhProjectionInverse,
-                                       vec3(texcoord, depth < 1.0 ? depth : dhDepth) * 2.0 - 1.0);
-        vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos + gbufferModelViewInverse[3].xyz;
-        float dist = length(playerPos);
-        float amount = smoothstep(fogStart, max(fogEnd, fogStart + 1.0), dist);
-        vec3 haze = fogColor;
-#if !defined DIM_NETHER && !defined DIM_END
-        if (isEyeInWater == 0) {
-            vec3 skyHaze = max(hazeColor(normalize(playerPos), sunDir), vec3(0.0));
-            haze = pow(skyHaze / (vec3(1.0) + skyHaze), vec3(1.0 / 2.2));
-            if (dhFarPlane > 0.0) amount = smoothstep(LOD_DISTANCE * 0.75, LOD_DISTANCE * 0.97, dist);
-            amount = max(amount, 1.0 - exp(-dist * rainLocal * 0.004 * FOG_DENSITY));
-        }
-#endif
-        col = mix(col, haze, amount);
-    }
+    col = fogPotatoScene(col, texcoord, sunDir);
     outColor = vec4(col, 1.0);
-    outAdaptLum = vec4(0.0);
 #else
     vec3 col = texture(colortex0, texcoord).rgb;
     float depth = texture(depthtex0, texcoord).r;

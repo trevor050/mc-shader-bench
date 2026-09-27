@@ -46,6 +46,8 @@ void main() {
 uniform int frameCounter;
 uniform float viewWidth;
 uniform float viewHeight;
+// Query allocation metadata only; this pass never samples its output texels.
+uniform sampler2D colortex8;
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 uniform mat4 gbufferProjectionInverse;
@@ -69,9 +71,8 @@ layout(location = 1) out vec4 outDist;
 layout(location = 2) out vec4 outCloudFogDepth;
 
 void main() {
-    // Use the actual half-resolution target grid. Iris truncates relative buffer sizes, so this keeps
-    // normalized sample positions aligned with consumers when the full-resolution viewport is odd-sized.
-    vec2 targetRes = max(floor(vec2(viewWidth, viewHeight) * 0.5), vec2(1.0));
+    // All MRT targets share this allocated grid; use its exact size after Iris float truncation.
+    vec2 targetRes = vec2(max(textureSize(colortex8, 0), ivec2(1)));
     vec2 uv = gl_FragCoord.xy / targetRes;
 
 #if defined DIM_NETHER || defined DIM_END || !defined CLOUDS

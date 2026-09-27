@@ -29,6 +29,8 @@ uniform sampler2D colortex9;
 #define HIST_TEX colortex9
 /* RENDERTARGETS: 9 */
 #endif
+uniform float viewWidth;
+uniform float viewHeight;
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferPreviousModelView;
@@ -95,7 +97,9 @@ void main() {
     bool valid = !offscreen && history.a == history.a && all(greaterThanEqual(history, vec4(0.0)));
     history = clamp(history, lo, hi);
     // Slow camera motion keeps a long history; fast turns shorten it to avoid smearing.
-    float motion = length((prevUV - uv) * bufferRes);
+    // Preserve A's full-screen motion/blend threshold when the history grid shrinks.
+    vec2 referenceRes = max(floor(vec2(viewWidth, viewHeight) * 0.5), vec2(1.0));
+    float motion = length((prevUV - uv) * referenceRes);
     float blend = valid ? mix(0.93, 0.7, saturate(motion / 12.0)) : 0.0;
     outHistory = mix(current, history, blend);
 #endif

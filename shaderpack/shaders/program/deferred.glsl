@@ -109,8 +109,10 @@ void main() {
 
 #ifdef FRAGMENT
 uniform sampler2D colortex0;
+#if !VANILLA_LIGHTING
 uniform sampler2D colortex1;
 uniform sampler2D colortex2;
+#endif
 uniform sampler2D depthtex0;
 uniform sampler2D dhDepthTex0;
 #if !defined DIM_NETHER && !defined DIM_END && !VANILLA_LIGHTING
@@ -292,6 +294,13 @@ void main() {
                             vec2(viewWidth, viewHeight)) * night;
             float amount = auroraVisibility(sunDir.y);
             if (amount > 0.001) sky += aurora(rd, frameTimeCounter) * amount;
+        }
+        // Match the terrain's cheap snow haze at the horizon before compositing clouds.
+        // This changes the background only, retaining each foreground cloud's radiance.
+        if (inSnowy > 0.001) {
+            vec3 white = snowWhiteout(max(hazeColor(rd, sunDir), vec3(0.0)));
+            float share = inSnowy * snowHorizonShare() * exp(-max(rd.y, 0.0) * 7.0);
+            sky = mix(sky, white, share);
         }
 #ifdef CLOUDS
         float cloudDist;
@@ -588,8 +597,9 @@ void main() {
         // Lightning lights the clouds after temporal accumulation (history would average a flash away).
         vec4 flash = cloudFlash(cameraPosition);
         if (flash.w > 0.0 && clouds.a < 0.98) {
-            vec2 halfRes = floor(vec2(viewWidth, viewHeight) * 0.5);
-            float cd = texelFetch(colortex8, ivec2(texcoord * halfRes), 0).r;
+            ivec2 cloudGrid = textureSize(colortex8, 0);
+            ivec2 cloudTexel = clamp(ivec2(texcoord * vec2(cloudGrid)), ivec2(0), cloudGrid - 1);
+            float cd = texelFetch(colortex8, cloudTexel, 0).r;
             vec3 cp = cameraPosition + rd * min(cd, 30000.0);
             float near = exp(-length(cp - flash.xyz) / 420.0);
             col += vec3(0.7, 0.78, 1.0) * flash.w * near * (1.0 - clouds.a) * 0.11;
@@ -603,12 +613,9 @@ void main() {
 
 /*
 const int colortex0Format = RGBA16F;
-const int colortex1Format = RGBA16;
-const int colortex2Format = RGBA8;
 const int colortex4Format = R11F_G11F_B10F;
 const int colortex5Format = RGBA16F;
 const bool colortex5Clear = false;
-const int colortex6Format = R16F;
 const int colortex7Format = RGBA16F;
 const int colortex8Format = RG32F;
 const int colortex9Format = RGBA16F;
@@ -618,6 +625,13 @@ const bool colortex11Clear = false;
 const vec4 colortex0ClearColor = vec4(0.0, 0.0, 0.0, 1.0);
 const bool colortex4Clear = true;
 */
+#if !VANILLA_LIGHTING
+/*
+const int colortex1Format = RGBA16;
+const int colortex2Format = RGBA8;
+const int colortex6Format = R16F;
+*/
+#endif
 #if defined DIM_NETHER || defined DIM_END
 // Voxelization only: the shadow map is never sampled here, and the distance just has to cover the light field.
 const int shadowMapResolution = 256;

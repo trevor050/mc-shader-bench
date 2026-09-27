@@ -96,7 +96,7 @@
 #define TAA
 
 // ---- Overworld V6: clouds, weather, night, water, bloom ----
-#define CLOUD_RENDER_DISTANCE 6000.0 // [3000.0 4500.0 6000.0 8192.0 12000.0] cloud range in blocks, with a soft horizon fade
+#define CLOUD_RENDER_DISTANCE 6000.0 // [3000.0 4500.0 6000.0 8192.0] cloud range in blocks, with a soft horizon fade
 #define CLOUD_SPEED 1.8 // [0.0 0.5 1.0 1.8 2.5 3.5] multiplier on cloud drift (and so on how fast cloud shadows sweep the land)
 #define CLOUD_INSIDE_FOG 1.0 // [0.0 0.5 1.0 1.5 2.0] wet grey-white mist when the camera is inside a cloud
 #define CLOUD_MOON_SILVER 1.5 // [0.0 0.5 1.0 1.5 2.0] moonlit clouds: boost of the bright forward-scattered rim toward the moon
